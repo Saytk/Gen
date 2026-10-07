@@ -141,6 +141,14 @@ UGenAbilitySystemComponent* AGenPlayerController::GetGenAbilitySystemComponent()
 
 bool AGenPlayerController::GetCursorLocationOnPlane(float PlaneZ, FVector& OutLocation) const
 {
+#if !UE_BUILD_SHIPPING
+	if (bDebugAimOverride)
+	{
+		OutLocation = FVector(DebugAimLocation.X, DebugAimLocation.Y, PlaneZ);
+		return true;
+	}
+#endif
+
 	FVector WorldOrigin;
 	FVector WorldDirection;
 	if (!DeprojectMousePositionToWorld(WorldOrigin, WorldDirection) || FMath::IsNearlyZero(WorldDirection.Z))

@@ -2,6 +2,7 @@
 
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenKnockback.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
@@ -45,6 +46,7 @@ void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 	DOREPLIFETIME(AGenCharacterBase, bIsDead);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, CastInfo, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedResource, COND_SkipOwner);
 }
 
 void AGenCharacterBase::StartCast(UClass* Ability, float Duration, UNiagaraSystem* FX, FName FXSocket)
@@ -170,6 +172,43 @@ float AGenCharacterBase::GetEnergy() const
 float AGenCharacterBase::GetMaxEnergy() const
 {
 	return AttributeSet ? AttributeSet->GetMaxEnergy() : 0.f;
+}
+
+float AGenCharacterBase::GetResource() const
+{
+	return AttributeSet ? AttributeSet->GetResource() : 0.f;
+}
+
+float AGenCharacterBase::GetMaxResource() const
+{
+	return AttributeSet ? AttributeSet->GetMaxResource() : 0.f;
+}
+
+void AGenCharacterBase::ApplyKnockback(const FVector& Direction, float Distance)
+{
+	if (!HasAuthority() || bIsDead || Distance <= 0.f)
+	{
+		return;
+	}
+
+	FVector Direction2D = Direction.GetSafeNormal2D();
+	if (Direction2D.IsNearlyZero())
+	{
+		Direction2D = -GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	const FVector LaunchVelocity = GenKnockback::ComputeLaunchVelocity(Direction2D, Distance, GetCharacterMovement()->GetGravityZ());
+	LaunchCharacter(LaunchVelocity, true, true);
+
+	if (IsPlayerControlled() && !IsLocallyControlled())
+	{
+		ClientApplyKnockback(LaunchVelocity);
+	}
+}
+
+void AGenCharacterBase::ClientApplyKnockback_Implementation(FVector_NetQuantize10 LaunchVelocity)
+{
+	LaunchCharacter(LaunchVelocity, true, true);
 }
 
 void AGenCharacterBase::OnAbilitySystemInitialized()

@@ -25,6 +25,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Gen|Input")
 	bool GetCursorLocationOnPlane(float PlaneZ, FVector& OutLocation) const;
 
+	/** Tests PIE : viser DebugAimLocation au lieu du curseur (ignoré en Shipping). */
+	UPROPERTY(Transient, BlueprintReadWrite, Category = "Gen|Debug")
+	bool bDebugAimOverride = false;
+
+	UPROPERTY(Transient, BlueprintReadWrite, Category = "Gen|Debug")
+	FVector DebugAimLocation = FVector::ZeroVector;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

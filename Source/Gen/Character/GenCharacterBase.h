@@ -92,6 +92,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Health")
 	float GetMaxEnergy() const;
 
+	UFUNCTION(BlueprintPure, Category = "Gen|Resource")
+	float GetResource() const;
+
+	UFUNCTION(BlueprintPure, Category = "Gen|Resource")
+	float GetMaxResource() const;
+
+	/** Unités de ressource en train d'être nourries dans un sort : elles quittent l'orbite à l'écran. */
+	UFUNCTION(BlueprintPure, Category = "Gen|Resource")
+	int32 GetFedResource() const { return FedResource; }
+
+	/** Appelé par le sort sur le serveur et le client propriétaire (prédiction). */
+	void SetFedResource(uint8 Count) { FedResource = Count; }
+
+	/**
+	 * Serveur : repousse le personnage de Distance (cm) dans Direction (aplatie à l'horizontale).
+	 * Le client propriétaire reçoit le même lancement pour éviter une correction brutale.
+	 */
+	void ApplyKnockback(const FVector& Direction, float Distance);
+
 	/**
 	 * Incantation : appelés par les sorts sur le serveur ET le client propriétaire (prédiction).
 	 * Répliqué aux autres clients pour afficher la barre de cast et l'effet des ennemis.
@@ -147,6 +166,13 @@ protected:
 	/** Non répliqué au propriétaire : il le prédit lui-même. */
 	UPROPERTY(ReplicatedUsing = OnRep_CastInfo, BlueprintReadOnly, Category = "Gen|Cast")
 	FGenCastInfo CastInfo;
+
+	/** Non répliqué au propriétaire : il le prédit lui-même. */
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Resource")
+	uint8 FedResource = 0;
+
+	UFUNCTION(Client, Reliable)
+	void ClientApplyKnockback(FVector_NetQuantize10 LaunchVelocity);
 
 	UFUNCTION()
 	void OnRep_CastInfo();

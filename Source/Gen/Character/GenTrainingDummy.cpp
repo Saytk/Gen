@@ -2,6 +2,7 @@
 
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
 AGenTrainingDummy::AGenTrainingDummy(const FObjectInitializer& ObjectInitializer)
@@ -10,6 +11,9 @@ AGenTrainingDummy::AGenTrainingDummy(const FObjectInitializer& ObjectInitializer
 	// Pas de contrôleur IA : le mannequin reste planté là
 	AutoPossessAI = EAutoPossessAI::Disabled;
 	bRagdollOnDeath = false;
+
+	// Sans contrôleur, le CharacterMovement ne simule rien : nécessaire pour être repoussé
+	GetCharacterMovement()->bRunPhysicsWithNoController = true;
 
 	DummyAbilitySystem = CreateDefaultSubobject<UGenAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	DummyAbilitySystem->SetIsReplicated(true);
