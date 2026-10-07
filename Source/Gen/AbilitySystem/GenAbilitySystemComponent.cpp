@@ -118,13 +118,16 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 
 	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>> AbilitiesToActivate;
 
-	// Sorts "WhileInputActive" : se relancent tant que la touche est maintenue (ex: M1 en auto)
+	// Sorts "WhileInputActive" : se relancent tant que la touche est maintenue (ex: M1 en auto).
+	// La répétition automatique n'interrompt jamais une autre incantation (State.Casting) ;
+	// seul un nouvel appui le fait (via CancelAbilitiesWithTag).
+	const bool bCastingOtherAbility = HasMatchingGameplayTag(GenGameplayTags::State_Casting);
 	for (const FGameplayAbilitySpecHandle& SpecHandle : InputHeldSpecHandles)
 	{
 		if (const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(SpecHandle))
 		{
 			const UGenGameplayAbility* AbilityCDO = Cast<UGenGameplayAbility>(Spec->Ability);
-			if (AbilityCDO && !Spec->IsActive() && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::WhileInputActive)
+			if (AbilityCDO && !Spec->IsActive() && !bCastingOtherAbility && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::WhileInputActive)
 			{
 				AbilitiesToActivate.AddUnique(Spec->Handle);
 			}
