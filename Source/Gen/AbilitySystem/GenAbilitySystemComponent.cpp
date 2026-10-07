@@ -107,6 +107,20 @@ void UGenAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& Inp
 	}
 }
 
+bool UGenAbilitySystemComponent::IsAnotherAbilityCasting(FGameplayAbilitySpecHandle Except) const
+{
+	// Calculé localement (le tag State.Casting répliqué peut écraser le compte prédit côté client)
+	for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		const UGenGameplayAbility* Ability = Cast<UGenGameplayAbility>(Spec.Ability);
+		if (Ability && Spec.Handle != Except && Spec.IsActive() && Ability->GetActivationOwnedTagsRO().HasTagExact(GenGameplayTags::State_Casting))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGamePaused)
 {
 	// Mort ou étourdi : on jette les inputs (les sorts sont de toute façon bloqués par ActivationBlockedTags)
@@ -119,16 +133,20 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>> AbilitiesToActivate;
 
 	// Sorts "WhileInputActive" : se relancent tant que la touche est maintenue (ex: M1 en auto).
-	// La répétition automatique n'interrompt jamais une autre incantation (State.Casting) ;
-	// seul un nouvel appui le fait (via CancelAbilitiesWithTag).
-	const bool bCastingOtherAbility = HasMatchingGameplayTag(GenGameplayTags::State_Casting);
+	// Répétition automatique bloquée pendant l'incantation d'un autre sort ; un nouvel appui passe
+	// (et l'annule via CancelAbilitiesWithTag).
 	for (const FGameplayAbilitySpecHandle& SpecHandle : InputHeldSpecHandles)
 	{
 		if (const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(SpecHandle))
 		{
 			const UGenGameplayAbility* AbilityCDO = Cast<UGenGameplayAbility>(Spec->Ability);
-			if (AbilityCDO && !Spec->IsActive() && !bCastingOtherAbility && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::WhileInputActive)
+			if (AbilityCDO && !Spec->IsActive() && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::WhileInputActive)
 			{
+				const bool bPressedThisFrame = InputPressedSpecHandles.Contains(SpecHandle);
+				if (!bPressedThisFrame && IsAnotherAbilityCasting(SpecHandle))
+				{
+					continue;
+				}
 				AbilitiesToActivate.AddUnique(Spec->Handle);
 			}
 		}

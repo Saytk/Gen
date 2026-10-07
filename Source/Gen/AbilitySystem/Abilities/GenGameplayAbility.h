@@ -35,6 +35,9 @@ class GEN_API UGenGameplayAbility : public UGameplayAbility
 public:
 	UGenGameplayAbility();
 
+	/** Tags posés sur le lanceur tant que le sort est actif (accès en lecture, ActivationOwnedTags est protégé). */
+	const FGameplayTagContainer& GetActivationOwnedTagsRO() const { return ActivationOwnedTags; }
+
 	/** Touche qui déclenche ce sort (InputTag.Ability.*). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Input", meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;

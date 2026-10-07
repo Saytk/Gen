@@ -37,6 +37,9 @@ public:
 	void ProcessAbilityInput(float DeltaTime, bool bGamePaused);
 	void ClearAbilityInput();
 
+	/** Vrai si un autre sort actif (que Except) porte State.Casting dans ses ActivationOwnedTags. */
+	bool IsAnotherAbilityCasting(FGameplayAbilitySpecHandle Except) const;
+
 protected:
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
