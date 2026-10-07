@@ -1,0 +1,19 @@
+# Unreal
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Backup/
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+# IDE
+.vs/
+*.sln
+*.slnx
+*.suo
+*.sdf
+*.VC.db
+*.opendb
+UpgradeLog.htm
+# Claude local
+.claude/settings.local.json
