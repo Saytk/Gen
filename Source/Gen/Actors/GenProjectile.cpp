@@ -3,7 +3,9 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Character/GenCharacterBase.h"
+#include "CollisionQueryParams.h"
 #include "Components/SphereComponent.h"
+#include "Engine/OverlapResult.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
@@ -47,11 +49,28 @@ void AGenProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 	DOREPLIFETIME(AGenProjectile, bExploded);
 	DOREPLIFETIME(AGenProjectile, ImpactLocation);
+	DOREPLIFETIME_CONDITION(AGenProjectile, Speed, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AGenProjectile, ShotScale, COND_InitialOnly);
+}
+
+void AGenProjectile::InitializeShot(const FGenProjectileShotParams& Params)
+{
+	if (Params.Speed > 0.f)
+	{
+		Speed = Params.Speed;
+	}
+	ShotScale = FMath::Max(Params.Scale, 0.1f);
+	ExplosionRadius = FMath::Max(Params.ExplosionRadius, 0.f);
+	KnockbackDistance = FMath::Max(Params.KnockbackDistance, 0.f);
+	SetActorScale3D(FVector(ShotScale));
 }
 
 void AGenProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Clients : l'échelle n'est pas répliquée par le mouvement, on l'applique depuis ShotScale
+	SetActorScale3D(FVector(ShotScale));
 
 	// La vitesse éditée dans le Blueprint prime sur la valeur du constructeur
 	ProjectileMovement->InitialSpeed = Speed;
@@ -126,17 +145,92 @@ void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, A
 	Explode(OtherActor, bFromSweep ? FVector(SweepResult.ImpactPoint) : GetActorLocation());
 }
 
+bool AGenProjectile::IsValidTarget(const AGenCharacterBase* Character) const
+{
+	return Character && !Character->IsDead() && AGenCharacterBase::AreEnemies(GetInstigator(), Character);
+}
+
+void AGenProjectile::AddExplosionTargets(const FVector& Origin, TArray<AGenCharacterBase*>& InOutTargets) const
+{
+	TArray<FOverlapResult> Overlaps;
+	const FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(GenProjectileExplosion), false, this);
+	GetWorld()->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn),
+		FCollisionShape::MakeSphere(ExplosionRadius), QueryParams);
+
+	FCollisionObjectQueryParams BlockingObjects;
+	BlockingObjects.AddObjectTypesToQuery(ECC_WorldStatic);
+	BlockingObjects.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AGenCharacterBase* Character = Cast<AGenCharacterBase>(Overlap.GetActor());
+		if (!Character || InOutTargets.Contains(Character) || !IsValidTarget(Character))
+		{
+			continue;
+		}
+
+		FCollisionQueryParams LineParams(SCENE_QUERY_STAT(GenProjectileExplosionLOS), false, this);
+		LineParams.AddIgnoredActor(Character);
+		if (GetWorld()->LineTraceTestByObjectType(Origin, Character->GetActorLocation(), BlockingObjects, LineParams))
+		{
+			continue; // un mur protège la cible
+		}
+
+		InOutTargets.Add(Character);
+	}
+}
+
+void AGenProjectile::ApplyHit(AGenCharacterBase* Target, const FVector& Origin, bool bDirectHit)
+{
+	if (DamageEffectSpecHandle.IsValid())
+	{
+		if (UAbilitySystemComponent* TargetASC = Target->GetAbilitySystemComponent())
+		{
+			const FHitResult HitResult(Target, nullptr, Origin, -GetActorForwardVector());
+			DamageEffectSpecHandle.Data->GetContext().AddHitResult(HitResult, true);
+			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+		}
+	}
+
+	if (KnockbackDistance > 0.f)
+	{
+		// Coup direct : dans le sens du tir ; éclaboussure : en s'éloignant du centre de l'explosion
+		const FVector Direction = bDirectHit ? GetActorForwardVector() : Target->GetActorLocation() - Origin;
+		Target->ApplyKnockback(Direction, KnockbackDistance);
+	}
+}
+
 void AGenProjectile::Explode(AActor* HitActor, const FVector& Location)
 {
 	UE_LOG(LogGenProjectile, Verbose, TEXT("%s explose sur %s en %s (%.2fs après spawn)"), *GetName(), *GetNameSafe(HitActor), *Location.ToCompactString(), GetGameTimeSinceCreation());
-	if (HitActor && DamageEffectSpecHandle.IsValid())
-	{
-		if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor))
-		{
-			const FHitResult HitResult(HitActor, nullptr, Location, -GetActorForwardVector());
-			DamageEffectSpecHandle.Data->GetContext().AddHitResult(HitResult, true);
 
-			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+	// Centre de l'explosion légèrement en retrait de la surface touchée : les tests de ligne
+	// de vue partent ainsi du bon côté d'un mur
+	const FVector Origin = Location - GetActorForwardVector() * CollisionSphere->GetScaledSphereRadius();
+
+	TArray<AGenCharacterBase*> Targets;
+	AGenCharacterBase* DirectTarget = Cast<AGenCharacterBase>(HitActor);
+	if (IsValidTarget(DirectTarget))
+	{
+		Targets.Add(DirectTarget);
+	}
+	if (ExplosionRadius > 0.f && HitActor)
+	{
+		AddExplosionTargets(Origin, Targets);
+	}
+
+	for (AGenCharacterBase* Target : Targets)
+	{
+		ApplyHit(Target, Origin, Target == DirectTarget);
+	}
+
+	UE_LOG(LogGenProjectile, Verbose, TEXT("%s : %d cible(s) touchée(s)"), *GetName(), Targets.Num());
+
+	if (Targets.Num() > 0 && InstigatorOnHitSpecHandle.IsValid())
+	{
+		if (UAbilitySystemComponent* InstigatorASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetInstigator()))
+		{
+			InstigatorASC->ApplyGameplayEffectSpecToSelf(*InstigatorOnHitSpecHandle.Data.Get());
 		}
 	}
 

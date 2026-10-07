@@ -11,6 +11,18 @@ class UProjectileMovementComponent;
 class USoundBase;
 class USphereComponent;
 
+/** Réglages propres à un tir, fixés par le sort avant FinishSpawning (serveur). */
+struct FGenProjectileShotParams
+{
+	/** 0 = vitesse de la classe. */
+	float Speed = 0.f;
+	float Scale = 1.f;
+	/** 0 = pas d'explosion de zone. */
+	float ExplosionRadius = 0.f;
+	/** 0 = pas de repoussement. */
+	float KnockbackDistance = 0.f;
+};
+
 /**
  * Projectile répliqué. Créé par le serveur (UGenGA_Projectile), il porte le spec du GE de dégâts.
  *
@@ -28,6 +40,14 @@ public:
 	/** Rempli par le sort avant FinishSpawning (serveur uniquement, non répliqué). */
 	UPROPERTY(BlueprintReadWrite, Category = "Projectile", meta = (ExposeOnSpawn = true))
 	FGameplayEffectSpecHandle DamageEffectSpecHandle;
+
+	/** Gains du lanceur (énergie, ressource), appliqués s'il touche au moins un ennemi (serveur). */
+	FGameplayEffectSpecHandle InstigatorOnHitSpecHandle;
+
+	/** Serveur, avant FinishSpawning. */
+	void InitializeShot(const FGenProjectileShotParams& Params);
+
+	float GetSpeed() const { return Speed; }
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -60,7 +80,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UNiagaraComponent> ProjectileFX;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Replicated, Category = "Projectile")
 	float Speed = 1800.f;
 
 	/** Portée max : arrivé au bout, le projectile explose (FX d'impact, sans dégâts). */
@@ -78,6 +98,22 @@ protected:
 
 	UPROPERTY(Replicated)
 	FVector_NetQuantize ImpactLocation;
+
+	/** Échelle du tir (visuel + collision), répliquée à l'apparition. */
+	UPROPERTY(Replicated)
+	float ShotScale = 1.f;
+
+	/** Serveur uniquement. */
+	float ExplosionRadius = 0.f;
+	float KnockbackDistance = 0.f;
+
+	bool IsValidTarget(const class AGenCharacterBase* Character) const;
+
+	/** Ennemis vivants dans le rayon, en ligne de vue depuis Origin (pas à travers les murs). */
+	void AddExplosionTargets(const FVector& Origin, TArray<class AGenCharacterBase*>& InOutTargets) const;
+
+	/** Dégâts + repoussement éventuel sur une cible. */
+	void ApplyHit(class AGenCharacterBase* Target, const FVector& Origin, bool bDirectHit);
 
 private:
 	bool bImpactEffectsPlayed = false;
