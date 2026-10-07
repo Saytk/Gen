@@ -116,5 +116,8 @@ protected:
 	void ApplyHit(class AGenCharacterBase* Target, const FVector& Origin, bool bDirectHit);
 
 private:
+	/** Premier mur (objet qui bloque physiquement un personnage) entre Start et End ; ignore les projectiles et les volumes sans blocage Pawn. */
+	bool FindWallHit(const FVector& Start, const FVector& End, const AActor* IgnoredActor, FHitResult& OutHit) const;
+
 	bool bImpactEffectsPlayed = false;
 };

@@ -150,16 +150,37 @@ bool AGenProjectile::IsValidTarget(const AGenCharacterBase* Character) const
 	return Character && !Character->IsDead() && AGenCharacterBase::AreEnemies(GetInstigator(), Character);
 }
 
+bool AGenProjectile::FindWallHit(const FVector& Start, const FVector& End, const AActor* IgnoredActor, FHitResult& OutHit) const
+{
+	FCollisionObjectQueryParams WallObjects;
+	WallObjects.AddObjectTypesToQuery(ECC_WorldStatic);
+	WallObjects.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+	FCollisionQueryParams LineParams(SCENE_QUERY_STAT(GenProjectileWallTrace), false, this);
+	LineParams.AddIgnoredActor(IgnoredActor);
+
+	TArray<FHitResult> Hits;
+	GetWorld()->LineTraceMultiByObjectType(Hits, Start, End, WallObjects, LineParams);
+	for (const FHitResult& Hit : Hits)
+	{
+		// Un autre projectile ou un volume qui ne bloque pas les Pawns n'est pas un mur
+		const UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		if (Cast<AGenProjectile>(Hit.GetActor()) || !HitComponent || HitComponent->GetCollisionResponseToChannel(ECC_Pawn) != ECR_Block)
+		{
+			continue;
+		}
+		OutHit = Hit;
+		return true;
+	}
+	return false;
+}
+
 void AGenProjectile::AddExplosionTargets(const FVector& Origin, TArray<AGenCharacterBase*>& InOutTargets) const
 {
 	TArray<FOverlapResult> Overlaps;
 	const FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(GenProjectileExplosion), false, this);
 	GetWorld()->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn),
 		FCollisionShape::MakeSphere(ExplosionRadius), QueryParams);
-
-	FCollisionObjectQueryParams BlockingObjects;
-	BlockingObjects.AddObjectTypesToQuery(ECC_WorldStatic);
-	BlockingObjects.AddObjectTypesToQuery(ECC_WorldDynamic);
 
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
@@ -169,9 +190,8 @@ void AGenProjectile::AddExplosionTargets(const FVector& Origin, TArray<AGenChara
 			continue;
 		}
 
-		FCollisionQueryParams LineParams(SCENE_QUERY_STAT(GenProjectileExplosionLOS), false, this);
-		LineParams.AddIgnoredActor(Character);
-		if (GetWorld()->LineTraceTestByObjectType(Origin, Character->GetActorLocation(), BlockingObjects, LineParams))
+		FHitResult WallHit;
+		if (FindWallHit(Origin, Character->GetActorLocation(), Character, WallHit))
 		{
 			continue; // un mur protège la cible
 		}
@@ -206,10 +226,23 @@ void AGenProjectile::Explode(AActor* HitActor, const FVector& Location)
 
 	// Centre de l'explosion légèrement en retrait de la surface touchée : les tests de ligne
 	// de vue partent ainsi du bon côté d'un mur
-	const FVector Origin = Location - GetActorForwardVector() * CollisionSphere->GetScaledSphereRadius();
+	AGenCharacterBase* DirectTarget = Cast<AGenCharacterBase>(HitActor);
+	const FVector Forward = GetActorForwardVector();
+	const float ScaledRadius = CollisionSphere->GetScaledSphereRadius();
+	FVector Origin = Location - Forward * ScaledRadius;
+
+	// Impact sur un mur : la sphère ne fait que chevaucher, le projectile peut déjà être dans le mur.
+	// On retrouve la surface en remontant la trajectoire, et on part 5 cm devant elle
+	if (!DirectTarget)
+	{
+		FHitResult SurfaceHit;
+		if (FindWallHit(Location - Forward * (ScaledRadius + Speed * 0.05f + 50.f), Location, nullptr, SurfaceHit))
+		{
+			Origin = FVector(SurfaceHit.ImpactPoint) - Forward * 5.f;
+		}
+	}
 
 	TArray<AGenCharacterBase*> Targets;
-	AGenCharacterBase* DirectTarget = Cast<AGenCharacterBase>(HitActor);
 	if (IsValidTarget(DirectTarget))
 	{
 		Targets.Add(DirectTarget);
