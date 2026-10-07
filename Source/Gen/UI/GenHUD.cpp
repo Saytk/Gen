@@ -151,6 +151,15 @@ void AGenHUD::DrawLocalPlayerPanel(const AGenCharacterBase* LocalCharacter)
 	DrawBar(X, Y, PanelWidth, 8.f, LocalCharacter->GetEnergy() / MaxEnergy, EnergyColor);
 	Y += 16.f;
 
+	// Ressource du champion (Curffe : flammes du Foyer)
+	const float MaxResource = LocalCharacter->GetMaxResource();
+	if (MaxResource > 0.f)
+	{
+		const FString ResourceText = FString::Printf(TEXT("Flammes : %.0f / %.0f"), LocalCharacter->GetResource(), MaxResource);
+		DrawText(ResourceText, FLinearColor(1.f, 0.6f, 0.2f), X, Y, Font);
+		Y += 22.f;
+	}
+
 	// Sorts + cooldowns
 	const UGenAbilitySystemComponent* ASC = LocalCharacter->GetGenAbilitySystemComponent();
 	if (!ASC || !ASC->AbilityActorInfo.IsValid())
