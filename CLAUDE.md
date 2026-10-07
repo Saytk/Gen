@@ -40,6 +40,14 @@ Quand l'utilisateur annonce qu'il va modifier des assets à la main, proposer de
   signaler tout conflit avec le budget ou les tests de lisibilité au lieu de l'appliquer en silence,
   et ajouter une ligne au change log.
 
+## Interface : `Docs/UI_Guidelines.md`
+
+- Avant tout travail d'UI (HUD, barres au-dessus des personnages, télégraphes, menus, widgets UMG/CommonUI,
+  remplacement de `AGenHUD`), lire `Docs/UI_Guidelines.md` : tokens (couleurs, typo, espacements),
+  disposition du HUD, specs des composants, animations, accessibilité, règles d'implémentation Unreal.
+- Aucun widget ne code en dur une couleur, une police ou une taille : tout passe par les tokens.
+- Toute PR d'UI passe la checklist du §9. En cas de conflit, `Docs/ArtBible.md` l'emporte.
+
 ## Exceptions propres à ce projet (prioritaires sur le guide VibeUE ci-dessous)
 
 - Ne PAS lancer `Plugins/VibeUE/BuildAndLaunchGame.ps1` : il tue l'éditeur de force (taskkill /F)
