@@ -23,4 +23,6 @@ namespace GenGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage, "SetByCaller.Damage", "Degats passes au GE de degats");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Cooldown, "SetByCaller.Cooldown", "Duree passee au GE de cooldown");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_MoveSpeedMultiplier, "SetByCaller.MoveSpeedMultiplier", "Multiplicateur de vitesse (ex: 0.5 = ralenti de moitie)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Energy, "SetByCaller.Energy", "Energie gagnee (negatif = depensee)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Resource, "SetByCaller.Resource", "Ressource du champion gagnee (negatif = depensee), ex : flammes de Curffe");
 }

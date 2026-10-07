@@ -10,8 +10,10 @@ UGenAttributeSet::UGenAttributeSet()
 	// instantané "DefaultAttributes" via StartupEffects sur le personnage.
 	InitHealth(200.f);
 	InitMaxHealth(200.f);
-	InitEnergy(0.f);
+	InitEnergy(25.f); // Chaque manche commence à 25 (guidelines §4.1)
 	InitMaxEnergy(100.f);
+	InitResource(0.f);
+	InitMaxResource(0.f);
 	InitMoveSpeed(550.f);
 	InitIncomingDamage(0.f);
 	InitIncomingHealing(0.f);
@@ -25,6 +27,8 @@ void UGenAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME_CONDITION_NOTIFY(UGenAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UGenAttributeSet, Energy, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UGenAttributeSet, MaxEnergy, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UGenAttributeSet, Resource, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UGenAttributeSet, MaxResource, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UGenAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
 }
 
@@ -43,6 +47,14 @@ void UGenAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, float
 		NewValue = FMath::Clamp(NewValue, 0.f, GetMaxEnergy());
 	}
 	else if (Attribute == GetMaxEnergyAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 0.f);
+	}
+	else if (Attribute == GetResourceAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.f, GetMaxResource());
+	}
+	else if (Attribute == GetMaxResourceAttribute())
 	{
 		NewValue = FMath::Max(NewValue, 0.f);
 	}
@@ -78,6 +90,10 @@ void UGenAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, 
 	else if (Attribute == GetMaxEnergyAttribute() && ASC && GetEnergy() > NewValue)
 	{
 		ASC->ApplyModToAttribute(GetEnergyAttribute(), EGameplayModOp::Override, NewValue);
+	}
+	else if (Attribute == GetMaxResourceAttribute() && ASC && GetResource() > NewValue)
+	{
+		ASC->ApplyModToAttribute(GetResourceAttribute(), EGameplayModOp::Override, NewValue);
 	}
 
 	// Réinitialise le flag de mort quand la vie remonte (respawn, résurrection...)
@@ -151,4 +167,14 @@ void UGenAttributeSet::OnRep_MaxEnergy(const FGameplayAttributeData& OldValue)
 void UGenAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UGenAttributeSet, MoveSpeed, OldValue);
+}
+
+void UGenAttributeSet::OnRep_Resource(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UGenAttributeSet, Resource, OldValue);
+}
+
+void UGenAttributeSet::OnRep_MaxResource(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UGenAttributeSet, MaxResource, OldValue);
 }

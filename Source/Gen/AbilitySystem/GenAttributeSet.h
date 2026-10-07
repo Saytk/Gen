@@ -53,6 +53,18 @@ public:
 	FGameplayAttributeData MaxEnergy;
 	ATTRIBUTE_ACCESSORS_BASIC(UGenAttributeSet, MaxEnergy)
 
+	/**
+	 * Ressource propre au champion (son "état" unique, cf. guidelines §5). Curffe : ses flammes.
+	 * MaxResource vaut 0 pour un champion sans ressource : Resource reste alors à 0.
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Resource, Category = "Attributes|Resource")
+	FGameplayAttributeData Resource;
+	ATTRIBUTE_ACCESSORS_BASIC(UGenAttributeSet, Resource)
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxResource, Category = "Attributes|Resource")
+	FGameplayAttributeData MaxResource;
+	ATTRIBUTE_ACCESSORS_BASIC(UGenAttributeSet, MaxResource)
+
 	/** Vitesse de déplacement, appliquée au CharacterMovement (permet slows/haste via GE). */
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MoveSpeed, Category = "Attributes|Movement")
 	FGameplayAttributeData MoveSpeed;
@@ -80,6 +92,12 @@ protected:
 
 	UFUNCTION()
 	void OnRep_MaxEnergy(const FGameplayAttributeData& OldValue);
+
+	UFUNCTION()
+	void OnRep_Resource(const FGameplayAttributeData& OldValue);
+
+	UFUNCTION()
+	void OnRep_MaxResource(const FGameplayAttributeData& OldValue);
 
 	UFUNCTION()
 	void OnRep_MoveSpeed(const FGameplayAttributeData& OldValue);

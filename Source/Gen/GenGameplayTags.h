@@ -34,4 +34,6 @@ namespace GenGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Damage);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Cooldown);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_MoveSpeedMultiplier);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Energy);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Resource);
 }
