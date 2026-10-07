@@ -16,6 +16,21 @@ matériaux, PIE, profiling...) :
 
 Le code C++ (Source/Gen) s'édite normalement avec les outils fichiers ; VibeUE ne sert pas à ça.
 
+## Verrouillage Git LFS des assets
+
+Les `.uasset` et `.umap` sont `lockable` (voir `.gitattributes`) : deux personnes travaillent sur le
+projet et ces fichiers ne se fusionnent pas. Avant de modifier un asset (via VibeUE ou autrement) :
+
+1. `git pull` pour partir de la dernière version.
+2. `git lfs lock <chemin>` sur chaque `.uasset` / `.umap` qui va être modifié ou créé à la place
+   d'un fichier existant. Si un fichier est déjà verrouillé par quelqu'un d'autre (`git lfs locks`),
+   s'arrêter et prévenir l'utilisateur — ne jamais utiliser `git lfs unlock --force` sans son accord.
+3. Faire la modification.
+4. Après le commit et le push, `git lfs unlock <chemin>` sur ces fichiers. Si l'utilisateur ne veut
+   pas encore committer, garder les verrous et le lui rappeler dans le récapitulatif.
+
+Quand l'utilisateur annonce qu'il va modifier des assets à la main, proposer de les verrouiller.
+
 ## Exceptions propres à ce projet (prioritaires sur le guide VibeUE ci-dessous)
 
 - Ne PAS lancer `Plugins/VibeUE/BuildAndLaunchGame.ps1` : il tue l'éditeur de force (taskkill /F)
