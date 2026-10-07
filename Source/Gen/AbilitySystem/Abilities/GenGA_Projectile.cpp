@@ -27,13 +27,8 @@ UGenGA_Projectile::UGenGA_Projectile()
 
 void UGenGA_Projectile::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
-	{
-		GEN_ABILITY_LOG(Verbose, "CommitAbility a échoué");
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
+	// Pas de CommitAbility ici : le cooldown et le coût ne sont appliqués qu'au lancer
+	// (OnTargetDataReady). CanActivateAbility les a déjà vérifiés avant l'activation.
 	GEN_ABILITY_LOG(Verbose, "Activé (clé %s), incantation %.2fs", *ActivationInfo.GetActivationPredictionKey().ToString(), CastTime);
 
 	if (CastTime > 0.f)
@@ -144,6 +139,16 @@ void UGenGA_Projectile::OnTargetDataReady(const FGameplayAbilityTargetDataHandle
 	if (!Avatar || !Hit)
 	{
 		GEN_ABILITY_LOG(Warning, "Visée invalide (avatar=%d, hit=%d)", Avatar != nullptr, Hit != nullptr);
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	// Le sort part : on applique cooldown et coût maintenant, pour qu'une incantation
+	// interrompue (annulée, étourdi, mort) ne coûte rien. Le client est dans la fenêtre de
+	// prédiction ouverte par la tâche de visée, le serveur dans celle de la clé reçue.
+	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
+	{
+		GEN_ABILITY_LOG(Verbose, "CommitAbility a échoué au lancer");
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}

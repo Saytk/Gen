@@ -14,11 +14,13 @@ class UNiagaraSystem;
  * Sort de projectile tiré vers le curseur (ex: boule de feu).
  *
  * Déroulé :
- *  1. CommitAbility (vérifie/applique le cooldown, et un coût si un CostGameplayEffect est défini)
- *  2. Si CastTime > 0 : incantation (barre de cast, ralenti), annulée si le lanceur est étourdi ou meurt
- *  3. Le client récupère le point visé sous la souris et l'envoie au serveur (target data)
+ *  1. Si CastTime > 0 : incantation (barre de cast, ralenti), annulée si le lanceur est étourdi ou meurt
+ *     (ou par un autre sort via CancelAbilitiesWithTag)
+ *  2. Le client récupère le point visé sous la souris et l'envoie au serveur (target data)
  *     => on vise à la FIN de l'incantation, pas au début
  *     (ChargeMontage, optionnel, est joué pendant toute l'incantation)
+ *  3. CommitAbility au lancer : cooldown (et coût éventuel) appliqués seulement si l'incantation
+ *     va jusqu'au bout. Une incantation interrompue ne coûte rien.
  *  4. Le personnage se tourne vers la cible, joue un montage optionnel
  *  5. Le serveur fait apparaître le projectile répliqué, porteur du GE de dégâts
  */
