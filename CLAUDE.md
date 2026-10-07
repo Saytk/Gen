@@ -31,6 +31,15 @@ projet et ces fichiers ne se fusionnent pas. Avant de modifier un asset (via Vib
 
 Quand l'utilisateur annonce qu'il va modifier des assets à la main, proposer de les verrouiller.
 
+## Direction artistique : `Docs/ArtBible.md`
+
+- Avant tout travail visuel (matériaux, VFX, éclairage, personnages, UI), lire les sections concernées de
+  `Docs/ArtBible.md`. Le budget de performance (§3.0) prime sur toutes les autres règles.
+- Quand l'utilisateur donne un avis sur un rendu (« trop saturé », « j'aime ce feu »...), appliquer la
+  procédure du §13 : consigner l'avis dans le taste log, modifier les règles concernées (marquées [TASTE]),
+  signaler tout conflit avec le budget ou les tests de lisibilité au lieu de l'appliquer en silence,
+  et ajouter une ligne au change log.
+
 ## Exceptions propres à ce projet (prioritaires sur le guide VibeUE ci-dessous)
 
 - Ne PAS lancer `Plugins/VibeUE/BuildAndLaunchGame.ps1` : il tue l'éditeur de force (taskkill /F)
