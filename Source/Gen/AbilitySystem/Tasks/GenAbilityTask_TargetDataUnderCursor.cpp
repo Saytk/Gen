@@ -2,14 +2,17 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
+#include "AbilitySystem/GenTargetData.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/GenPlayerController.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGenTargetData, Log, All);
 
-UGenAbilityTask_TargetDataUnderCursor* UGenAbilityTask_TargetDataUnderCursor::CreateTargetDataUnderCursor(UGameplayAbility* OwningAbility)
+UGenAbilityTask_TargetDataUnderCursor* UGenAbilityTask_TargetDataUnderCursor::CreateTargetDataUnderCursor(UGameplayAbility* OwningAbility, uint8 FedCount)
 {
-	return NewAbilityTask<UGenAbilityTask_TargetDataUnderCursor>(OwningAbility);
+	UGenAbilityTask_TargetDataUnderCursor* Task = NewAbilityTask<UGenAbilityTask_TargetDataUnderCursor>(OwningAbility);
+	Task->FedCount = FedCount;
+	return Task;
 }
 
 void UGenAbilityTask_TargetDataUnderCursor::Activate()
@@ -63,8 +66,9 @@ void UGenAbilityTask_TargetDataUnderCursor::SendCursorData()
 	CursorHit.TraceStart = Avatar ? Avatar->GetActorLocation() : CursorLocation;
 	CursorHit.TraceEnd = CursorLocation;
 
-	FGameplayAbilityTargetData_SingleTargetHit* Data = new FGameplayAbilityTargetData_SingleTargetHit();
+	FGenTargetData_Aim* Data = new FGenTargetData_Aim();
 	Data->HitResult = CursorHit;
+	Data->FedCount = FedCount;
 
 	FGameplayAbilityTargetDataHandle DataHandle;
 	DataHandle.Add(Data);

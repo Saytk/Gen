@@ -21,7 +21,7 @@ class GEN_API UGenAbilityTask_TargetDataUnderCursor : public UAbilityTask
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Tasks", meta = (DisplayName = "Target Data Under Cursor", HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "true"))
-	static UGenAbilityTask_TargetDataUnderCursor* CreateTargetDataUnderCursor(UGameplayAbility* OwningAbility);
+	static UGenAbilityTask_TargetDataUnderCursor* CreateTargetDataUnderCursor(UGameplayAbility* OwningAbility, uint8 FedCount = 0);
 
 	UPROPERTY(BlueprintAssignable)
 	FGenCursorTargetDataSignature ValidData;
@@ -30,6 +30,9 @@ protected:
 	virtual void Activate() override;
 
 private:
+	/** Unités nourries par le sort, transmises au serveur avec la visée. */
+	uint8 FedCount = 0;
+
 	void SendCursorData();
 	void OnTargetDataReplicatedCallback(const FGameplayAbilityTargetDataHandle& DataHandle, FGameplayTag ActivationTag);
 };
