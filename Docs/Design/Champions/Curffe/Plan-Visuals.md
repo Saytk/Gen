@@ -1521,7 +1521,7 @@ def make(name, anim, start, end, slot, sections=None, loop_last=False, root_moti
 
 | Montage | Slot | Source (placeholder) | `L` | Rate at runtime |
 |---|---|---|---|---|
-| `AM_Fireball_Charge` | UpperBody | `AS_Fireball_Cast`, start → release | 11 f (0.367 s) | `L / 0.35` ≈ 1.05 |
+| `AM_Fireball_Charge` | UpperBody | `AS_Fireball_Cast`, start → release | 11 f (0.367 s) | `L / 0.40` ≈ 0.92 (cast 0.40 s since 2026-10-08) |
 | `AM_Fireball` or `AM_Fireball_Cast` | UpperBody | release → end | ≤ 0.3 s after the throw | 1 |
 | `AM_Curffe_FeedHand` | UpperBody | first held pose of `AS_GreatFireball_Cast` (or `MM_ChargedAttack` charge part) × 3 sections | 3 × 0.30 s | `0.30 / I` (1, or 2 ablaze) |
 | `AM_GreatFireball_Charge` | UpperBody | `AS_GreatFireball_Cast`, start → release | 15 f (0.5 s) | `L / 0.5` = 1 |

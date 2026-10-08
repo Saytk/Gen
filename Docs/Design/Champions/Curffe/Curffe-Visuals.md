@@ -200,7 +200,7 @@ self-centred cast telegraph of Living Flame. Combustion's 0.5 s is a normal cast
 
 | Spell | VisualWeight (tier) | Caster indicator | Others see | Key VFX beats | Montages (phases) and timing |
 |---|---|---|---|---|---|
-| **LMB Fireball** | 2 (Filler) | None by default; optional lane (setting) | Hand ember, projectile + ground marker | Hand ember 0.35 s · head + 2-layer trail · small impact ≤ 0.2 s | Charge `L/0.35` → Cast (rate 1) |
+| **LMB Fireball** | 2 (Filler) | None by default; optional lane (setting) | Hand ember, projectile + ground marker | Hand ember 0.40 s · head + 2-layer trail · small impact ≤ 0.2 s | Charge `L/0.40` → Cast (rate 1) |
 | **Pyroblast** (F active) | 4 (Skillshot) proposed ⚑ F12 | Same as LMB | Bigger hand ember, bigger head, ground marker | Larger head · 1.2 m splash impact | Reuses Fireball montages |
 | **RMB Great Fireball** | 5 / 5 / 7 / 8 at N = 0–3 | Lane (width = hitbox × scale(N)) + splash cap from N = 2 + spokes at N = 3 | Feed pose, flames leaving, hand charge growing per threshold, cast bar ticks; projectile size | Feed pops · charge · core scaling 1 → max · splash flash 1.5 m (N ≥ 2) · light (N ≥ 2) | Feed (3 × 0.3 s) → Charge `L/0.5` → Cast |
 | **Space Meteor Leap** | 4 / 5 / 5 / 6 | Range arc 7 m + landing circle 1.5 m + N ring stubs | Crouch-gather pose, flames to the feet, leap arc + trail, **landing circle 1.5 m during the flight** (decision 2026-10-08) (v1: fed flames orbiting tight in flight) | Gather pops · take-off burst · trail · landing ring 1.5 m · ring Fireballs | Feed → Take-off `L/0.1` → Air `L/0.45` (root motion × 0) → Land |
@@ -230,7 +230,7 @@ self-centred cast telegraph of Living Flame. Combustion's 0.5 s is a normal cast
 
 | Beat | Asset | Technique | Layer | Budget |
 |---|---|---|---|---|
-| Hand ember (cast, 0.35 s), on `hand_r` | `NS_Curffe_HandCharge` (create; duplicate of `NS_ST_Fireball_Cast`), small size | Erode sprite, pale core flash on its first 0.1 s, then a held glow ≤ 0.8× bloom threshold | Primary | ≤ 12 particles, no light |
+| Hand ember (cast, 0.40 s), on `hand_r` | `NS_Curffe_HandCharge` (create; duplicate of `NS_ST_Fireball_Cast`), small size | Erode sprite, pale core flash on its first 0.1 s, then a held glow ≤ 0.8× bloom threshold | Primary | ≤ 12 particles, no light |
 | Projectile head | `NS_Curffe_Fireball` (create from `NS_ST_Fireball`, repointed to `MI_VFX_Erode_Fire`) | Bright head at the front, tapered streak stretched along velocity (rule 5); head radius = collision radius | Primary | Filler: ≤ 30 particles total, V ≤ 85 %, S ≤ 85 %, never blooms |
 | Trail | same system | 2-layer ribbon: dark `#7A5230` back, amber front | Secondary | Overhang 0 % |
 | Ground marker | `AGenProjectile` ground marker (C++), `MI_Telegraph_Marker` | Team disc (ally solid) or chevron (enemy) + keyline, under the projectile, scales with it | Team channel | 1 draw call |
@@ -243,7 +243,7 @@ self-centred cast telegraph of Living Flame. Combustion's 0.5 s is a normal cast
   where its release frame sits and splits it into `AM_Fireball_Charge` (anticipation: arm drawn back, flame in the open
   hand, held) and keeps `AM_Fireball` as the Cast montage if it is release-first; otherwise `AM_Fireball_Cast` is made
   from the release part. No asset is renamed (redirectors and locks).
-- **Timing:** Charge rate = `L_charge / 0.35`. Author `L_charge` = 11 frames (0.367 s) → rate 1.05. Cast rate 1, throw on
+- **Timing:** Charge rate = `L_charge / 0.40` (cast 0.40 s since 2026-10-08, user decision). Author `L_charge` = 11 frames (0.367 s) → rate 0.92. Cast rate 1, throw on
   frames 0–2, follow-through ≤ 0.25 s (the next auto-repeat Charge replaces it).
 - **Pyroblast** reuses both montages; the bigger hand ember sells the difference.
 - **Audio hooks:** `Fireball_Cast` (light whoosh, on Charge start), `Fireball_Release` (cue notify), `Fireball_Impact`.
