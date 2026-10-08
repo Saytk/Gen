@@ -44,6 +44,7 @@ void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 	FedCount = 0;
 	FedVisualCount = 0;
 	FeedSlotsAtPress = 0;
+	ActiveFeedInterval = FeedInterval; // figé par StartFeeding (nourrissage rapide)
 	ServerFeedElapsed = 0.f;
 	ReportedFedCount = INDEX_NONE;
 	bInterruptWatchStarted = false;
@@ -180,7 +181,7 @@ int32 UGenGA_Cast::ReconcileFedVisual()
 	// Même borne de temps que le lancer : pendant le nourrissage le temps écoulé, ensuite celui mesuré à la synchro
 	const float Elapsed = bIsFeeding ? GetWorld()->GetTimeSeconds() - FeedStartTime : ServerFeedElapsed;
 	const int32 Shown = GenFeeding::ReconcileDisplayedFed(FedVisualCount, FedCount, ReportedFedCount,
-		FMath::Min(MaxFeed, FeedSlotsAtPress), Available, Elapsed, FeedInterval);
+		FMath::Min(MaxFeed, FeedSlotsAtPress), Available, Elapsed, ActiveFeedInterval);
 	SetFedVisual(Shown);
 	return Shown;
 }
@@ -196,6 +197,12 @@ void UGenGA_Cast::StartFeeding()
 {
 	bIsFeeding = true;
 	FeedStartTime = GetWorld()->GetTimeSeconds();
+
+	// Intervalle figé pour tout ce nourrissage (Combustion qui commence ou finit pendant l'appui n'y change rien).
+	// Chaque machine prend le sien à son activation ; la tolérance de ValidateFedCount absorbe un écart dans la latence.
+	const UAbilitySystemComponent* FeedASC = GetAbilitySystemComponentFromActorInfo();
+	ActiveFeedInterval = GenFeeding::GetFeedInterval(FeedInterval, FeedASC && FeedASC->HasMatchingGameplayTag(GenGameplayTags::State_FastFeeding));
+
 	// Unités disponibles à l'appui : autant de crans sur la barre, et jamais plus d'unités nourries
 	// (une flamme régénérée pendant l'appui ne s'ajoute pas)
 	FeedSlotsAtPress = GetAvailableFeed();
@@ -207,7 +214,7 @@ void UGenGA_Cast::StartFeeding()
 	{
 		// Une seule barre de l'appui au lancer : un cran par unité disponible, repliée à la fin du
 		// nourrissage (OnFeedSynced) puis prolongée par l'incantation sans redémarrer
-		Character->StartFeedCast(GetClass(), FeedSlotsAtPress, FeedInterval, CastTime, CastFX, CastFXSocket);
+		Character->StartFeedCast(GetClass(), FeedSlotsAtPress, ActiveFeedInterval, CastTime, CastFX, CastFXSocket);
 	}
 
 	if (IsLocallyControlled())
@@ -245,7 +252,7 @@ void UGenGA_Cast::ScheduleFeedTick()
 	// Calé sur le début du nourrissage : les retards des ticks ne s'additionnent pas.
 	// Serveur pour un client distant : estimation volontairement en retard (le client la corrige vers le haut).
 	const float EstimateStart = FeedStartTime + (IsServerForRemoteClient() ? GenFeeding::ServerEstimateLag : 0.f);
-	const float Delay = GenFeeding::GetNextFeedTickDelay(EstimateStart, FedCount, FeedInterval, GetWorld()->GetTimeSeconds());
+	const float Delay = GenFeeding::GetNextFeedTickDelay(EstimateStart, FedCount, ActiveFeedInterval, GetWorld()->GetTimeSeconds());
 	FeedTickTask = UAbilityTask_WaitDelay::WaitDelay(this, Delay);
 	FeedTickTask->OnFinish.AddDynamic(this, &ThisClass::OnFeedTick);
 	FeedTickTask->ReadyForActivation();
@@ -305,7 +312,7 @@ void UGenGA_Cast::StopFeedingLocal()
 	// Seuil déjà franchi mais tick pas encore traité (le relâché est lu avant le minuteur de cette image) :
 	// l'unité est acquise, la barre l'a déjà montrée. Le serveur l'accepte (borne de temps + 1).
 	const int32 Limit = FMath::Min(GetAvailableFeed(), FeedSlotsAtPress);
-	if (FedCount < Limit && FeedInterval > 0.f && GetWorld()->GetTimeSeconds() >= FeedStartTime + (FedCount + 1) * FeedInterval)
+	if (FedCount < Limit && ActiveFeedInterval > 0.f && GetWorld()->GetTimeSeconds() >= FeedStartTime + (FedCount + 1) * ActiveFeedInterval)
 	{
 		++FedCount;
 		SetFedVisual(FedCount);
@@ -668,7 +675,7 @@ int32 UGenGA_Cast::ResolveFedCount(const FGameplayAbilityTargetData* Data, bool 
 	// Serveur pour un client distant : le client ne peut annoncer ni plus que ce qu'il a, ni plus que le temps écoulé
 	if (IsServerForRemoteClient())
 	{
-		const int32 Validated = GenFeeding::ValidateFedCount(Reported, FeedCap, Available, ServerFeedElapsed, FeedInterval);
+		const int32 Validated = GenFeeding::ValidateFedCount(Reported, FeedCap, Available, ServerFeedElapsed, ActiveFeedInterval);
 		if (!bLog)
 		{
 			return Validated;
@@ -738,7 +745,12 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 		return false;
 	}
 
-	SpendResource(Fed);
+	// Flammes illimitées (State.FreeResource, ex. Combustion) : les unités nourries reviennent au Foyer
+	const UAbilitySystemComponent* OwnerASC = GetAbilitySystemComponentFromActorInfo();
+	if (!OwnerASC || !OwnerASC->HasMatchingGameplayTag(GenGameplayTags::State_FreeResource))
+	{
+		SpendResource(Fed);
+	}
 	SetFedVisual(0);
 	bReleased = true;
 

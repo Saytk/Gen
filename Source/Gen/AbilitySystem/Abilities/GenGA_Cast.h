@@ -262,6 +262,11 @@ private:
 	bool bReleased = false;
 	bool bCastLockApplied = false;
 	float FeedStartTime = 0.f;
+	/**
+	 * Intervalle retenu au début du nourrissage (rapide sous State.FastFeeding), sur chaque machine. Posé par StartFeeding.
+	 * Sert aux ticks, à la barre de cast et à la validation du serveur : jamais FeedInterval directement pendant un sort.
+	 */
+	float ActiveFeedInterval = 0.f;
 	/** Serveur : durée du nourrissage mesurée entre l'activation et le signal du client. */
 	float ServerFeedElapsed = 0.f;
 	/** Serveur : compte brut annoncé par le client (ServerReportFedResource), sinon INDEX_NONE. */

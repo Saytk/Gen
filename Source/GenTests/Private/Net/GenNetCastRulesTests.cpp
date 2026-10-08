@@ -274,6 +274,68 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 		});
 	}
 
+	// --- Nourrissage rapide et ressource gratuite (Plan 3 Task 2) ------------------------------------------
+
+	/** Tag lâche (non répliqué) posé sur le serveur et le client 0, comme le ferait un GE de Combustion des deux côtés. */
+	void QueueLooseTagOnCaster(const TCHAR* TagName)
+	{
+		const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(TagName));
+		Network
+			.ThenServer(TEXT("Serveur : tag sur le lanceur"), [this, Tag](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsTrue(Tag.IsValid(), TEXT("Tag inconnu")));
+				ServerCasterASC->AddLooseGameplayTag(Tag);
+			})
+			.ThenClient(TEXT("Client 0 : tag sur son lanceur"), 0, [Tag](FBasePIENetworkComponentState& Client)
+			{
+				GetLocalGenASC(Client)->AddLooseGameplayTag(Tag);
+			});
+	}
+
+	/**
+	 * State.FastFeeding : seuils à 0.15 / 0.3 / 0.45 s. Touche tenue 0.6 s : 3 flammes (au rythme normal : 2 au plus).
+	 * Le serveur valide sur SON intervalle figé au début du nourrissage : au rythme normal il corrigerait 3 -> 2
+	 * (borne de temps floor(0.45 / 0.3) + 1), donc 3 flammes dépensées prouvent la validation sur l'intervalle rapide.
+	 */
+	TEST_METHOD(GreatFireball_FastFeeding_ThreeFlamesValidatedOnTheFastInterval)
+	{
+		QueueSetup();
+		QueueLooseTagOnCaster(TEXT("State.FastFeeding"));
+		Network.ThenClient(TEXT("Client 0 : appuie sur la grande boule de feu"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, true); });
+		QueueClientWait(TEXT("Client 0 : touche tenue 0.6 s"), 0.6f);
+		Network
+			.ThenClient(TEXT("Client 0 : relâche (3 flammes)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
+			.UntilServer(TEXT("Serveur : projectile apparu"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : 3 flammes dépensées, sans correction"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				ASSERT_THAT(IsNear(MaxFlames - 3.f, FlamesAtSpawn, 0.01f, TEXT("Exactement 3 flammes, validées sur l'intervalle rapide")));
+			});
+	}
+
+	/** State.FreeResource : 2 flammes nourries, le sort part avec ses 2 seuils et son cooldown, le Foyer garde ses flammes. */
+	TEST_METHOD(GreatFireball_FreeResource_FedTwo_NoFlameSpent)
+	{
+		QueueSetup();
+		QueueLooseTagOnCaster(TEXT("State.FreeResource"));
+		Network.ThenClient(TEXT("Client 0 : appuie sur la grande boule de feu"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, true); });
+		QueueClientWait(TEXT("Client 0 : touche tenue 0.75 s"), 0.75f);
+		Network
+			.ThenClient(TEXT("Client 0 : relâche (2 flammes)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
+			.UntilServer(TEXT("Serveur : projectile apparu"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : cooldown, aucune flamme dépensée"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				ASSERT_THAT(IsTrue(bCooldownAtSpawn, TEXT("Le sort est bien lancé (cooldown)")));
+				ASSERT_THAT(IsNear(MaxFlames, FlamesAtSpawn, 0.01f, TEXT("Flammes illimitées : rien de dépensé")));
+				ASSERT_THAT(AreEqual(0, ServerCaster->GetFedResource(), TEXT("Plus aucune flamme en cours de nourrissage")));
+			})
+			.UntilClient(TEXT("Client 0 : Foyer plein (pas de dépense prédite restée)"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				return FMath::IsNearlyEqual(GetAttribute(GetLocalGenASC(Client), UGenAttributeSet::GetResourceAttribute()), MaxFlames, 0.01f);
+			}, DefaultWait());
+	}
+
 	/** Annulé pendant le nourrissage (EndAbility annulé, répliqué) : rien de payé. */
 	TEST_METHOD(GreatFireball_CancelledDuringFeed_NoCost)
 	{
