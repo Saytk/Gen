@@ -104,7 +104,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Status")
 	bool IsStatusFlashing(FGameplayTag Tag) const;
 
-	/** Système Niagara de l'état Tag actif en ce moment (lu par les tests et le PIE). */
+	/**
+	 * Système Niagara de l'état Tag demandé en ce moment (lu par les tests et le PIE). Le composant n'existe que sur une
+	 * machine qui peut rendre (FApp::CanEverRender : jamais en -nullrhi), la demande suit le tag partout.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Gen|Status")
 	bool IsStatusSystemActive(FGameplayTag Tag) const;
 
@@ -130,6 +133,9 @@ private:
 	/** Systèmes en cours, par état (nul quand il est désactivé : le composant retourne au pool). */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UNiagaraComponent>> Systems;
+
+	/** Système demandé par état (tag présent et System renseigné). */
+	TArray<bool> SystemWanted;
 
 	/** Matériaux d'origine du corps, gardés tant qu'un OwnerMeshMaterial est imposé. */
 	UPROPERTY(Transient)

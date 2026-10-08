@@ -59,6 +59,7 @@ void UGenStatusVisualsComponent::Bind(UAbilitySystemComponent* InASC, const TArr
 		Shapes.Add(Shape);
 		ShapeMIDs.Add(MID);
 		Systems.Add(nullptr);
+		SystemWanted.Add(false);
 		Shown.Add(false);
 		Flashing.Add(false);
 		FlashTimers.AddDefaulted();
@@ -108,6 +109,7 @@ void UGenStatusVisualsComponent::Unbind()
 	Shapes.Reset();
 	ShapeMIDs.Reset();
 	Systems.Reset();
+	SystemWanted.Reset();
 	Shown.Reset();
 	Flashing.Reset();
 	FlashTimers.Reset();
@@ -141,7 +143,7 @@ bool UGenStatusVisualsComponent::IsStatusSystemActive(FGameplayTag Tag) const
 {
 	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
 	{
-		if (Visuals[Index].Tag == Tag && Systems.IsValidIndex(Index) && Systems[Index])
+		if (Visuals[Index].Tag == Tag && SystemWanted.IsValidIndex(Index) && SystemWanted[Index])
 		{
 			return true;
 		}
@@ -219,6 +221,7 @@ void UGenStatusVisualsComponent::SetSystemActive(int32 Index, bool bActive)
 		return;
 	}
 
+	SystemWanted[Index] = bActive && Visuals[Index].System != nullptr;
 	if (!bActive)
 	{
 		// Désactivé, pas détruit : les particules finissent leur vie, puis le composant retourne au pool (AutoRelease)
@@ -239,8 +242,10 @@ void UGenStatusVisualsComponent::SetSystemActive(int32 Index, bool bActive)
 	// Attaché au corps (socket) s'il y en a un, sinon au composant (centre du personnage). Pool : Art Bible §7.8
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	USceneComponent* AttachTo = Character && Character->GetMesh() ? static_cast<USceneComponent*>(Character->GetMesh()) : this;
+	// Pas de pré-élimination au lancement : un état qui commence hors de l'écran doit s'afficher quand le personnage y
+	// revient (l'Effect Type gère l'élimination en cours de vie)
 	Systems[Index] = UNiagaraFunctionLibrary::SpawnSystemAttached(Template, AttachTo, Visuals[Index].Socket, FVector::ZeroVector, FRotator::ZeroRotator,
-		EAttachLocation::SnapToTarget, /*bAutoDestroy*/ false, /*bAutoActivate*/ true, ENCPoolMethod::AutoRelease);
+		FVector::OneVector, EAttachLocation::SnapToTarget, /*bAutoDestroy*/ false, ENCPoolMethod::AutoRelease, /*bAutoActivate*/ true, /*bPreCullCheck*/ false);
 }
 
 void UGenStatusVisualsComponent::SetFlash(int32 Index, bool bFlash)
