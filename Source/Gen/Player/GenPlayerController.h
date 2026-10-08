@@ -25,6 +25,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Gen|Input")
 	bool GetCursorLocationOnPlane(float PlaneZ, FVector& OutLocation) const;
 
+	const UGenInputConfig* GetInputConfig() const { return InputConfig; }
+
 	/** Tests PIE : viser DebugAimLocation au lieu du curseur (ignoré en Shipping). */
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "Gen|Debug")
 	bool bDebugAimOverride = false;

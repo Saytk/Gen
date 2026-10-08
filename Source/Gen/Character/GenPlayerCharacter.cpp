@@ -6,6 +6,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Player/GenPlayerController.h"
 #include "Player/GenPlayerState.h"
+#include "UI/GenUISubsystem.h"
 
 AGenPlayerCharacter::AGenPlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -69,6 +70,26 @@ void AGenPlayerCharacter::InitAbilitySystemFromPlayerState()
 	AbilitySystemComponent->InitAbilityActorInfo(PS, this);
 
 	OnAbilitySystemInitialized();
+
+	// Interface locale (aucun widget sur un serveur dédié ni pour les autres joueurs)
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		// Sur un client, OnRep_PlayerState peut arriver avant que Controller soit répliqué :
+		// on se rabat alors sur le propriétaire du PlayerState (le PC n'existe que chez son joueur).
+		const APlayerController* PC = GetController<APlayerController>();
+		if (!PC)
+		{
+			PC = PS->GetPlayerController();
+		}
+
+		if (PC && PC->IsLocalController())
+		{
+			if (UGenUISubsystem* UISubsystem = UGenUISubsystem::Get(PC))
+			{
+				UISubsystem->NotifyAbilitySystemReady(AbilitySystemComponent);
+			}
+		}
+	}
 }
 
 uint8 AGenPlayerCharacter::GetTeamId() const

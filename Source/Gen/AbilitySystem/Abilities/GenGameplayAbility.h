@@ -7,6 +7,7 @@
 
 class AGenCharacterBase;
 class AGenPlayerController;
+class UTexture2D;
 
 UENUM(BlueprintType)
 enum class EGenAbilityActivationPolicy : uint8
@@ -48,6 +49,10 @@ public:
 	/** Nom affiché dans l'UI. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|UI")
 	FText DisplayName;
+
+	/** Icône de l'emplacement dans la barre de sorts (UI_Guidelines §2.11 : 256 px, affichée à 64 / 72 px). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|UI")
+	TSoftObjectPtr<UTexture2D> Icon;
 
 	/** Durée du cooldown en secondes (peut varier selon le niveau du sort). 0 = pas de cooldown. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldowns")
