@@ -234,4 +234,43 @@ bool FGenStatusVisualTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFedResourceEventTest, "Gen.Visuals.FedResourceEvent",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenFedResourceEventTest::RunTest(const FString& Parameters)
+{
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Dummy = TestWorld.SpawnDummy();
+	if (!TestNotNull(TEXT("mannequin"), Dummy))
+	{
+		return false;
+	}
+
+	TArray<TPair<int32, int32>> Calls;
+	TArray<int32> Pops;
+	Dummy->OnFedResourceChanged.AddLambda([&Calls](AGenCharacterBase*, int32 Old, int32 New) { Calls.Emplace(Old, New); });
+	Dummy->OnFedThresholdReached.AddLambda([&Pops](AGenCharacterBase*, int32 New) { Pops.Add(New); });
+
+	// Le monde de test n'est pas un serveur dédié : les événements partent (sur un serveur dédié jamais, Gen.Net.FeedThreshold)
+	const UObject* Source = Dummy; // n'importe quelle source stable
+	Dummy->SetFedResource(Source, 1);
+	Dummy->SetFedResource(Source, 1); // inchangé : pas d'appel
+	Dummy->SetFedResource(Source, 3);
+	Dummy->SetFedResource(Source, 0);
+	Dummy->SetFedResource(Source, 2);
+	Dummy->ResetFedResource(); // mort : retour à 0 sans pop
+
+	TestEqual(TEXT("5 changements"), Calls.Num(), 5);
+	TestTrue(TEXT("0 -> 1"), Calls.IsValidIndex(0) && Calls[0] == TPair<int32, int32>(0, 1));
+	TestTrue(TEXT("1 -> 3"), Calls.IsValidIndex(1) && Calls[1] == TPair<int32, int32>(1, 3));
+	TestTrue(TEXT("3 -> 0"), Calls.IsValidIndex(2) && Calls[2] == TPair<int32, int32>(3, 0));
+	TestTrue(TEXT("0 -> 2"), Calls.IsValidIndex(3) && Calls[3] == TPair<int32, int32>(0, 2));
+	TestTrue(TEXT("2 -> 0 (remise à zéro)"), Calls.IsValidIndex(4) && Calls[4] == TPair<int32, int32>(2, 0));
+
+	// Pop seulement quand le compte augmente : jamais au lancer (3 -> 0) ni à la remise à zéro
+	TestEqual(TEXT("3 pops"), Pops.Num(), 3);
+	TestTrue(TEXT("pops 1, 3, 2"), Pops == TArray<int32>({ 1, 3, 2 }));
+	return true;
+}
+
 #endif

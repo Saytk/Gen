@@ -5,7 +5,9 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenCastBarRules.h"
+#include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenKnockback.h"
+#include "AbilitySystemGlobals.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
@@ -14,6 +16,7 @@
 #include "Game/GenGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameplayCueManager.h"
 #include "GenGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "NiagaraComponent.h"
@@ -170,6 +173,8 @@ void AGenCharacterBase::UpdateCastFX()
 	{
 		CastFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(WantedFX, GetMesh(), CastInfo.FXSocket,
 			FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, /*bAutoDestroy*/ true);
+		// Proxy arrivé en cours de nourrissage : l'effet prend tout de suite la taille du compte nourri (V2)
+		ApplyCastFXScale(FedResource);
 	}
 }
 
@@ -275,8 +280,13 @@ float AGenCharacterBase::GetMaxResource() const
 
 void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)
 {
+	const uint8 Old = FedResource;
 	FedDisplay.Set(FObjectKey(Source), Count);
 	FedResource = FedDisplay.Count;
+	if (FedResource != Old)
+	{
+		NotifyFedResourceChanged(Old, FedResource);
+	}
 }
 
 void AGenCharacterBase::ClearFedResourceFrom(const UObject* Source)
@@ -289,8 +299,61 @@ void AGenCharacterBase::ClearFedResourceFrom(const UObject* Source)
 
 void AGenCharacterBase::ResetFedResource()
 {
+	const uint8 Old = FedResource;
 	FedDisplay = GenFeeding::FFedDisplay();
 	FedResource = 0;
+	if (Old != 0)
+	{
+		NotifyFedResourceChanged(Old, 0);
+	}
+}
+
+void AGenCharacterBase::OnRep_FedResource(uint8 OldValue)
+{
+	if (FedResource != OldValue)
+	{
+		NotifyFedResourceChanged(OldValue, FedResource);
+	}
+}
+
+void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New)
+{
+	// Purement cosmétique : jamais sur le serveur dédié (GetNetMode, valable aussi en PIE, Art Bible §8.5)
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	ApplyCastFXScale(New);
+	OnFedResourceChanged.Broadcast(this, Old, New);
+
+	// Pop du seuil : exécuté localement sur chaque client (pas de RPC ni de réplication du cue), seulement quand le
+	// compte augmente. Le client propriétaire le joue sur sa prédiction, les autres sur le compte répliqué.
+	if (GenIndicatorRules::IsThresholdPop(Old, New))
+	{
+		FGameplayCueParameters Params;
+		Params.RawMagnitude = New;
+		Params.Location = CastFXComponent ? CastFXComponent->GetComponentLocation() : GetActorLocation();
+		Params.SourceObject = CastInfo.Ability ? CastInfo.Ability->GetDefaultObject() : nullptr;
+		Params.Instigator = this;
+		Params.EffectCauser = this;
+
+		// HandleGameplayCue est local ; UGameplayCueFunctionLibrary::ExecuteGameplayCueOnActor ne joue que sur
+		// l'autorité quand l'acteur a un ASC (il serait muet sur les clients)
+		if (UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager())
+		{
+			CueManager->HandleGameplayCue(this, GenGameplayTags::GameplayCue_Feed_Threshold, EGameplayCueEvent::Executed, Params);
+		}
+		OnFedThresholdReached.Broadcast(this, New);
+	}
+}
+
+void AGenCharacterBase::ApplyCastFXScale(int32 Count)
+{
+	if (CastFXComponent)
+	{
+		CastFXComponent->SetRelativeScale3D(FVector(1.f + CastFXScalePerFed * FMath::Max(Count, 0)));
+	}
 }
 
 bool AGenCharacterBase::IsUntouchable() const

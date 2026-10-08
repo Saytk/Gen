@@ -24,6 +24,15 @@ namespace GenCastBar
 	struct FLayout;
 }
 
+/** Compte affiché d'unités nourries qui change (ancien, nouveau). Toutes les machines sauf le serveur dédié. */
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FGenFedResourceChanged, AGenCharacterBase* /*Character*/, int32 /*Old*/, int32 /*New*/);
+
+/**
+ * Seuil de nourrissage franchi (le compte affiché AUGMENTE, GenIndicatorRules::IsThresholdPop) : nouveau compte.
+ * Émis au même moment que le GameplayCue local GameplayCue.Feed.Threshold. Toutes les machines sauf le serveur dédié.
+ */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FGenFedThresholdReached, AGenCharacterBase* /*Character*/, int32 /*NewCount*/);
+
 /** Équipe "neutre" : ennemie de tout le monde (mannequins d'entraînement, monstres...). */
 inline constexpr uint8 GenNoTeam = 255;
 
@@ -144,6 +153,14 @@ public:
 	/** Efface l'affichage quel que soit son propriétaire (mort, réapparition). */
 	void ResetFedResource();
 
+	// --- Plan Visuals V2 : seuils de nourrissage (cosmétique, jamais sur le serveur dédié) ---
+
+	/** Seuils de nourrissage pour les cosmétiques (Foyer, charge de la main, indicateurs). Rien sur un serveur dédié. */
+	FGenFedResourceChanged OnFedResourceChanged;
+
+	/** Pop d'un seuil (compte en hausse seulement). Rien sur un serveur dédié. */
+	FGenFedThresholdReached OnFedThresholdReached;
+
 	/**
 	 * Client propriétaire -> serveur : nombre exact d'unités nourries par Ability à la fin du nourrissage.
 	 * Purement visuel (les autres joueurs voient les flammes quitter l'orbite) : sans cela le serveur
@@ -250,9 +267,29 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CastInfo, BlueprintReadOnly, Category = "Gen|Cast")
 	FGenCastInfo CastInfo;
 
-	/** Non répliqué au propriétaire : il le prédit lui-même. */
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Resource")
+	/** Non répliqué au propriétaire : il le prédit lui-même. Les autres clients en tirent les seuils (OnRep_FedResource). */
+	UPROPERTY(ReplicatedUsing = OnRep_FedResource, BlueprintReadOnly, Category = "Gen|Resource")
 	uint8 FedResource = 0;
+
+	/**
+	 * Échelle de l'effet d'incantation par unité nourrie (Curffe : la charge de la main grandit d'un cran par flamme,
+	 * Curffe-Visuals.md §3.2). 0 = taille fixe. Python : cast_fx_scale_per_fed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Cast")
+	float CastFXScalePerFed = 0.f;
+
+	/** Autres clients : le compte nourri répliqué change (seuils, échelle de l'effet). */
+	UFUNCTION()
+	void OnRep_FedResource(uint8 OldValue);
+
+	/**
+	 * Toutes les écritures de FedResource y passent (serveur, client propriétaire, OnRep des autres clients).
+	 * Diffuse le changement, met l'effet d'incantation à l'échelle et joue le pop local du seuil. Rien sur un serveur dédié.
+	 */
+	void NotifyFedResourceChanged(int32 Old, int32 New);
+
+	/** Échelle de CastFXComponent pour Count unités nourries (1 + CastFXScalePerFed × Count). */
+	void ApplyCastFXScale(int32 Count);
 
 	/** Propriétaire de l'affichage des unités nourries (serveur et client propriétaire, non répliqué). */
 	GenFeeding::FFedDisplay FedDisplay;

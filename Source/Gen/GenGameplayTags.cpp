@@ -31,6 +31,8 @@ namespace GenGameplayTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Counter_Blocked, "Event.Counter.Blocked", "Un coup a ete bloque par le contre de la cible (serveur)");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Feed_Threshold, "GameplayCue.Feed.Threshold", "Seuil de nourrissage franchi (local, jamais sur le serveur dedie) : pop sur la main et le Foyer");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage, "SetByCaller.Damage", "Degats passes au GE de degats");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Cooldown, "SetByCaller.Cooldown", "Duree passee au GE de cooldown");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_MoveSpeedMultiplier, "SetByCaller.MoveSpeedMultiplier", "Multiplicateur de vitesse (ex: 0.5 = ralenti de moitie)");

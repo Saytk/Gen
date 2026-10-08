@@ -44,6 +44,9 @@ namespace GenGameplayTags
 	// --- Événements (gameplay events) ---
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Counter_Blocked);
 
+	// --- GameplayCues ---
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Feed_Threshold);
+
 	// --- SetByCaller (magnitudes passées par le code aux GameplayEffects) ---
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Damage);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Cooldown);
