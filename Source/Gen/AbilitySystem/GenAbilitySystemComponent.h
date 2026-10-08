@@ -121,6 +121,28 @@ protected:
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
 
+	/**
+	 * Revue PIE finale, C-3 : un sort qui se termine sans annulation alors qu'une touche est maintenue demande un passage de
+	 * fin d'image (OnWorldPostActorTick) : la répétition automatique relance le sort maintenu DANS l'image où le précédent
+	 * part, pas à la suivante. Cadence du clic gauche = temps d'incantation (à une image près), quel que soit le framerate.
+	 */
+	virtual void NotifyAbilityEnded(FGameplayAbilitySpecHandle Handle, UGameplayAbility* Ability, bool bWasCancelled) override;
+	virtual void OnUnregister() override;
+
+	/** Sorts maintenus à relancer (WhileInputActive, inactifs, pas pendant l'incantation d'un autre sort sauf appui frais). */
+	void CollectHeldActivations(TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>>& OutAbilities) const;
+
+	/** Mouvements en attente envoyés, puis activation de chaque sort (chemin commun de la touche et de la fin d'image). */
+	void ActivateFromInput(const TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>>& Abilities);
+
+	/** Passage de fin d'image demandé (RequestEndOfFrameInput) : répétition automatique. */
+	void OnWorldPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds);
+	void RequestEndOfFrameInput();
+	void ProcessEndOfFrameInput();
+
+	FDelegateHandle PostActorTickHandle;
+	bool bEndOfFrameInputPending = false;
+
 	TArray<FGameplayAbilitySpecHandle> InputPressedSpecHandles;
 	TArray<FGameplayAbilitySpecHandle> InputReleasedSpecHandles;
 	TArray<FGameplayAbilitySpecHandle> InputHeldSpecHandles;

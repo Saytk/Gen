@@ -6,6 +6,7 @@
 #include "AbilitySystem/GenFeeding.h"
 #include "Character/GenCharacterBase.h"
 #include "Engine/World.h"
+#include "Engine/EngineBaseTypes.h"
 #include "GameplayEffect.h"
 #include "GenGameplayTags.h"
 
@@ -157,25 +158,8 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 
 	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>> AbilitiesToActivate;
 
-	// Sorts "WhileInputActive" : se relancent tant que la touche est maintenue (ex: M1 en auto).
-	// Répétition automatique bloquée pendant l'incantation d'un autre sort ; un nouvel appui passe
-	// (et l'annule via CancelAbilitiesWithTag).
-	for (const FGameplayAbilitySpecHandle& SpecHandle : InputHeldSpecHandles)
-	{
-		if (const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(SpecHandle))
-		{
-			const UGenGameplayAbility* AbilityCDO = Cast<UGenGameplayAbility>(Spec->Ability);
-			if (AbilityCDO && !Spec->IsActive() && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::WhileInputActive)
-			{
-				const bool bPressedThisFrame = InputPressedSpecHandles.Contains(SpecHandle);
-				if (!bPressedThisFrame && IsAnotherAbilityCasting(SpecHandle))
-				{
-					continue;
-				}
-				AbilitiesToActivate.AddUnique(Spec->Handle);
-			}
-		}
-	}
+	// Sorts "WhileInputActive" : se relancent tant que la touche est maintenue (ex: M1 en auto)
+	CollectHeldActivations(AbilitiesToActivate);
 
 	// Sorts dont la touche vient d'être pressée cette frame
 	for (const FGameplayAbilitySpecHandle& SpecHandle : InputPressedSpecHandles)
@@ -200,19 +184,7 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 		}
 	}
 
-	// Revue V6-V8, I-2 : les mouvements en attente partent avant les RPC d'activation (ralentis locaux à la borne)
-	if (AbilitiesToActivate.Num() > 0)
-	{
-		if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetAvatarActor()))
-		{
-			Character->FlushMovesToServer();
-		}
-	}
-
-	for (const FGameplayAbilitySpecHandle& SpecHandle : AbilitiesToActivate)
-	{
-		TryActivateAbility(SpecHandle);
-	}
+	ActivateFromInput(AbilitiesToActivate);
 
 	// Sorts dont la touche vient d'être relâchée cette frame
 	for (const FGameplayAbilitySpecHandle& SpecHandle : InputReleasedSpecHandles)
@@ -230,6 +202,101 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 
 	InputPressedSpecHandles.Reset();
 	InputReleasedSpecHandles.Reset();
+}
+
+void UGenAbilitySystemComponent::CollectHeldActivations(TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>>& OutAbilities) const
+{
+	// Répétition automatique bloquée pendant l'incantation d'un autre sort ; un nouvel appui passe
+	// (et l'annule via CancelAbilitiesWithTag).
+	for (const FGameplayAbilitySpecHandle& SpecHandle : InputHeldSpecHandles)
+	{
+		if (const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(SpecHandle))
+		{
+			const UGenGameplayAbility* AbilityCDO = Cast<UGenGameplayAbility>(Spec->Ability);
+			if (AbilityCDO && !Spec->IsActive() && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::WhileInputActive)
+			{
+				const bool bPressedThisFrame = InputPressedSpecHandles.Contains(SpecHandle);
+				if (!bPressedThisFrame && IsAnotherAbilityCasting(SpecHandle))
+				{
+					continue;
+				}
+				OutAbilities.AddUnique(Spec->Handle);
+			}
+		}
+	}
+}
+
+void UGenAbilitySystemComponent::ActivateFromInput(const TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>>& Abilities)
+{
+	// Revue V6-V8, I-2 : les mouvements en attente partent avant les RPC d'activation (ralentis locaux à la borne)
+	if (Abilities.Num() > 0)
+	{
+		if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetAvatarActor()))
+		{
+			Character->FlushMovesToServer();
+		}
+	}
+
+	for (const FGameplayAbilitySpecHandle& SpecHandle : Abilities)
+	{
+		TryActivateAbility(SpecHandle);
+	}
+}
+
+void UGenAbilitySystemComponent::NotifyAbilityEnded(FGameplayAbilitySpecHandle Handle, UGameplayAbility* Ability, bool bWasCancelled)
+{
+	Super::NotifyAbilityEnded(Handle, Ability, bWasCancelled);
+
+	// Revue PIE finale, C-3 : pas de relance depuis EndAbility (le sort finit encore de se terminer) : en fin d'image.
+	// Une annulation (touche d'annulation, sort remplacé) ne relance rien d'elle-même
+	if (!bWasCancelled && InputHeldSpecHandles.Num() > 0)
+	{
+		RequestEndOfFrameInput();
+	}
+}
+
+void UGenAbilitySystemComponent::RequestEndOfFrameInput()
+{
+	bEndOfFrameInputPending = true;
+	if (!PostActorTickHandle.IsValid())
+	{
+		PostActorTickHandle = FWorldDelegates::OnWorldPostActorTick.AddUObject(this, &ThisClass::OnWorldPostActorTick);
+	}
+}
+
+void UGenAbilitySystemComponent::OnWorldPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds)
+{
+	// Une seule passe par demande, dans le monde de ce composant (plusieurs mondes en PIE)
+	if (World != GetWorld() || !bEndOfFrameInputPending)
+	{
+		return;
+	}
+	bEndOfFrameInputPending = false;
+	ProcessEndOfFrameInput();
+}
+
+void UGenAbilitySystemComponent::ProcessEndOfFrameInput()
+{
+	// Après les minuteurs de l'image (fin d'incantation, départ du sort) : seulement les touches maintenues. Les appuis et
+	// relâchés restent à ProcessAbilityInput (déjà passé dans cette image)
+	if (HasMatchingGameplayTag(GenGameplayTags::State_Dead))
+	{
+		return;
+	}
+	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>> AbilitiesToActivate;
+	CollectHeldActivations(AbilitiesToActivate);
+	ActivateFromInput(AbilitiesToActivate);
+}
+
+void UGenAbilitySystemComponent::OnUnregister()
+{
+	if (PostActorTickHandle.IsValid())
+	{
+		FWorldDelegates::OnWorldPostActorTick.Remove(PostActorTickHandle);
+		PostActorTickHandle.Reset();
+	}
+	bEndOfFrameInputPending = false;
+	Super::OnUnregister();
 }
 
 void UGenAbilitySystemComponent::ClearAbilityInput()
