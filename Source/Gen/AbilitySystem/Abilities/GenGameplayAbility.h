@@ -66,6 +66,13 @@ public:
 	virtual const FGameplayTagContainer* GetCooldownTags() const override;
 	virtual void ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
 
+	/**
+	 * Refuse aussi sous un contrôle dur (GenGameplayTags::GetHardCCTags) et pendant State.CastLocked (bond en vol,
+	 * forme de feu...), posé par code et non par les assets. Le verrou fait foi du côté qui prédit ; le serveur ne
+	 * l'applique à un client distant que dans sa fenêtre (UGenAbilitySystemComponent::GetCastLockEnforcedUntil).
+	 */
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif

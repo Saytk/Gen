@@ -5,6 +5,8 @@
 #include "ActiveGameplayEffectHandle.h"
 #include "GameFramework/Character.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "AbilitySystem/GenFeeding.h"
+#include "AbilitySystem/GenHitRules.h"
 #include "GenCharacterBase.generated.h"
 
 class UGameplayEffect;
@@ -124,8 +126,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Resource")
 	int32 GetFedResource() const { return FedResource; }
 
-	/** Appelé par le sort sur le serveur et le client propriétaire (prédiction). */
-	void SetFedResource(uint8 Count) { FedResource = Count; }
+	/**
+	 * Appelé par le sort qui nourrit (Source), sur le serveur et le client propriétaire (prédiction).
+	 * Un seul sort possède l'affichage : Count = 0 n'efface que l'affichage posé par Source.
+	 */
+	void SetFedResource(const UObject* Source, uint8 Count);
 
 	/**
 	 * Client propriétaire -> serveur : nombre exact d'unités nourries par Ability à la fin du nourrissage.
@@ -142,6 +147,14 @@ public:
 	 * Le client propriétaire reçoit le même lancement pour éviter une correction brutale.
 	 */
 	void ApplyKnockback(const FVector& Direction, float Distance);
+
+	/**
+	 * Serveur : un coup ennemi de nature Kind arrive (Source = projectile, zone...). À appeler par toute
+	 * source de dégâts AVANT d'appliquer quoi que ce soit. Countered : le coup n'inflige rien, et le
+	 * contre actif reçoit Event.Counter.Blocked (Instigator = Attacker, EventMagnitude = Kind).
+	 * Futures attaques de mêlée : Kind = Melee.
+	 */
+	EGenHitResponse ResolveIncomingHit(AActor* Attacker, EGenHitKind Kind, const UObject* Source);
 
 	/**
 	 * Incantation : appelés par les sorts sur le serveur ET le client propriétaire (prédiction).
@@ -218,6 +231,9 @@ protected:
 	/** Non répliqué au propriétaire : il le prédit lui-même. */
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Resource")
 	uint8 FedResource = 0;
+
+	/** Propriétaire de l'affichage des unités nourries (serveur et client propriétaire, non répliqué). */
+	GenFeeding::FFedDisplay FedDisplay;
 
 	UFUNCTION(Client, Reliable)
 	void ClientApplyKnockback(FVector_NetQuantize10 LaunchVelocity);

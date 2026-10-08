@@ -1,7 +1,11 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 
 #include "AbilitySystem/Effects/GenGE_Cooldown.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
+#include "AbilitySystem/GenFeeding.h"
+#include "AbilitySystemComponent.h"
 #include "Character/GenCharacterBase.h"
+#include "Engine/World.h"
 #include "GenGameplayTags.h"
 #include "Player/GenPlayerController.h"
 
@@ -35,6 +39,35 @@ const FGameplayTagContainer* UGenGameplayAbility::GetCooldownTags() const
 	TempCooldownTags.AppendTags(CooldownTags);
 
 	return &TempCooldownTags;
+}
+
+bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+	{
+		return false;
+	}
+
+	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (!ASC)
+	{
+		return true;
+	}
+
+	// Contrôle dur (répliqué par le serveur) : refusé partout
+	if (ASC->HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags()))
+	{
+		return false;
+	}
+
+	// Verrou de lancement : tag local posé par chaque machine à SON départ, retiré à SON atterrissage.
+	// Le côté qui prédit fait foi ; le serveur ne refuse un client distant qu'au début du verrou
+	// (sinon un sort lancé juste après l'atterrissage du client arriverait sous le verrou du serveur)
+	const bool bLocked = ASC->HasMatchingGameplayTag(GenGameplayTags::State_CastLocked);
+	const UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC);
+	const float EnforcedUntil = GenASC ? GenASC->GetCastLockEnforcedUntil() : -1.f;
+	const float Now = ASC->GetWorld() ? ASC->GetWorld()->GetTimeSeconds() : 0.f;
+	return !GenFeeding::IsRefusedByCastLock(bLocked, ActorInfo->IsLocallyControlled(), Now, EnforcedUntil);
 }
 
 void UGenGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const

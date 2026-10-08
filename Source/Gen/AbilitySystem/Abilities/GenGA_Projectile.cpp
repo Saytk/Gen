@@ -317,7 +317,7 @@ void UGenGA_Projectile::SetFedVisual(int32 Count)
 	FedVisualCount = Count;
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		Character->SetFedResource(static_cast<uint8>(FMath::Clamp(Count, 0, 255)));
+		Character->SetFedResource(this, static_cast<uint8>(FMath::Clamp(Count, 0, 255)));
 	}
 }
 

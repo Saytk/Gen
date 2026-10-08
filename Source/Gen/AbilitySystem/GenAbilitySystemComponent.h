@@ -52,6 +52,16 @@ public:
 	/** Serveur : retire les états temporaires (UGenGE_TimedState et dérivés), ex. à la mort. */
 	void RemoveTimedStates();
 
+	/**
+	 * Serveur : un verrou de lancement (State.CastLocked) de LockDuration s vient d'être posé (ex : bond en vol).
+	 * Les activations d'un client distant ne sont refusées que pendant LockDuration - CastTimeTolerance
+	 * (GenFeeding::GetCastLockEnforcedUntil) : le verrou du serveur finit ~½ RTT après celui du client.
+	 */
+	void NoteCastLock(float LockDuration);
+
+	/** Serveur : fin (temps du monde) de la fenêtre où le verrou refuse les activations d'un client distant. */
+	float GetCastLockEnforcedUntil() const { return CastLockEnforcedUntil; }
+
 protected:
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
@@ -59,4 +69,7 @@ protected:
 	TArray<FGameplayAbilitySpecHandle> InputPressedSpecHandles;
 	TArray<FGameplayAbilitySpecHandle> InputReleasedSpecHandles;
 	TArray<FGameplayAbilitySpecHandle> InputHeldSpecHandles;
+
+	/** Serveur : fin de la fenêtre où State.CastLocked refuse les activations d'un client distant. */
+	float CastLockEnforcedUntil = -1.f;
 };

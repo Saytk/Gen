@@ -7,6 +7,7 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "Champions/Curffe/CurffeEffects.h"
+#include "Character/GenTrainingDummy.h"
 #include "GenGameplayTags.h"
 #include "Tests/GenTestWorld.h"
 
@@ -112,6 +113,43 @@ bool FGenRemoveTimedStatesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("étourdissement retiré"), ASC->GetTagCount(GenGameplayTags::State_Stunned), 0);
 	TestEqual(TEXT("vitesse rendue"), Get(ASC, UGenAttributeSet::GetMoveSpeedAttribute()), 550.f);
 	TestEqual(TEXT("le Foyer (effet infini) reste"), Get(ASC, UGenAttributeSet::GetMaxResourceAttribute()), 5.f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCounterResolveTest, "Gen.Combat.CounterResolve",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenCounterResolveTest::RunTest(const FString& Parameters)
+{
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Defender = TestWorld.SpawnDummy();
+	AGenTrainingDummy* Attacker = TestWorld.SpawnDummy();
+	UAbilitySystemComponent* ASC = Defender ? Defender->GetAbilitySystemComponent() : nullptr;
+	if (!TestNotNull(TEXT("ASC du défenseur"), ASC) || !TestNotNull(TEXT("attaquant"), Attacker))
+	{
+		return false;
+	}
+
+	int32 Received = 0;
+	const AActor* ReceivedInstigator = nullptr;
+	float ReceivedKind = -1.f;
+	ASC->GenericGameplayEventCallbacks.FindOrAdd(GenGameplayTags::Event_Counter_Blocked).AddLambda([&](const FGameplayEventData* Payload)
+	{
+		++Received;
+		ReceivedInstigator = Payload->Instigator;
+		ReceivedKind = Payload->EventMagnitude;
+	});
+
+	TestTrue(TEXT("sans contre : touché"), Defender->ResolveIncomingHit(Attacker, EGenHitKind::Projectile, nullptr) == EGenHitResponse::Hit);
+
+	ASC->AddLooseGameplayTag(GenGameplayTags::State_Countering);
+	TestTrue(TEXT("projectile bloqué"), Defender->ResolveIncomingHit(Attacker, EGenHitKind::Projectile, nullptr) == EGenHitResponse::Countered);
+	TestTrue(TEXT("zone : traverse le contre"), Defender->ResolveIncomingHit(Attacker, EGenHitKind::Area, nullptr) == EGenHitResponse::Hit);
+	TestTrue(TEXT("mêlée bloquée"), Defender->ResolveIncomingHit(Attacker, EGenHitKind::Melee, nullptr) == EGenHitResponse::Countered);
+
+	TestEqual(TEXT("le contre est prévenu de chaque blocage"), Received, 2);
+	TestTrue(TEXT("instigateur transmis"), ReceivedInstigator == static_cast<const AActor*>(Attacker));
+	TestEqual(TEXT("nature du dernier coup bloqué"), ReceivedKind, static_cast<float>(EGenHitKind::Melee));
 	return true;
 }
 

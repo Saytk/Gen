@@ -1,5 +1,6 @@
 #include "Character/GenCharacterBase.h"
 
+#include "Abilities/GameplayAbilityTypes.h"
 #include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
@@ -258,6 +259,37 @@ float AGenCharacterBase::GetResource() const
 float AGenCharacterBase::GetMaxResource() const
 {
 	return AttributeSet ? AttributeSet->GetMaxResource() : 0.f;
+}
+
+void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)
+{
+	FedDisplay.Set(FObjectKey(Source), Count);
+	FedResource = FedDisplay.Count;
+}
+
+EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitKind Kind, const UObject* Source)
+{
+	if (!HasAuthority() || !AbilitySystemComponent)
+	{
+		return EGenHitResponse::Hit;
+	}
+
+	const bool bCountering = AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Countering);
+	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, Kind);
+
+	if (Response == EGenHitResponse::Countered)
+	{
+		// Le sort de contre écoute cet événement (récompense, repoussement de la mêlée, effet)
+		FGameplayEventData Payload;
+		Payload.EventTag = GenGameplayTags::Event_Counter_Blocked;
+		Payload.Instigator = Attacker;
+		Payload.Target = this;
+		Payload.OptionalObject = Source;
+		Payload.EventMagnitude = static_cast<float>(Kind);
+		AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
+	}
+
+	return Response;
 }
 
 void AGenCharacterBase::ApplyKnockback(const FVector& Direction, float Distance)

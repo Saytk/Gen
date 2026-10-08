@@ -2,6 +2,8 @@
 
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
+#include "AbilitySystem/GenFeeding.h"
+#include "Engine/World.h"
 #include "GameplayEffect.h"
 #include "GenGameplayTags.h"
 
@@ -269,4 +271,12 @@ void UGenAbilitySystemComponent::RemoveTimedStates()
 		return Effect.Spec.Def && Effect.Spec.Def->IsA<UGenGE_TimedState>();
 	});
 	RemoveActiveEffects(Query);
+}
+
+void UGenAbilitySystemComponent::NoteCastLock(float LockDuration)
+{
+	if (IsOwnerActorAuthoritative() && GetWorld())
+	{
+		CastLockEnforcedUntil = GenFeeding::GetCastLockEnforcedUntil(GetWorld()->GetTimeSeconds(), LockDuration, GenFeeding::CastTimeTolerance);
+	}
 }
