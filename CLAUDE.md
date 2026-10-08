@@ -48,6 +48,34 @@ Quand l'utilisateur annonce qu'il va modifier des assets à la main, proposer de
 - Aucun widget ne code en dur une couleur, une police ou une taille : tout passe par les tokens.
 - Toute PR d'UI passe la checklist du §9. En cas de conflit, `Docs/ArtBible.md` l'emporte.
 
+## Processus d'implémentation : vite d'abord
+
+Objectif : un résultat jouable vite, puis itérer. La prudence se concentre sur ce qui casse le multijoueur ;
+tout le reste avance sans cérémonie.
+
+- **Plans courts.** Une spec en puces (valeurs, règles, cas limites) et une liste de tâches de quelques
+  lignes chacune. Pas de code recopié dans les plans : les agents écrivent le code. Une décision de design
+  = une ligne dans la spec, pas une révision du plan.
+- **Décider sans attendre.** Valeur par défaut raisonnable, notée dans la spec ou dans le journal de la
+  bible artistique (§13) ; l'utilisateur corrige après coup. Ne demander que pour une action destructive
+  ou visible de l'extérieur.
+- **Deux espaces de travail au maximum.** L'arbre principal (éditeur, assets) et un seul worktree pour le
+  C++. Jamais deux agents sur les mêmes fichiers. Moins de branches = moins de fusions et de conflits.
+- **Lots plutôt que tâches.** Un agent prend une fonctionnalité entière (code + tests), une compilation
+  et un passage de tests à la fin du lot. Live Coding pour les `.cpp` pendant l'itération.
+- **Revue unique et ciblée.** Une seule revue par fonctionnalité, en fin de lot, et seulement pour le
+  réseau, l'autorité serveur et la prédiction. Le relecteur ne rapporte que le Critique et l'Important ;
+  les mineurs vont dans une liste de nettoyage traitée plus tard, en un seul lot.
+- **Tests réseau automatiques comme barrière.** Les tests CQTest `Gen.Net.*` remplacent les matrices PIE
+  à chaque tâche. Un seul passage PIE court (2 clients) par fonctionnalité pour l'œil ; la matrice complète
+  (3 clients, latence) seulement avant la fusion dans `main`.
+- **Visuel : montrer tôt.** VFX, animations et UI se font dans l'éditeur avec une capture avant/après dès
+  la première version, jamais construits « à l'aveugle » en headless puis branchés. Le style de référence
+  (bible §7.4, [TASTE #5]) sert de base : on duplique et on adapte.
+- **Rapports courts.** Un agent rend 15 lignes maximum : commits, résultat des tests, ce qui reste. Le
+  détail va dans un fichier si nécessaire.
+- **Boîte de temps.** Une tâche d'agent vise 30 à 45 minutes. Plus long : la découper.
+
 ## Itération rapide et sécurité de l'éditeur (agents)
 
 **Compiler le C++**
