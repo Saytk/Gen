@@ -37,6 +37,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<const UInputAction> MoveAction;
 
+	/** Touche d'annulation : annule l'incantation en cours, nourrissage compris (guidelines §3.1). Python : cancel_action. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<const UInputAction> CancelAction;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (TitleProperty = "InputTag"))
 	TArray<FGenAbilityInputAction> AbilityInputActions;
 };

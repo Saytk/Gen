@@ -22,12 +22,17 @@ namespace GenGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Countering, "State.Countering", "Posture de contre : projectiles et melee sont bloques, pas les zones au sol");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_CastLocked, "State.CastLocked", "Ne peut lancer aucun sort (bond en vol, forme de feu...). Pose uniquement par UGenGA_Cast::SetCastLock");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Untouchable, "State.Untouchable", "Intouchable : projectiles traversent, degats et controles ignores (<= 0.5 s, guidelines 3.5)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_FastFeeding, "State.FastFeeding", "Nourrissage deux fois plus rapide (ex : Combustion)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_FreeResource, "State.FreeResource", "Les unites nourries ne sont pas depensees (ex : flammes illimitees de Combustion)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_CCImmune, "State.CCImmune", "Resilience : immunise aux controles durs (guidelines 3.3)");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Silenced, "State.Silenced", "Controle dur : peut bouger, ne peut pas lancer de sort");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Feared, "State.Feared", "Controle dur : fuit la source, ne peut pas lancer de sort");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Incapacitated, "State.Incapacitated", "Controle dur : comme un etourdissement, prend fin au moindre degat");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Counter_Blocked, "Event.Counter.Blocked", "Un coup a ete bloque par le contre de la cible (serveur)");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Feed_Threshold, "GameplayCue.Feed.Threshold", "Seuil de nourrissage franchi (local, jamais sur le serveur dedie) : pop sur la main et le Foyer");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage, "SetByCaller.Damage", "Degats passes au GE de degats");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Cooldown, "SetByCaller.Cooldown", "Duree passee au GE de cooldown");

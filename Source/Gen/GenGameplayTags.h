@@ -32,6 +32,9 @@ namespace GenGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Countering);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_CastLocked);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Untouchable);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_FastFeeding);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_FreeResource);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_CCImmune);
 
 	// Contrôles durs (guidelines §3.2) en plus de State_Stunned. Pas encore appliqués par un sort,
 	// mais les interruptions, les blocages de sorts et la barre de sorts les traitent déjà.
@@ -41,6 +44,9 @@ namespace GenGameplayTags
 
 	// --- Événements (gameplay events) ---
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Counter_Blocked);
+
+	// --- GameplayCues ---
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Feed_Threshold);
 
 	// --- SetByCaller (magnitudes passées par le code aux GameplayEffects) ---
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Damage);

@@ -45,6 +45,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Projectile")
 	float SpawnForwardOffset = 70.f;
 
+	/**
+	 * Explosion de zone même sans nourrissage (ex : Pyroblast, 120 cm). 0 = seulement via ExplosionMinFeed.
+	 * Remplacée par ExplosionRadius dès ExplosionMinFeed unités nourries. Python : base_explosion_radius.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "0.0", Units = "cm"))
+	float BaseExplosionRadius = 0.f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Projectile|Feeding", meta = (EditCondition = "bFeedable"))
 	float DamagePerFeed = 0.f;
 

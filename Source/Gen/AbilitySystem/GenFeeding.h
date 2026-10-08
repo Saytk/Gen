@@ -106,6 +106,16 @@ namespace GenFeeding
 	}
 
 	/**
+	 * Rayon d'explosion d'un tir : FedRadius dès ExplosionMinFeed unités, sinon BaseRadius (0 = pas d'explosion, ex :
+	 * Pyroblast 120 cm). Jamais sous BaseRadius (revue P3 T3-7, M7) : nourrir ne rétrécit pas l'explosion.
+	 */
+	inline float GetShotExplosionRadius(int32 Fed, int32 ExplosionMinFeed, float FedRadius, float BaseRadius)
+	{
+		const float Base = FMath::Max(BaseRadius, 0.f);
+		return ReachesThreshold(Fed, ExplosionMinFeed) ? FMath::Max(FedRadius, Base) : Base;
+	}
+
+	/**
 	 * Affichage des unités nourries (elles quittent l'orbite) : un seul sort à la fois en est propriétaire.
 	 * Un sort qui n'affiche rien (annulé avant de nourrir) ne peut pas effacer l'affichage d'un autre.
 	 */
@@ -158,5 +168,20 @@ namespace GenFeeding
 	inline float GetFeedInterval(float BaseInterval, bool bFastFeeding)
 	{
 		return FMath::Max(BaseInterval * (bFastFeeding ? FastFeedMultiplier : 1.f), 0.01f);
+	}
+
+	/**
+	 * Revue V2-V4, I1 : fenêtre de grâce (s) du serveur pour un client distant autour d'un changement de
+	 * State.FastFeeding / State.FreeResource. Le tag (posé par un GE du serveur, ex : fin de l'embrasement de Combustion)
+	 * change chez le client ~½ RTT après le serveur : un appui dans cet intervalle est pris avec l'ancien état côté
+	 * client. Le serveur lui accorde l'état "favorable" (rapide, gratuit) si le changement est à moins de Grace de
+	 * l'instant de référence. Un tricheur y gagne au plus Grace de nourrissage rapide ou un lancer gratuit en fin d'état.
+	 */
+	inline constexpr float ServerTagGrace = 0.25f;
+
+	/** Le changement de tag (ChangeTime) tombe-t-il dans la fenêtre de grâce autour de ReferenceTime ? Temps en double. */
+	inline bool IsTagChangeInGrace(double ChangeTime, double ReferenceTime, float Grace = ServerTagGrace)
+	{
+		return FMath::Abs(ChangeTime - ReferenceTime) <= Grace;
 	}
 }

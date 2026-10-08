@@ -8,6 +8,7 @@
 
 class AGenGroundArea;
 class AGenProjectile;
+class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitDelay;
 class UAbilityTask_WaitInputRelease;
 class UGenAbilityTask_TargetDataUnderCursor;
@@ -163,9 +164,10 @@ protected:
 	bool bTurnToAim = true;
 
 	/**
-	 * Montage d'incantation (optionnel, répliqué par le GAS) : joué dès le début de l'incantation,
-	 * préparation puis geste de lancer. Le régler pour que le lancer tombe à CastTime.
-	 * Coupé si l'incantation est interrompue. Ignoré si CastTime = 0 (utiliser CastMontage).
+	 * Montage d'incantation (optionnel, répliqué par le GAS) : joué dès le début de l'incantation (après le nourrissage).
+	 * Avec un CastMontage : préparation seule, calée sur CastTime (bScaleChargeMontageToCastTime).
+	 * Sans CastMontage (montage unique du Plan 1) : préparation puis geste de lancer, à vitesse 1 ; le régler pour que
+	 * le lancer tombe à CastTime. Coupé si l'incantation est interrompue. Ignoré si CastTime = 0 (utiliser CastMontage).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "CastTime > 0"))
 	TObjectPtr<UAnimMontage> ChargeMontage;
@@ -181,6 +183,48 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float CastMontageRootMotionScale = 1.f;
+
+	// --- Plan Visuals V3 : phases de montage calées sur le sort (Feed -> Charge -> Cast) ---
+	// Sans FeedMontage ni CastMontage, le comportement du Plan 1 reste : ChargeMontage unique à vitesse 1.
+
+	/**
+	 * Montage de nourrissage (optionnel, répliqué par le GAS) : joué dès le début du nourrissage, pour que tout le monde
+	 * voie le geste (Art Bible §12 Q41). Sections Feed_1..Feed_N d'UN intervalle de base chacune, enchaînées, la dernière
+	 * en boucle (sécurité) : à la bonne vitesse les frontières tombent sur les seuils. Vitesse = longueur de Feed_1 /
+	 * intervalle actif (x2 en nourrissage rapide). Python : feed_montage.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "bFeedable"))
+	TObjectPtr<UAnimMontage> FeedMontage;
+
+	/**
+	 * ChargeMontage dure exactement CastTime (vitesse = longueur / CastTime, Art Bible §8.3). Seulement avec un
+	 * CastMontage à part : sinon ChargeMontage est l'ancien montage unique (préparation + lancer), joué à vitesse 1
+	 * (GenMontageTiming::ShouldScaleChargeToCastTime). Python : scale_charge_montage_to_cast_time.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation")
+	bool bScaleChargeMontageToCastTime = true;
+
+	/**
+	 * Coupe CastMontage quand le sort se termine (posture tenue : contre). Faux = le geste continue après le sort.
+	 * Python : stop_cast_montage_with_ability.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation")
+	bool bStopCastMontageWithAbility = false;
+
+	/**
+	 * Durée de jeu de la phase lancée, à laquelle CastMontage est calé (0 = vitesse 1 : geste au lancer puis suivi).
+	 * Surcharges prévues : bond -> durée du vol ; contre -> fenêtre ; Living Flame -> forme.
+	 */
+	virtual float GetCastMontageTargetDuration() const { return 0.f; }
+
+	/**
+	 * Joue un montage de phase à Rate (répliqué aux autres joueurs par le GAS), avec CastMontageRootMotionScale.
+	 * nullptr si Montage est nul (asset pas encore créé) : l'appelant n'a rien d'autre à faire.
+	 */
+	UAbilityTask_PlayMontageAndWait* PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds);
+
+	/** Vitesse calée sur TargetDuration ; avertit si le clip devrait être recalé (hors Shipping). */
+	float GetPhaseRate(const UAnimMontage* Montage, float AuthoredLength, float TargetDuration, float ExpectedRate) const;
 
 	/** Maintenir la touche nourrit le sort avec la ressource du champion (attribut Resource). */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Feeding")
@@ -200,6 +244,18 @@ protected:
 private:
 	void StartFeeding();
 	void ScheduleFeedTick();
+	/** V3 : joue FeedMontage (rate calée sur l'intervalle actif, Feed_1 trouvée par son nom). */
+	void PlayFeedMontage();
+	/** Revue V2-V4, I2 : serveur pour un client distant, geste de nourrissage lancé avec le retard de l'estimation. */
+	UFUNCTION()
+	void OnFeedMontageDelayFinished();
+	/** Revue V2-V4, I3 : arrête FeedMontage s'il joue encore (courant : arrêt répliqué ; sinon arrêt local). */
+	void StopFeedMontage();
+	/**
+	 * Revue V2-V4, I1 : serveur pour un client distant, State.FastFeeding retiré juste avant l'activation (ou posé juste
+	 * après) => le client appuyait avec ; on prend l'intervalle rapide.
+	 */
+	bool IsFastFeedingInGrace(bool bAddedAfterActivation) const;
 	/** Client (ou hôte) : fin du nourrissage => prévient le serveur puis incante. */
 	void StopFeedingLocal();
 	void EndFeedTasks();
@@ -268,6 +324,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitInputRelease> FeedReleaseTask;
 
+	/** Revue V2-V4, I2 : attente avant le geste de nourrissage du serveur (ServerEstimateLag), arrêtée par EndFeedTasks. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitDelay> FeedMontageDelayTask;
+
+#if !UE_BUILD_SHIPPING
+	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
+	bool bWarnedPhaseSlotGroups = false;
+#endif
 	/** Tâche de visée en cours (serveur pour un client distant : attend la visée). */
 	UPROPERTY(Transient)
 	TObjectPtr<UGenAbilityTask_TargetDataUnderCursor> AimTask;
@@ -282,6 +346,17 @@ private:
 	bool bReleased = false;
 	bool bCastLockApplied = false;
 	float FeedStartTime = 0.f;
+	/**
+	 * Intervalle retenu au début du nourrissage (rapide sous State.FastFeeding), sur chaque machine. Posé par StartFeeding.
+	 * Sert aux ticks, à la barre de cast et au geste : jamais FeedInterval directement pendant un sort. La validation du
+	 * serveur prend ValidationFeedInterval.
+	 */
+	float ActiveFeedInterval = 0.f;
+	/**
+	 * Serveur : intervalle de la VALIDATION du compte (ResolveFedCount). = ActiveFeedInterval, sauf fenêtre de grâce de
+	 * State.FastFeeding (revue V2-V4, I1) : rapide pour valider ce que le client a prédit, sans changer les visuels.
+	 */
+	float ValidationFeedInterval = 0.f;
 	/** Serveur : durée du nourrissage mesurée entre l'activation et le signal du client. */
 	float ServerFeedElapsed = 0.f;
 	/** Serveur : compte brut annoncé par le client (ServerReportFedResource), sinon INDEX_NONE. */

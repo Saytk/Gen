@@ -2,6 +2,7 @@
 
 #include "GameplayEffect.h"
 #include "GameplayEffectExtension.h"
+#include "GenGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 
 UGenAttributeSet::UGenAttributeSet()
@@ -116,7 +117,11 @@ void UGenAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 		const float LocalDamage = GetIncomingDamage();
 		SetIncomingDamage(0.f);
 
-		if (LocalDamage > 0.f && !bOutOfHealth)
+		// Filet de sécurité (Plan 3 Task 4) : les coups ennemis sont déjà ignorés en amont (ResolveIncomingHit),
+		// mais toute autre source de dégâts (mêlée, dégâts sur la durée, scripts) l'est aussi tant qu'il est intouchable
+		const UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
+		const bool bUntouchable = OwnerASC && OwnerASC->HasMatchingGameplayTag(GenGameplayTags::State_Untouchable);
+		if (LocalDamage > 0.f && !bOutOfHealth && !bUntouchable)
 		{
 			// C'est ici qu'on ajoutera boucliers / réductions de dégâts plus tard
 			SetHealth(FMath::Clamp(GetHealth() - LocalDamage, 0.f, GetMaxHealth()));

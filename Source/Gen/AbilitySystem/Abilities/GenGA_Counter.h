@@ -28,6 +28,8 @@ public:
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
+	/** Plan Visuals V3 : la posture (CastMontage) dure la fenêtre. */
+	virtual float GetCastMontageTargetDuration() const override { return CounterWindow; }
 
 	/** Serveur : un coup vient d'être bloqué. */
 	UFUNCTION()

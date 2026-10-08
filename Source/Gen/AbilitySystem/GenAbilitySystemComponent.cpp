@@ -1,5 +1,6 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 
+#include "AbilitySystem/Abilities/GenGA_Cast.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "AbilitySystem/GenFeeding.h"
@@ -256,8 +257,16 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 		return FActiveGameplayEffectHandle();
 	}
 
-	// Seuls les contrôles durs passent ici (ex : State.Countering n'en est pas un)
+	// Seuls les contrôles durs passent ici (ex : State.Countering n'en est pas un). Vérifié d'abord (revue P3 T3-7, M5) :
+	// une erreur d'appel ne doit pas passer inaperçue parce que la cible est intouchable ou immunisée
 	if (!ensureMsgf(GenGameplayTags::GetHardCCTags().HasTagExact(StateTag), TEXT("ApplyHardCC : %s n'est pas un contrôle dur"), *StateTag.ToString()))
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	// Plan 3 Task 4 : intouchable (forme de feu...), aucun contrôle dur ne prend.
+	// Plan 3 Task 5 : immunisé par la résilience non plus. Refusé => jamais compté pour la résilience.
+	if (HasMatchingGameplayTag(GenGameplayTags::State_Untouchable) || HasMatchingGameplayTag(GenGameplayTags::State_CCImmune))
 	{
 		return FActiveGameplayEffectHandle();
 	}
@@ -276,7 +285,25 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 	// Étourdi ou neutralisé : ne bouge plus. Silence et peur laissent bouger (la fuite de la peur viendra avec son sort).
 	const bool bImmobile = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) || StateTag.MatchesTagExact(GenGameplayTags::State_Incapacitated);
 	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, bImmobile ? 0.f : 1.f, FGameplayTagContainer(StateTag));
-	return ApplyGameplayEffectSpecToSelf(*Spec.Data);
+	const FActiveGameplayEffectHandle Handle = ApplyGameplayEffectSpecToSelf(*Spec.Data);
+
+	// Plan 3 Task 5, résilience (guidelines §3.3) : 2.5 s de contrôle dur sur 5 s (union des intervalles) => immunité
+	// jusqu'à 1.5 s après la fin de celui-ci. Seul ce qui s'est vraiment appliqué compte.
+	if (Handle.IsValid() && GetWorld())
+	{
+		const float Immunity = HardCCHistory.Record(GetWorld()->GetTimeSeconds(), Duration);
+		if (Immunity > 0.f)
+		{
+			// UGenGE_TimedState : retiré avec les autres états à la mort (RemoveTimedStates)
+			const FGameplayEffectSpecHandle ImmunitySpec = MakeOutgoingSpec(UGenGE_TimedState::StaticClass(), 1.f, MakeEffectContext());
+			if (ImmunitySpec.IsValid())
+			{
+				UGenGE_TimedState::SetDuration(*ImmunitySpec.Data, Immunity, FGameplayTagContainer(GenGameplayTags::State_CCImmune));
+				ApplyGameplayEffectSpecToSelf(*ImmunitySpec.Data);
+			}
+		}
+	}
+	return Handle;
 }
 
 void UGenAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec)
@@ -308,6 +335,27 @@ void UGenAbilitySystemComponent::RemoveTimedStates()
 		return Effect.Spec.Def && Effect.Spec.Def->IsA<UGenGE_TimedState>();
 	});
 	RemoveActiveEffects(Query);
+
+	// Mort : la résilience repart de zéro (Plan 3 Task 5)
+	HardCCHistory.Reset();
+}
+
+void UGenAbilitySystemComponent::OnTagUpdated(const FGameplayTag& Tag, bool TagExists)
+{
+	Super::OnTagUpdated(Tag, TagExists);
+
+	// Revue V2-V4, I1 : seuls les tags qui changent la règle de nourrissage d'un sort déjà prédit par le client
+	if ((Tag == GenGameplayTags::State_FastFeeding || Tag == GenGameplayTags::State_FreeResource) && GetWorld())
+	{
+		FGraceTagTimes& Times = GraceTagTimes.FindOrAdd(Tag);
+		(TagExists ? Times.Added : Times.Removed) = GetWorld()->GetTimeSeconds();
+	}
+}
+
+bool UGenAbilitySystemComponent::WasGraceTagChangedNear(const FGameplayTag& Tag, bool bAdded, double ReferenceTime) const
+{
+	const FGraceTagTimes* Times = GraceTagTimes.Find(Tag);
+	return Times && GenFeeding::IsTagChangeInGrace(bAdded ? Times->Added : Times->Removed, ReferenceTime);
 }
 
 void UGenAbilitySystemComponent::NoteCastLock(float MinLockDuration)
@@ -322,4 +370,45 @@ void UGenAbilitySystemComponent::ClearCastLock()
 {
 	SetLooseGameplayTagCount(GenGameplayTags::State_CastLocked, 0);
 	CastLockEnforcedUntil = -1.0;
+}
+
+int32 UGenAbilitySystemComponent::CancelPendingCasts()
+{
+	// Plan 3 Task 6. Liste d'abord : annuler un sort modifie les specs actifs
+	TArray<UGenGA_Cast*, TInlineAllocator<4>> Pending;
+	for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		UGenGA_Cast* CastAbility = Spec.IsActive() ? Cast<UGenGA_Cast>(Spec.GetPrimaryInstance()) : nullptr;
+		// CanBeCanceled : serveur, visée du client reçue (départ différé compris) => le sort part quand même
+		if (CastAbility && CastAbility->IsCastPending() && CastAbility->CanBeCanceled())
+		{
+			Pending.Add(CastAbility);
+		}
+	}
+
+	// Annulation prédite (rien n'a été payé : coûts au lancer), répliquée au serveur qui la refuse si la visée est
+	// déjà arrivée (ordre des RPC du joueur : une visée envoyée avant l'annulation arrive avant elle)
+	for (UGenGA_Cast* CastAbility : Pending)
+	{
+		const FGameplayAbilitySpecHandle Handle = CastAbility->GetCurrentAbilitySpecHandle();
+		CastAbility->CancelAbility(Handle, CastAbility->GetCurrentActorInfo(), CastAbility->GetCurrentActivationInfo(), true);
+
+		// Revue P3 T3-7, I2 : un sort annulé dont la touche reste enfoncée (clic gauche en répétition automatique) ne se
+		// relance pas tout seul dans la même image (ProcessAbilityInput) : il faut relâcher puis rappuyer. Tous les sorts de
+		// la même touche (Pyroblast et boule de feu partagent le clic gauche) : la touche entière est « relâchée » pour eux.
+		InputHeldSpecHandles.Remove(Handle);
+		InputPressedSpecHandles.Remove(Handle);
+		if (CastAbility->InputTag.IsValid())
+		{
+			for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+			{
+				if (Spec.GetDynamicSpecSourceTags().HasTagExact(CastAbility->InputTag))
+				{
+					InputHeldSpecHandles.Remove(Spec.Handle);
+					InputPressedSpecHandles.Remove(Spec.Handle);
+				}
+			}
+		}
+	}
+	return Pending.Num();
 }

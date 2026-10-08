@@ -40,20 +40,16 @@ namespace GenSpellIndicatorPrivate
 
 	constexpr int32 MaxStubs = static_cast<int32>(EGenIndicatorSlot::Stub3) - static_cast<int32>(EGenIndicatorSlot::Stub0) + 1;
 
-	/*
-	 * Raccords en attente de la Task V4 (canalisation, branche curffe-plan2 puis batch B) :
-	 * - FGenCastInfo::bChannel n'existe pas encore : aucune incantation n'est une canalisation ;
-	 * - AGenCharacterBase::GetCastElapsedFraction non plus : on lit le remplissage de la barre, identique au temps
-	 *   écoulé / durée pour une incantation non nourrie (Combustion, seul télégraphe centré sans canalisation).
-	 */
-	bool IsChannelCast(const FGenCastInfo& /*Info*/)
+	/** Canalisation (Task V4) : fenêtre minutée, la barre se vide (contre, forme de Living Flame). */
+	bool IsChannelCast(const FGenCastInfo& Info)
 	{
-		return false; // V4 : return Info.bChannel;
+		return Info.bChannel;
 	}
 
+	/** Temps écoulé / durée (Task V4) : grandit aussi pendant une canalisation, dont la barre se vide. */
 	float GetTelegraphProgress(const AGenCharacterBase& Caster)
 	{
-		return FMath::Clamp(Caster.GetCastProgress(), 0.f, 1.f); // V4 : return Caster.GetCastElapsedFraction();
+		return Caster.GetCastElapsedFraction();
 	}
 }
 

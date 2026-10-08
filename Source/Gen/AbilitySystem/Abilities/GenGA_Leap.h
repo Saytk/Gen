@@ -30,6 +30,8 @@ protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 	virtual bool IsInterruptedByHardCC() const override { return !bAirborne; }
+	/** Plan Visuals V3 : le clip de vol (CastMontage) finit avec la force de saut. */
+	virtual float GetCastMontageTargetDuration() const override { return LeapDuration; }
 
 	/** Atterrissage (serveur et client). Par défaut : montage, effet, zone d'atterrissage (serveur). */
 	virtual void OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation);

@@ -40,6 +40,12 @@ void UGenGA_Counter::OnCastLaunched(const FGenCastRelease& Release)
 	WindowTask->OnFinish.AddDynamic(this, &ThisClass::OnWindowFinished);
 	WindowTask->ReadyForActivation();
 
+	// Plan Visuals V4 : la fenêtre se lit comme une canalisation (barre qui se vide), serveur et client propriétaire
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+	{
+		Character->StartChannel(GetClass(), CounterWindow); // retirée par UGenGA_Cast::EndAbility (StopCast)
+	}
+
 	// Lancer un autre sort termine la posture (le clic maintenu ne relance rien : State.Casting)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{

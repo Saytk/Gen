@@ -24,6 +24,15 @@ namespace GenCastBar
 	struct FLayout;
 }
 
+/** Compte affiché d'unités nourries qui change (ancien, nouveau). Toutes les machines sauf le serveur dédié. */
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FGenFedResourceChanged, AGenCharacterBase* /*Character*/, int32 /*Old*/, int32 /*New*/);
+
+/**
+ * Seuil de nourrissage franchi (le compte affiché AUGMENTE, GenIndicatorRules::IsThresholdPop) : nouveau compte.
+ * Émis au même moment que le GameplayCue local GameplayCue.Feed.Threshold. Toutes les machines sauf le serveur dédié.
+ */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FGenFedThresholdReached, AGenCharacterBase* /*Character*/, int32 /*NewCount*/);
+
 /** Équipe "neutre" : ennemie de tout le monde (mannequins d'entraînement, monstres...). */
 inline constexpr uint8 GenNoTeam = 255;
 
@@ -68,6 +77,10 @@ struct FGenCastInfo
 	/** Sort nourri : flammes nourries, connues à la fin du nourrissage. */
 	UPROPERTY(BlueprintReadOnly, Category = "Cast")
 	uint8 FedCount = 0;
+
+	/** Canalisation (fenêtre minutée : contre, forme de Living Flame) : la barre se vide (UI §4.5). Posé par StartChannel. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cast")
+	bool bChannel = false;
 
 	bool IsCasting() const { return Ability != nullptr && Duration > 0.f; }
 };
@@ -143,7 +156,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Health")
 	bool IsDead() const { return bIsDead; }
 
-	/** Intouchable (State.Untouchable) : les coups le traversent (ResolveIncomingHit renvoie Ignored). */
+	/**
+	 * Intouchable (State.Untouchable) : les coups le traversent (ResolveIncomingHit renvoie Ignored), dégâts, contrôles
+	 * durs (ApplyHardCC) et repoussements (ApplyKnockback) ignorés. N'empêche pas de lancer : Living Flame pose en plus
+	 * State.CastLocked.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Gen|Health")
 	bool IsUntouchable() const;
 
@@ -180,6 +197,18 @@ public:
 
 	/** Efface l'affichage quel que soit son propriétaire (mort, réapparition). */
 	void ResetFedResource();
+
+	// --- Plan Visuals V2 : seuils de nourrissage (cosmétique, jamais sur le serveur dédié) ---
+
+	/** Seuils de nourrissage pour les cosmétiques (Foyer, charge de la main, indicateurs). Rien sur un serveur dédié. */
+	FGenFedResourceChanged OnFedResourceChanged;
+
+	/**
+	 * Pop d'un seuil (compte en hausse seulement), avec le compte ABSOLU atteint : une réplication regroupée (0 -> 2)
+	 * ne donne qu'un pop, qui doit donc se dimensionner sur ce compte, jamais sur "+1". Même contrat pour le GameplayCue
+	 * GameplayCue.Feed.Threshold (RawMagnitude = compte absolu). Rien sur un serveur dédié.
+	 */
+	FGenFedThresholdReached OnFedThresholdReached;
 
 	/**
 	 * Client propriétaire -> serveur : nombre exact d'unités nourries par Ability à la fin du nourrissage.
@@ -230,6 +259,22 @@ public:
 	 */
 	void MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFinal = false);
 
+	/**
+	 * Plan Visuals V4 : fenêtre minutée affichée comme une canalisation (la barre se vide de droite à gauche, UI §4.5),
+	 * vue par tous : fenêtre de contre, forme de Living Flame. Serveur et client propriétaire, comme StartCast, mais
+	 * sans effet d'incantation ni visée imposée (SetFaceAim). Arrêtée par StopCast(Ability).
+	 * À appeler depuis OnCastLaunched : UGenGA_Cast a déjà retiré la barre de l'incantation (EndCastPresentation).
+	 */
+	void StartChannel(UClass* Ability, float Duration);
+
+	/**
+	 * Part écoulée de l'incantation ou de la canalisation en cours, 0..1 (0 sans incantation), en temps serveur.
+	 * Grandit même quand la barre se vide : horloge des télégraphes centrés (UGenSpellIndicatorComponent).
+	 * TODO (revue V2-V4, M8) : faux pour un sort nourri après le repli (Duration = nourrissage complet + incantation) ;
+	 * aucun télégraphe centré n'est nourri aujourd'hui. Passer par GetCastBarLayout le jour où il y en aura un.
+	 */
+	float GetCastElapsedFraction() const;
+
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 
 	/** Bond en vol : point d'atterrissage vu par tous (serveur et client propriétaire ; StartTime est fixé ici). */
@@ -238,7 +283,10 @@ public:
 	void ClearLeapTarget(UClass* Ability);
 	const FGenLeapTarget& GetLeapTarget() const { return LeapTarget; }
 
-	/** 0..1, ou -1 si aucune incantation. */
+	/**
+	 * Remplissage de la barre de cast, 0..1, ou -1 si aucune incantation. Pour une canalisation (bChannel), c'est la
+	 * part RESTANTE (la barre se vide, UI §4.5) ; la part écoulée est GetCastElapsedFraction.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Gen|Cast")
 	float GetCastProgress() const;
 
@@ -293,9 +341,29 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CastInfo, BlueprintReadOnly, Category = "Gen|Cast")
 	FGenCastInfo CastInfo;
 
-	/** Non répliqué au propriétaire : il le prédit lui-même. */
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Resource")
+	/** Non répliqué au propriétaire : il le prédit lui-même. Les autres clients en tirent les seuils (OnRep_FedResource). */
+	UPROPERTY(ReplicatedUsing = OnRep_FedResource, BlueprintReadOnly, Category = "Gen|Resource")
 	uint8 FedResource = 0;
+
+	/**
+	 * Échelle de l'effet d'incantation par unité nourrie (Curffe : la charge de la main grandit d'un cran par flamme,
+	 * Curffe-Visuals.md §3.2). 0 = taille fixe. Python : cast_fx_scale_per_fed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Cast")
+	float CastFXScalePerFed = 0.f;
+
+	/** Autres clients : le compte nourri répliqué change (seuils, échelle de l'effet). */
+	UFUNCTION()
+	void OnRep_FedResource(uint8 OldValue);
+
+	/**
+	 * Toutes les écritures de FedResource y passent (serveur, client propriétaire, OnRep des autres clients).
+	 * Diffuse le changement, met l'effet d'incantation à l'échelle et joue le pop local du seuil. Rien sur un serveur dédié.
+	 */
+	void NotifyFedResourceChanged(int32 Old, int32 New, bool bAllowPop = true);
+
+	/** Échelle de CastFXComponent pour Count unités nourries (1 + CastFXScalePerFed × Count). */
+	void ApplyCastFXScale(int32 Count);
 
 	/** Non répliqué au propriétaire : il le prédit lui-même. */
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Leap")
@@ -303,6 +371,22 @@ protected:
 
 	/** Propriétaire de l'affichage des unités nourries (serveur et client propriétaire, non répliqué). */
 	GenFeeding::FFedDisplay FedDisplay;
+
+	/**
+	 * Autres clients (revue V2-V4, M1) : début (StartTime) de l'incantation vue à la dernière réception de FedResource,
+	 * -1 = jamais. Un compte reçu pour une autre incantation repart de 0 : le premier seuil du nouveau sort fait son pop.
+	 */
+	float FedRepCastStartTime = -1.f;
+
+	/**
+	 * Autres clients (revue V2-V4, M2) : image de la dernière réception d'une NOUVELLE incantation (StartTime changé).
+	 * Un compte reçu dans la même image (personnage devenu pertinent en plein nourrissage, arrivée en cours de partie)
+	 * ne fait pas de pop ; la fin du nourrissage (revue P3 T3-7, I1) ne compte pas.
+	 */
+	uint64 CastInfoRepFrame = 0;
+
+	/** Unités nourries par l'incantation EN COURS (0 si l'affichage appartient à un autre sort) : taille de l'effet. */
+	uint8 GetFedCountForCurrentCast() const;
 
 	UFUNCTION(Client, Reliable)
 	void ClientApplyKnockback(FVector_NetQuantize10 LaunchVelocity);
@@ -318,7 +402,7 @@ public:
 protected:
 
 	UFUNCTION()
-	void OnRep_CastInfo();
+	void OnRep_CastInfo(const FGenCastInfo& OldCastInfo);
 
 	/** Lance ou arrête l'effet d'incantation selon CastInfo (rien sur un serveur dédié). */
 	void UpdateCastFX();

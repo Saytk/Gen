@@ -130,4 +130,46 @@ bool FGenCastInfoLayoutTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCastInfoChannelTest, "Gen.CastBar.CharacterChannel",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenCastInfoChannelTest::RunTest(const FString& Parameters)
+{
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Caster = TestWorld.SpawnDummy();
+	if (!TestNotNull(TEXT("mannequin"), Caster))
+	{
+		return false;
+	}
+
+	UClass* Window = UGenGA_Projectile::StaticClass();
+	TestEqual(TEXT("sans incantation : horloge à 0"), Caster->GetCastElapsedFraction(), 0.f);
+
+	// Une incantation en cours est remplacée par la canalisation (même logique que StartCast)
+	Caster->StartFeedCast(Window, 3, 0.3f, 0.5f);
+	Caster->StartChannel(Window, 1.2f);
+	TestTrue(TEXT("canalisation"), Caster->GetCastInfo().bChannel);
+	TestEqual(TEXT("plus de crans"), static_cast<int32>(Caster->GetCastInfo().FeedSlots), 0);
+
+	TestWorld.Advance(0.6f);
+	GenCastBar::FLayout Layout;
+	if (!TestTrue(TEXT("barre"), Caster->GetCastBarLayout(Layout)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("se vide"), Layout.bDrain);
+	TestEqual(TEXT("moitié restante"), Layout.Fill, 0.5f, 0.03f);
+	TestEqual(TEXT("moitié écoulée"), Caster->GetCastElapsedFraction(), 0.5f, 0.03f);
+
+	Caster->StopCast(Window);
+	TestFalse(TEXT("StopCast la termine"), Caster->GetCastInfo().IsCasting());
+	TestFalse(TEXT("plus de canalisation"), Caster->GetCastInfo().bChannel);
+	TestEqual(TEXT("horloge à 0"), Caster->GetCastElapsedFraction(), 0.f);
+
+	// Une incantation normale suivante n'hérite pas du drapeau
+	Caster->StartCast(Window, 0.5f);
+	TestFalse(TEXT("StartCast : pas une canalisation"), Caster->GetCastInfo().bChannel);
+	return true;
+}
+
 #endif

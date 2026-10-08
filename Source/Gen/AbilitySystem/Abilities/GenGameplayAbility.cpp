@@ -1,9 +1,13 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 
 #include "AbilitySystem/Effects/GenGE_Cooldown.h"
+#include "AbilitySystem/Effects/GenGE_Gain.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
+#include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenEnergy.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
 #include "Character/GenCharacterBase.h"
 #include "Engine/World.h"
 #include "GenGameplayTags.h"
@@ -83,6 +87,53 @@ bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Ha
 		return false;
 	}
 	return true;
+}
+
+bool UGenGameplayAbility::CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CheckCost(Handle, ActorInfo, OptionalRelevantTags))
+	{
+		return false;
+	}
+	if (EnergyCost <= 0.f)
+	{
+		return true;
+	}
+
+	// Même règle que la barre de sorts (« Pas assez d'énergie ») : 25.0 suffit pour 25, 24.99 non
+	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	const float Energy = ASC ? ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()) : 0.f;
+	if (GenEnergy::CanAfford(Energy, EnergyCost))
+	{
+		return true;
+	}
+
+	// Comme Super : la raison du refus (ClientActivateAbilityFailed, retours « pas assez d'énergie » par tag d'échec)
+	const FGameplayTag& CostTag = UAbilitySystemGlobals::Get().ActivateFailCostTag;
+	if (OptionalRelevantTags && CostTag.IsValid())
+	{
+		OptionalRelevantTags->AddTag(CostTag);
+	}
+	return false;
+}
+
+void UGenGameplayAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
+
+	if (EnergyCost <= 0.f)
+	{
+		return;
+	}
+
+	// Appelé par CommitAbility : au lancer pour UGenGA_Cast (client dans la fenêtre de la visée, serveur dans celle
+	// de la clé reçue, ou du départ différé), jamais à l'activation. Une incantation annulée ne paie donc rien.
+	const FGameplayEffectSpecHandle Spec = MakeOutgoingGameplayEffectSpec(Handle, ActorInfo, ActivationInfo, UGenGE_Gain::StaticClass(), GetAbilityLevel(Handle, ActorInfo));
+	if (Spec.IsValid())
+	{
+		UGenGE_Gain::SetMagnitudes(*Spec.Data, -EnergyCost, 0.f);
+		ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, Spec);
+	}
 }
 
 void UGenGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const

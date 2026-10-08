@@ -77,10 +77,31 @@ bool FGenResilienceHistoryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("2.5 s d'un coup"), History.Record(0.f, 2.5f), 4.f, 0.001f);
 	}
 	{
-		// Contrôle à cheval sur le début de la fenêtre : seule la partie dans la fenêtre compte
+		// Revue P3 T3-7, I3, lecture stricte : la fenêtre est les 5 s qui finissent à la fin du dernier contrôle.
+		// [0, 2] + [5.5, 6.5] : fenêtre [1.5, 6.5] => 0.5 + 1 = 1.5 s, pas d'immunité
 		GenResilience::FHardCCHistory History;
 		History.Record(0.f, 2.f);
-		TestEqual(TEXT("1.5 s (0.5 à 2) + 1 s"), History.Record(5.5f, 1.f), 2.5f, 0.001f);
+		TestEqual(TEXT("à cheval : 0.5 s (1.5 à 2) + 1 s, pas d'immunité"), History.Record(5.5f, 1.f), 0.f);
+	}
+	{
+		// Exemple de la revue : 1.5 s à 0 et 1.5 s à 4.9 => aucune fenêtre de 5 s ne contient 2.5 s
+		GenResilience::FHardCCHistory History;
+		History.Record(0.f, 1.5f);
+		TestEqual(TEXT("[0, 1.5] + [4.9, 6.4] : 1.6 s dans [1.4, 6.4]"), History.Record(4.9f, 1.5f), 0.f);
+	}
+	{
+		// À cheval mais assez dans la fenêtre : [0, 2] + [4, 5] => fenêtre [0, 5], 3 s
+		GenResilience::FHardCCHistory History;
+		History.Record(0.f, 2.f);
+		TestEqual(TEXT("[0, 2] + [4, 5] : immunité (1 s restante + 1.5 s)"), History.Record(4.f, 1.f), 2.5f, 0.001f);
+	}
+	{
+		// Temps du monde élevé (serveur ouvert depuis longtemps) : précision du double
+		GenResilience::FHardCCHistory History;
+		const double Base = 1.0e7;
+		History.Record(Base, 1.f);
+		History.Record(Base + 1.2, 1.f);
+		TestEqual(TEXT("temps élevé : même résultat"), History.Record(Base + 2.4, 1.f), 2.5f, 0.001f);
 	}
 	{
 		GenResilience::FHardCCHistory History;
@@ -101,6 +122,41 @@ bool FGenUntouchableRuleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("zone sur un intouchable : ignorée"), GenHitRules::Resolve(false, true, EGenHitKind::Area) == EGenHitResponse::Ignored);
 	TestTrue(TEXT("intouchable prime sur le contre (rien n'est bloqué, pas de récompense)"), GenHitRules::Resolve(true, true, EGenHitKind::Projectile) == EGenHitResponse::Ignored);
 	TestTrue(TEXT("sans intouchable : règle du contre"), GenHitRules::Resolve(true, false, EGenHitKind::Melee) == EGenHitResponse::Countered);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenShotExplosionTest, "Gen.Feeding.ShotExplosionRadius",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenShotExplosionTest::RunTest(const FString& Parameters)
+{
+	// GetShotExplosionRadius(Fed, ExplosionMinFeed, FedRadius, BaseRadius)
+	TestEqual(TEXT("Pyroblast : explose toujours (1.2 m)"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, 120.f), 120.f);
+	TestEqual(TEXT("grosse boule de feu, 3 flammes"), GenFeeding::GetShotExplosionRadius(3, 3, 150.f, 0.f), 150.f);
+	TestEqual(TEXT("grosse boule de feu, 2 flammes"), GenFeeding::GetShotExplosionRadius(2, 3, 150.f, 0.f), 0.f);
+	TestEqual(TEXT("grosse boule de feu, 2 flammes, avec une base"), GenFeeding::GetShotExplosionRadius(2, 3, 150.f, 120.f), 120.f);
+	TestEqual(TEXT("boule de feu"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, 0.f), 0.f);
+	TestEqual(TEXT("base négative ignorée"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, -10.f), 0.f);
+	TestEqual(TEXT("nourri sous la base : jamais plus petit que la base (revue P3 T3-7, M7)"), GenFeeding::GetShotExplosionRadius(3, 3, 100.f, 120.f), 120.f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenServerTagGraceTest, "Gen.Feeding.ServerTagGrace",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenServerTagGraceTest::RunTest(const FString& Parameters)
+{
+	// Revue V2-V4, I1 : IsTagChangeInGrace(ChangeTime, ReferenceTime), fenêtre de 0.25 s des deux côtés
+	TestEqual(TEXT("grâce de 0.25 s"), GenFeeding::ServerTagGrace, 0.25f);
+	TestTrue(TEXT("retiré 50 ms avant l'activation"), GenFeeding::IsTagChangeInGrace(9.95, 10.0));
+	TestTrue(TEXT("retiré pile 0.25 s avant"), GenFeeding::IsTagChangeInGrace(9.75, 10.0));
+	TestFalse(TEXT("retiré 1 s avant : plus de grâce"), GenFeeding::IsTagChangeInGrace(9.0, 10.0));
+	TestTrue(TEXT("posé 0.1 s après l'activation (début de l'embrasement)"), GenFeeding::IsTagChangeInGrace(10.1, 10.0));
+	TestFalse(TEXT("posé 0.5 s après"), GenFeeding::IsTagChangeInGrace(10.5, 10.0));
+	TestFalse(TEXT("jamais changé"), GenFeeding::IsTagChangeInGrace(-1.e9, 10.0));
+	// Serveur allumé depuis des jours : temps en double, la fenêtre reste exacte
+	TestTrue(TEXT("temps longs"), GenFeeding::IsTagChangeInGrace(864000.8, 864001.0));
+	TestFalse(TEXT("temps longs, hors fenêtre"), GenFeeding::IsTagChangeInGrace(864000.7, 864001.0));
 	return true;
 }
 
