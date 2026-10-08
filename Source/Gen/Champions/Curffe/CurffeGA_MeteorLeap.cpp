@@ -72,4 +72,15 @@ FText UCurffeGA_MeteorLeap::GetFeedTooltipLines(int32 Fed) const
 		TakeOff, Fed, GenAbilityTooltip::Number(RingDamage));
 }
 
+FText UCurffeGA_MeteorLeap::GetCompactTooltipLine() const
+{
+	const FText TakeOff = Super::GetCompactTooltipLine();
+	if (GetTooltipMaxFeed() <= 0 || !RingProjectileClass)
+	{
+		return TakeOff;
+	}
+	// Une boule par flamme (GenAreaRules::GetRingDirections(Release.Fed)), même séparateur que GenAbilityTooltip::FeedSummary
+	return FText::Format(LOCTEXT("CompactRing", "{0} · 1 boule par flamme"), TakeOff);
+}
+
 #undef LOCTEXT_NAMESPACE

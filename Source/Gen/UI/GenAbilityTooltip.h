@@ -6,6 +6,7 @@
 #include "GenAbilityTooltip.generated.h"
 
 class UBorder;
+class UCommonTextStyle;
 class UGenTextBlock;
 class USizeBox;
 
@@ -25,9 +26,10 @@ public:
 	void SetContent(const FGenAbilityTooltipData& Data, const FText& KeyLabel);
 
 	/**
-	 * Revue PIE finale, C-2 : carte compacte du panneau des détails (Alt maintenu) : en-tête, statistiques et lignes par
-	 * flamme (FGenAbilityTooltipData::GetCompactLinesText), sans description ; largeur fixe TooltipCompactWidth pour
-	 * DetailsColumns cartes par rangée. Le survol garde la carte complète. Avant ou après SetContent.
+	 * Carte compacte du panneau des détails (Alt maintenu, UI_Guidelines §4.1) : nom et touche, une ligne de statistiques
+	 * (incantation, recharge, coût) et une ligne d'effet (FGenAbilityTooltipData::CompactLine), en CompactTextStyle ; ni
+	 * description ni lignes d'effet. Largeur fixe TooltipCompactWidth pour DetailsColumns cartes par rangée. Le survol
+	 * garde la carte complète. Avant ou après SetContent.
 	 */
 	void SetCompact(bool bInCompact);
 
@@ -68,8 +70,16 @@ protected:
 	/** Largeur maximale (TooltipMaxWidth). */
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> ContentBox;
 
+	/**
+	 * Style du texte de la carte compacte (TS_BodyCompact : TS_Body à interligne 1, §2.6) pour le nom, les statistiques et
+	 * la ligne d'effet. Sans style : celui du WBP.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Gen|UI") TSubclassOf<UCommonTextStyle> CompactTextStyle;
+
 private:
 	void ApplyStyle();
+	/** Style du texte selon le mode : CompactTextStyle, ou celui du WBP (retenu au premier passage). */
+	void ApplyTextStyles();
 	/** Affiche Content selon le mode (complet ou compact). */
 	void ApplyContent();
 	void StartFade();
@@ -86,6 +96,8 @@ private:
 	/** Revue PIE finale, C-2 : contenu retenu (le mode peut changer après SetContent). */
 	FGenAbilityTooltipData Content;
 	FText ContentKeyLabel;
+	/** Styles du WBP de NameText, StatsText et LinesText, pour revenir de la carte compacte. */
+	UPROPERTY(Transient) TArray<TSubclassOf<UCommonTextStyle>> AuthoredTextStyles;
 	bool bHasContent = false;
 	bool bCompact = false;
 };

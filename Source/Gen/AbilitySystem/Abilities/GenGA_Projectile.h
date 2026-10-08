@@ -43,6 +43,8 @@ public:
 	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
 	virtual float GetTooltipRange() const override;
 	virtual FText GetFeedTooltipLines(int32 Fed) const override;
+	/** Sort nourri : dégâts par flamme, puis le seuil de l'explosion et du recul (« explosion dès 2 · recul à 3 »). */
+	virtual FText GetCompactTooltipLine() const override;
 
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;

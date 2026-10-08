@@ -40,6 +40,8 @@ public:
 	virtual float GetTooltipRange() const override { return Range; }
 	virtual FText GetFeedTooltipLines(int32 Fed) const override;
 	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+	/** Sort nourri : rayon et dégâts par flamme. */
+	virtual FText GetCompactTooltipLine() const override;
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;

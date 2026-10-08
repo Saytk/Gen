@@ -43,6 +43,15 @@ namespace GenAbilityTooltipTest
 	{
 		return FString::Printf(TEXT("%s dégâts"), *GenAbilityTooltip::Number(Damage).ToString());
 	}
+
+	/** Carte compacte (§4.1) : une seule ligne d'effet, et des statistiques sans portée ni nourrissage. */
+	void TestCompact(FAutomationTestBase& Test, const TCHAR* What, const FGenAbilityTooltipData& Data)
+	{
+		Test.TestFalse(FString::Printf(TEXT("%s : ligne compacte"), What), Data.CompactLine.IsEmpty());
+		Test.TestFalse(FString::Printf(TEXT("%s : ligne compacte sur une ligne"), What), Data.CompactLine.ToString().Contains(TEXT("\n")));
+		Test.TestFalse(FString::Printf(TEXT("%s : statistiques compactes sans portée"), What), Data.GetCompactStatsText().ToString().Contains(TEXT("Portée")));
+		Test.TestFalse(FString::Printf(TEXT("%s : statistiques compactes sans nourrissage"), What), Data.GetCompactStatsText().ToString().Contains(TEXT("Nourri")));
+	}
 }
 
 bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
@@ -54,6 +63,13 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("0.4 s"), GenAbilityTooltip::Seconds(0.4f).ToString(), FString::Printf(TEXT("%s s"), *FText::AsNumber(0.4f).ToString()));
 	TestEqual(TEXT("350 cm -> 3.5 m"), GenAbilityTooltip::Meters(350.f).ToString(), FString::Printf(TEXT("%s m"), *FText::AsNumber(3.5f).ToString()));
 
+	// Séries de la carte compacte : une valeur par seuil, une seule si elles sont égales ; seuil d'apparition d'un effet
+	TestEqual(TEXT("Série 14/24"), GenAbilityTooltip::Series({ 14.f, 24.f }).ToString(), FString::Printf(TEXT("%s/%s"), *GenAbilityTooltip::Number(14.f).ToString(), *GenAbilityTooltip::Number(24.f).ToString()));
+	TestEqual(TEXT("Série égale -> une valeur"), GenAbilityTooltip::Series({ 12.f, 12.f, 12.f }).ToString(), GenAbilityTooltip::Number(12.f).ToString());
+	TestEqual(TEXT("Effet dès 0 flamme -> sa valeur"), GenAbilityTooltip::FromFeed(0, 3, INVTEXT("1,5 m")).ToString(), FString(TEXT("1,5 m")));
+	TestEqual(TEXT("Effet dès 2"), GenAbilityTooltip::FromFeed(2, 3, FText::GetEmpty()).ToString(), FString::Printf(TEXT("dès %s"), *FText::AsNumber(2).ToString()));
+	TestEqual(TEXT("Effet au dernier seuil"), GenAbilityTooltip::FromFeed(3, 3, FText::GetEmpty()).ToString(), FString::Printf(TEXT("à %s"), *FText::AsNumber(3).ToString()));
+
 	// --- Boule de feu (asset) : incantation et dégâts de l'asset ---
 	if (const UGenGA_Projectile* Fireball = LoadCurffeAbility<UGenGA_Projectile>(TEXT("GA_Fireball")); TestNotNull(TEXT("GA_Fireball"), Fireball))
 	{
@@ -64,6 +80,9 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Boule de feu : incantation de l'asset"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Seconds(Fireball->GetCastTime()).ToString()));
 		TestTrue(TEXT("Boule de feu : dégâts de l'asset"), Text.Contains(DamageText(Fireball->GetShotDamage(0))));
 		TestTrue(TEXT("Boule de feu : portée du projectile"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Meters(Fireball->GetTooltipRange()).ToString()));
+		TestCompact(*this, TEXT("Boule de feu"), Data);
+		TestTrue(TEXT("Boule de feu compacte : dégâts"), Data.CompactLine.ToString().Contains(DamageText(Fireball->GetShotDamage(0))));
+		TestTrue(TEXT("Boule de feu compacte : incantation"), Data.GetCompactStatsText().ToString().Contains(GenAbilityTooltip::Seconds(Fireball->GetCastTime()).ToString()));
 	}
 
 	// --- Grande boule de feu (asset) : un seuil par flamme, 3 flammes = 44 dégâts + explosion + recul ---
@@ -84,6 +103,22 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("1 flamme : pas d'explosion"), Great->GetShotParams(1).ExplosionRadius, 0.f);
 			TestFalse(TEXT("1 flamme : ligne sans explosion"), Data.Lines[1].ToString().Contains(TEXT("explosion")));
 		}
+
+		// Carte compacte : « 0/1/2/3 flammes : 14/24/34/44 dégâts · explosion dès 2 · recul à 3 », valeurs du jeu
+		TestCompact(*this, TEXT("Grande boule de feu"), Data);
+		TArray<float> Damage;
+		int32 FirstExplosion = INDEX_NONE;
+		for (int32 Fed = 0; Fed <= Great->GetTooltipMaxFeed(); ++Fed)
+		{
+			Damage.Add(Great->GetShotDamage(Fed));
+			FirstExplosion = FirstExplosion == INDEX_NONE && Great->GetShotParams(Fed).ExplosionRadius > 0.f ? Fed : FirstExplosion;
+		}
+		const FString Compact = Data.CompactLine.ToString();
+		AddInfo(FString::Printf(TEXT("GA_GreatFireball compacte : %s | %s"), *Data.GetCompactStatsText().ToString(), *Compact));
+		TestTrue(TEXT("Compacte : seuils 0/1/2/3"), Compact.StartsWith(TEXT("0/1/2/3")));
+		TestTrue(TEXT("Compacte : dégâts par flamme"), Compact.Contains(GenAbilityTooltip::Series(Damage).ToString()));
+		TestTrue(TEXT("Compacte : seuil de l'explosion"), FirstExplosion != INDEX_NONE
+			&& Compact.Contains(GenAbilityTooltip::FromFeed(FirstExplosion, Great->GetTooltipMaxFeed(), GenAbilityTooltip::Meters(Great->GetShotParams(Great->GetTooltipMaxFeed()).ExplosionRadius)).ToString()));
 	}
 
 	// --- Pilier de flammes (classe native, valeurs de la spec) : rayon 3,5 m à 3 flammes ---
@@ -100,6 +135,13 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Pilier : 3,5 m dans l'infobulle"), Text.Contains(GenAbilityTooltip::Meters(350.f).ToString()));
 		TestTrue(TEXT("Pilier : 2 m sans flamme"), Data.Lines.Num() > 0 && Data.Lines[0].ToString().Contains(GenAbilityTooltip::Meters(200.f).ToString()));
 		TestTrue(TEXT("Pilier : portée"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Meters(Pillar->GetTooltipRange()).ToString()));
+		TestCompact(*this, TEXT("Pilier"), Data);
+		TArray<float> Radii;
+		for (int32 Fed = 0; Fed <= Pillar->GetTooltipMaxFeed(); ++Fed)
+		{
+			Radii.Add(Pillar->GetAreaRadius(Fed));
+		}
+		TestTrue(TEXT("Pilier compact : rayon par flamme"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::MetersSeries(Radii).ToString()));
 
 		// Revue finale, M-1 : l'infobulle donne le délai d'impact du jeu (plancher MinTelegraph relevé de la marge de latence)
 		TestTrue(TEXT("Pilier : délai d'impact du jeu"), Text.Contains(GenAbilityTooltip::Seconds(Pillar->GetEffectiveImpactDelay()).ToString()));
@@ -131,6 +173,16 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		}
 		TestTrue(TEXT("Bond : portée"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Meters(Leap->GetTooltipRange()).ToString()));
 		TestTrue(TEXT("Bond : atterrissage"), Text.Contains(TEXT("Atterrissage")));
+		TestCompact(*this, TEXT("Bond"), Data);
+		if (Top > 0)
+		{
+			TArray<float> TakeOff;
+			for (int32 Fed = 0; Fed <= Top; ++Fed)
+			{
+				TakeOff.Add(Leap->GetCastTime() + Fed * Leap->GetTooltipFeedInterval());
+			}
+			TestTrue(TEXT("Bond compact : décollage par flamme"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::SecondsSeries(TakeOff).ToString()));
+		}
 	}
 
 	// --- Retour de flamme (contre natif) : fenêtre ---
@@ -140,6 +192,8 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		const FString Text = Build(*Counter, Data);
 		TestTrue(TEXT("Contre : fenêtre"), Text.Contains(GenAbilityTooltip::Seconds(Counter->GetCounterWindow()).ToString()));
 		TestTrue(TEXT("Contre : incantation"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Seconds(Counter->GetCastTime()).ToString()));
+		TestCompact(*this, TEXT("Contre"), Data);
+		TestTrue(TEXT("Contre compact : fenêtre"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::Seconds(Counter->GetCounterWindow()).ToString()));
 	}
 
 	// --- Flamme vivante et Combustion (natives) : coûts, durées, rayons ---
@@ -151,6 +205,9 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Flamme vivante : forme"), Text.Contains(GenAbilityTooltip::Seconds(LivingFlame->GetFormDuration()).ToString()));
 		TestTrue(TEXT("Flamme vivante : anneau"), Text.Contains(GenAbilityTooltip::Meters(LivingFlame->GetBurstRadius()).ToString()));
 		TestTrue(TEXT("Flamme vivante : recharge"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Seconds(LivingFlame->CooldownDuration.GetValueAtLevel(1)).ToString()));
+		TestCompact(*this, TEXT("Flamme vivante"), Data);
+		TestTrue(TEXT("Flamme vivante compacte : forme"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::Seconds(LivingFlame->GetFormDuration()).ToString()));
+		TestTrue(TEXT("Flamme vivante compacte : coût"), Data.GetCompactStatsText().ToString().Contains(GenAbilityTooltip::Number(LivingFlame->EnergyCost).ToString()));
 	}
 	{
 		const UCurffeGA_Combustion* Combustion = GetDefault<UCurffeGA_Combustion>();
@@ -159,6 +216,9 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Combustion : 100 énergie"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Number(100.f).ToString()));
 		TestTrue(TEXT("Combustion : nova"), Text.Contains(GenAbilityTooltip::Meters(Combustion->GetNovaRadius()).ToString()));
 		TestTrue(TEXT("Combustion : embrasement"), Text.Contains(GenAbilityTooltip::Seconds(Combustion->GetAblazeDuration()).ToString()));
+		TestCompact(*this, TEXT("Combustion"), Data);
+		TestTrue(TEXT("Combustion compacte : nova"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::Meters(Combustion->GetNovaRadius()).ToString()));
+		TestTrue(TEXT("Combustion compacte : embrasement"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::Seconds(Combustion->GetAblazeDuration()).ToString()));
 	}
 
 	// --- Description de l'asset : arguments nommés remplis depuis les valeurs de jeu ---

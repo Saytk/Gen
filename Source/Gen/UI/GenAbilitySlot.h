@@ -67,9 +67,6 @@ public:
 	/** Libellé de la touche du sort (texte court, même si un glyphe est affiché). */
 	const FText& GetKeyLabelText() const { return KeyLabelText; }
 
-	/** Nouvelle infobulle remplie pour ce sort (panneau des détails de la barre), cachée. Nul sans sort ou sans classe. */
-	UGenAbilityTooltip* CreateFilledTooltip() const;
-
 	/**
 	 * Survol du disque (sondé par un minuteur, la souris restant au jeu) : infobulle après TooltipHoverDelay, cachée
 	 * dès que le curseur sort. Public pour les tests.

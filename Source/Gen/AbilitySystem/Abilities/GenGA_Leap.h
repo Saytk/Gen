@@ -54,6 +54,8 @@ public:
 	/** Décollage (nourrissage + incantation) avec Fed unités. */
 	virtual FText GetFeedTooltipLines(int32 Fed) const override;
 	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+	/** Sort nourri : décollage par flamme. */
+	virtual FText GetCompactTooltipLine() const override;
 
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;

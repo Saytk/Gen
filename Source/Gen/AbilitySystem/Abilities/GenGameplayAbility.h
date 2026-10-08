@@ -174,6 +174,14 @@ public:
 	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const {}
 
 	/**
+	 * Ligne unique de la carte compacte (détails, Alt maintenu ; UI_Guidelines §4.1) : sort nourri, une série par flamme
+	 * (« 0/1/2/3 flammes : 14/24/34/44 dégâts · explosion dès 2 · recul à 3 », GenAbilityTooltip::FeedSummary) ; sinon
+	 * l'effet le plus important. Défaut : l'effet sans flamme (GetFeedTooltipLines(0)), sinon la première ligne d'effet ;
+	 * sort nourri sans surcharge : l'effet au dernier seuil.
+	 */
+	virtual FText GetCompactTooltipLine() const;
+
+	/**
 	 * Télégraphe centré sur le lanceur, vu par tous pendant l'incantation (bChannel faux) ou la canalisation (vrai).
 	 * Rayon en cm, 0 = aucun. Combustion : NovaRadius pendant l'incantation ; Living Flame : BurstRadius pendant la forme.
 	 */

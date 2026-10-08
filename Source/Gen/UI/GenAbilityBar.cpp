@@ -1,5 +1,7 @@
 #include "UI/GenAbilityBar.h"
 
+#include "AbilitySystem/GenAbilityTooltipData.h"
+#include "Blueprint/UserWidget.h"
 #include "Components/PanelWidget.h"
 #include "Components/Spacer.h"
 #include "Components/WrapBox.h"
@@ -124,16 +126,44 @@ void UGenAbilityBar::SetAbilityDetailsShown(bool bShown)
 
 	if (bShown)
 	{
-		// Une carte par sort, recréée à chaque appui : les valeurs suivent le sort et la touche du moment
-		DetailsPanel->ClearChildren();
-		for (UGenAbilitySlot* SlotWidget : GetSlots())
+		// Une carte compacte par emplacement, créée au premier appui puis réutilisée (le survol garde la carte complète) ;
+		// chaque appui la remplit avec le sort et la touche du moment, et cache celle d'un emplacement vide
+		const TArray<UGenAbilitySlot*> Slots = GetSlots();
+		if (DetailsPanel->GetChildrenCount() != Slots.Num())
 		{
-			if (UGenAbilityTooltip* Tooltip = SlotWidget->CreateFilledTooltip())
+			TSubclassOf<UGenAbilityTooltip> CardClass;
+			for (const UGenAbilitySlot* SlotWidget : Slots)
 			{
-				// Revue PIE finale, C-2 : carte compacte (le survol garde la carte complète)
-				Tooltip->SetCompact(true);
-				DetailsPanel->AddChild(Tooltip);
-				Tooltip->Show(0.f);
+				CardClass = CardClass ? CardClass : SlotWidget->TooltipClass;
+			}
+			if (!CardClass || !GetOwningPlayer())
+			{
+				return;
+			}
+			DetailsPanel->ClearChildren();
+			for (int32 Index = 0; Index < Slots.Num(); ++Index)
+			{
+				UGenAbilityTooltip* Card = CreateWidget<UGenAbilityTooltip>(GetOwningPlayer(), CardClass);
+				Card->SetCompact(true);
+				DetailsPanel->AddChild(Card);
+			}
+		}
+		for (int32 Index = 0; Index < Slots.Num(); ++Index)
+		{
+			UGenAbilityTooltip* Card = Cast<UGenAbilityTooltip>(DetailsPanel->GetChildAt(Index));
+			FGenAbilityTooltipData Data;
+			if (!Card)
+			{
+				continue;
+			}
+			if (Slots[Index]->BuildTooltipData(Data))
+			{
+				Card->SetContent(Data, Slots[Index]->GetKeyLabelText());
+				Card->Show(0.f);
+			}
+			else
+			{
+				Card->Hide();
 			}
 		}
 		DetailsPanel->SetVisibility(ESlateVisibility::HitTestInvisible);

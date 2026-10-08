@@ -70,6 +70,12 @@ void UCurffeGA_Combustion::GetTooltipArgs(FFormatNamedArguments& Args) const
 	Args.Add(TEXT("Duration"), GenAbilityTooltip::Seconds(AblazeDuration));
 }
 
+FText UCurffeGA_Combustion::GetCompactTooltipLine() const
+{
+	return FText::Format(LOCTEXT("CompactNova", "Nova {0}, {1} dégâts ; embrasé {2}"), GenAbilityTooltip::Meters(NovaRadius),
+		GenAbilityTooltip::Number(NovaDamage), GenAbilityTooltip::Seconds(AblazeDuration));
+}
+
 void UCurffeGA_Combustion::GetTooltipEffectLines(TArray<FText>& OutLines) const
 {
 	OutLines.Add(LOCTEXT("Payment", "Énergie payée à la fin de l'incantation ; interrompue par un contrôle dur, rien n'est payé"));

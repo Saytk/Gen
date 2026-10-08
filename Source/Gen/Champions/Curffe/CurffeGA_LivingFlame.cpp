@@ -199,6 +199,11 @@ void UCurffeGA_LivingFlame::GetTooltipArgs(FFormatNamedArguments& Args) const
 	Args.Add(TEXT("HasteDuration"), GenAbilityTooltip::Seconds(HasteDuration));
 }
 
+FText UCurffeGA_LivingFlame::GetCompactTooltipLine() const
+{
+	return FText::Format(LOCTEXT("CompactForm", "Forme de feu {0} : intouchable"), GenAbilityTooltip::Seconds(FormDuration));
+}
+
 void UCurffeGA_LivingFlame::GetTooltipEffectLines(TArray<FText>& OutLines) const
 {
 	OutLines.Add(FText::Format(LOCTEXT("Form", "Forme de feu {0} : intouchable, sans sort"), GenAbilityTooltip::Seconds(FormDuration)));

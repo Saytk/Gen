@@ -1,6 +1,7 @@
 #include "AbilitySystem/GenAbilityTooltipData.h"
 
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
+#include "Algo/AllOf.h"
 
 #define LOCTEXT_NAMESPACE "GenAbilityTooltip"
 
@@ -14,11 +15,9 @@ FText FGenAbilityTooltipData::GetLinesText() const
 	return GenAbilityTooltip::Join(Lines, FText::FromString(TEXT("\n")));
 }
 
-FText FGenAbilityTooltipData::GetCompactLinesText() const
+FText FGenAbilityTooltipData::GetCompactStatsText() const
 {
-	const int32 Count = CoreLineCount > 0 ? FMath::Min(CoreLineCount, Lines.Num()) : FMath::Min(1, Lines.Num());
-	TArray<FText> Compact(Lines.GetData(), Count);
-	return GenAbilityTooltip::Join(Compact, FText::FromString(TEXT("\n")));
+	return GenAbilityTooltip::Join(CompactStats, LOCTEXT("StatsSeparator", " · "));
 }
 
 FString FGenAbilityTooltipData::ToString() const
@@ -67,6 +66,52 @@ namespace GenAbilityTooltip
 		return FText::Join(Separator, NonEmpty);
 	}
 
+	FText Series(TConstArrayView<float> Values)
+	{
+		TArray<FText> Parts;
+		for (const float Value : Values)
+		{
+			Parts.Add(Number(Value));
+		}
+		const bool bAllEqual = !Values.IsEmpty() && Algo::AllOf(Values, [&Values](float Value) { return FMath::IsNearlyEqual(Value, Values[0]); });
+		return bAllEqual ? Parts[0] : FText::Join(INVTEXT("/"), Parts);
+	}
+
+	FText SecondsSeries(TConstArrayView<float> InSeconds)
+	{
+		return FText::Format(LOCTEXT("Seconds", "{0} s"), Series(InSeconds));
+	}
+
+	FText MetersSeries(TConstArrayView<float> Centimetres)
+	{
+		TArray<float> InMetres;
+		for (const float Value : Centimetres)
+		{
+			InMetres.Add(Value / 100.f);
+		}
+		return FText::Format(LOCTEXT("Meters", "{0} m"), Series(InMetres));
+	}
+
+	FText FromFeed(int32 FirstFed, int32 MaxFeed, const FText& Always)
+	{
+		if (FirstFed <= 0)
+		{
+			return Always;
+		}
+		return FirstFed >= MaxFeed ? FText::Format(LOCTEXT("AtFeed", "à {0}"), FirstFed) : FText::Format(LOCTEXT("FromFeed", "dès {0}"), FirstFed);
+	}
+
+	FText FeedSummary(int32 MaxFeed, const TArray<FText>& Parts)
+	{
+		TArray<FText> Counts;
+		for (int32 Fed = 0; Fed <= MaxFeed; ++Fed)
+		{
+			Counts.Add(FText::AsNumber(Fed));
+		}
+		return FText::Format(LOCTEXT("FeedSummary", "{0} {1}|plural(one=flamme,other=flammes) : {2}"), FText::Join(INVTEXT("/"), Counts), MaxFeed,
+			Join(Parts, LOCTEXT("StatsSeparator", " · ")));
+	}
+
 	/** Nom affichable de la classe d'un sort sans DisplayName (UClass::GetDisplayNameText n'existe qu'avec l'éditeur). */
 	static FText GetClassDisplayName(const UClass* Class)
 	{
@@ -104,6 +149,8 @@ namespace GenAbilityTooltip
 		{
 			Out.Stats.Add(FText::Format(LOCTEXT("EnergyCost", "{0} énergie"), Number(Ability.EnergyCost)));
 		}
+		// Carte compacte : incantation, recharge et coût seulement (une ligne à TooltipCompactWidth)
+		Out.CompactStats = Out.Stats;
 		const float Range = Ability.GetTooltipRange();
 		if (Range > 0.f)
 		{
@@ -147,8 +194,10 @@ namespace GenAbilityTooltip
 				Out.Lines.Add(Effect);
 			}
 		}
-		Out.CoreLineCount = Out.Lines.Num();
 		Ability.GetTooltipEffectLines(Out.Lines);
+
+		// Carte compacte : une ligne, la série par flamme ou l'effet clé du sort
+		Out.CompactLine = Ability.GetCompactTooltipLine();
 	}
 }
 

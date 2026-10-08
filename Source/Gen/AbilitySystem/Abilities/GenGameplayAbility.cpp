@@ -254,6 +254,24 @@ void UGenGameplayAbility::GetTooltipArgs(FFormatNamedArguments& Args) const
 	Args.Add(TEXT("Cooldown"), GenAbilityTooltip::Seconds(CooldownDuration.GetValueAtLevel(1)));
 }
 
+FText UGenGameplayAbility::GetCompactTooltipLine() const
+{
+	const int32 MaxFeed = GetTooltipMaxFeed();
+	if (MaxFeed > 0)
+	{
+		const FText Top = GetFeedTooltipLines(MaxFeed);
+		return Top.IsEmpty() ? FText::GetEmpty() : FText::Format(LOCTEXT("CompactTop", "{0} {0}|plural(one=flamme,other=flammes) : {1}"), MaxFeed, Top);
+	}
+	const FText Effect = GetFeedTooltipLines(0);
+	if (!Effect.IsEmpty())
+	{
+		return Effect;
+	}
+	TArray<FText> Lines;
+	GetTooltipEffectLines(Lines);
+	return Lines.Num() > 0 ? Lines[0] : FText::GetEmpty();
+}
+
 AGenCharacterBase* UGenGameplayAbility::GetGenCharacterFromActorInfo() const
 {
 	return Cast<AGenCharacterBase>(GetAvatarActorFromActorInfo());

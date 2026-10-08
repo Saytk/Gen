@@ -124,6 +124,31 @@ FText UGenGA_GroundArea::GetFeedTooltipLines(int32 Fed) const
 	return GenAbilityTooltip::Join(Parts, LOCTEXT("Comma", ", "));
 }
 
+FText UGenGA_GroundArea::GetCompactTooltipLine() const
+{
+	const int32 Top = GetTooltipMaxFeed();
+	if (Top <= 0)
+	{
+		return Super::GetCompactTooltipLine();
+	}
+	TArray<float> Radii;
+	TArray<float> DamageSeries;
+	bool bDamage = false;
+	for (int32 Fed = 0; Fed <= Top; ++Fed)
+	{
+		Radii.Add(GetAreaRadius(Fed));
+		DamageSeries.Add(GetAreaDamage(Fed));
+		bDamage |= DamageSeries.Last() > 0.f;
+	}
+	TArray<FText> Parts;
+	Parts.Add(FText::Format(LOCTEXT("Radius", "rayon {0}"), GenAbilityTooltip::MetersSeries(Radii)));
+	if (bDamage)
+	{
+		Parts.Add(FText::Format(LOCTEXT("Damage", "{0} dégâts"), GenAbilityTooltip::Series(DamageSeries)));
+	}
+	return GenAbilityTooltip::FeedSummary(Top, Parts);
+}
+
 void UGenGA_GroundArea::GetTooltipEffectLines(TArray<FText>& OutLines) const
 {
 	OutLines.Add(FText::Format(LOCTEXT("Impact", "Impact {0} après le lancer"), GenAbilityTooltip::Seconds(GetEffectiveImpactDelay())));

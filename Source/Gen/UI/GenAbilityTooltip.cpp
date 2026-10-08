@@ -1,6 +1,7 @@
 #include "UI/GenAbilityTooltip.h"
 
 #include "AbilitySystem/GenAbilityTooltipData.h"
+#include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/SizeBox.h"
 #include "Engine/World.h"
@@ -30,6 +31,13 @@ namespace
 			Block->SetText(Text);
 			Block->SetVisibility(Text.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 		}
+	}
+
+	/** Style posé dans le WBP (UCommonTextBlock::Style est privé, sans accesseur). */
+	TSubclassOf<UCommonTextStyle> GetTextStyle(const UCommonTextBlock* Block)
+	{
+		static const FClassProperty* StyleProperty = FindFProperty<FClassProperty>(UCommonTextBlock::StaticClass(), TEXT("Style"));
+		return Block && StyleProperty ? TSubclassOf<UCommonTextStyle>(Cast<UClass>(StyleProperty->GetObjectPropertyValue_InContainer(Block))) : nullptr;
 	}
 }
 
@@ -89,6 +97,7 @@ void UGenAbilityTooltip::ApplyStyle()
 	{
 		KeyText->SetColorAndOpacity(FSlateColor(Palette->Accent_Brass));
 	}
+	ApplyTextStyles();
 	// Texte sur plusieurs lignes, coupé à la largeur de la boîte (§7.1 : <= 80 caractères par ligne)
 	for (UGenTextBlock* Block : { NameText.Get(), DescriptionText.Get(), StatsText.Get(), LinesText.Get() })
 	{
@@ -98,6 +107,27 @@ void UGenAbilityTooltip::ApplyStyle()
 		}
 	}
 	bStyled = true;
+}
+
+void UGenAbilityTooltip::ApplyTextStyles()
+{
+	UGenTextBlock* const Blocks[] = { NameText.Get(), StatsText.Get(), LinesText.Get() };
+	if (AuthoredTextStyles.IsEmpty())
+	{
+		for (UGenTextBlock* Block : Blocks)
+		{
+			AuthoredTextStyles.Add(GetTextStyle(Block));
+		}
+	}
+	// Carte compacte : TS_BodyCompact (interligne 1) ; carte complète : les styles du WBP (TS_Body)
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Blocks); ++Index)
+	{
+		const TSubclassOf<UCommonTextStyle> Style = bCompact && CompactTextStyle ? CompactTextStyle : AuthoredTextStyles[Index];
+		if (Blocks[Index] && Style && GetTextStyle(Blocks[Index]) != Style)
+		{
+			Blocks[Index]->SetStyle(Style);
+		}
+	}
 }
 
 void UGenAbilityTooltip::SetContent(const FGenAbilityTooltipData& Data, const FText& KeyLabel)
@@ -133,12 +163,12 @@ void UGenAbilityTooltip::ApplyContent()
 {
 	NameText->SetText(Content.Name);
 	SetOptionalText(KeyText, ContentKeyLabel);
-	SetOptionalText(StatsText, Content.GetStatsText());
-	// Revue PIE finale, C-2 : la carte compacte n'a pas de description, et seulement les lignes par flamme
+	// Carte compacte (§4.1) : une ligne de statistiques (incantation, recharge, coût) et une ligne d'effet, sans description
+	SetOptionalText(StatsText, bCompact ? Content.GetCompactStatsText() : Content.GetStatsText());
 	const FText Description = bCompact ? FText::GetEmpty() : Content.Description;
 	DescriptionText->SetText(Description);
 	DescriptionText->SetVisibility(Description.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	SetOptionalText(LinesText, bCompact ? Content.GetCompactLinesText() : Content.GetLinesText());
+	SetOptionalText(LinesText, bCompact ? Content.CompactLine : Content.GetLinesText());
 }
 
 FText UGenAbilityTooltip::GetNameText() const

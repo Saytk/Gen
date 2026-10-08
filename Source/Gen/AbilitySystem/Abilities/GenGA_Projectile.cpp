@@ -150,4 +150,41 @@ FText UGenGA_Projectile::GetFeedTooltipLines(int32 Fed) const
 	return GenAbilityTooltip::Join(Parts, LOCTEXT("Plus", " + "));
 }
 
+FText UGenGA_Projectile::GetCompactTooltipLine() const
+{
+	const int32 Top = GetTooltipMaxFeed();
+	if (Top <= 0)
+	{
+		return Super::GetCompactTooltipLine();
+	}
+	TArray<float> DamageSeries;
+	int32 FirstExplosion = INDEX_NONE;
+	int32 FirstKnockback = INDEX_NONE;
+	for (int32 Fed = 0; Fed <= Top; ++Fed)
+	{
+		DamageSeries.Add(GetShotDamage(Fed));
+		const FGenProjectileShotParams Shot = GetShotParams(Fed);
+		if (FirstExplosion == INDEX_NONE && Shot.ExplosionRadius > 0.f)
+		{
+			FirstExplosion = Fed;
+		}
+		if (FirstKnockback == INDEX_NONE && Shot.KnockbackDistance > 0.f)
+		{
+			FirstKnockback = Fed;
+		}
+	}
+	const FGenProjectileShotParams Max = GetShotParams(Top);
+	TArray<FText> Parts;
+	Parts.Add(FText::Format(LOCTEXT("Damage", "{0} dégâts"), GenAbilityTooltip::Series(DamageSeries)));
+	if (FirstExplosion != INDEX_NONE)
+	{
+		Parts.Add(FText::Format(LOCTEXT("Explosion", "explosion {0}"), GenAbilityTooltip::FromFeed(FirstExplosion, Top, GenAbilityTooltip::Meters(Max.ExplosionRadius))));
+	}
+	if (FirstKnockback != INDEX_NONE)
+	{
+		Parts.Add(FText::Format(LOCTEXT("Knockback", "recul {0}"), GenAbilityTooltip::FromFeed(FirstKnockback, Top, GenAbilityTooltip::Meters(Max.KnockbackDistance))));
+	}
+	return GenAbilityTooltip::FeedSummary(Top, Parts);
+}
+
 #undef LOCTEXT_NAMESPACE

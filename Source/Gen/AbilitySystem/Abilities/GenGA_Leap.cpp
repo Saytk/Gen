@@ -421,6 +421,22 @@ FText UGenGA_Leap::GetFeedTooltipLines(int32 Fed) const
 	return FText::Format(LOCTEXT("TakeOff", "décollage {0}"), GenAbilityTooltip::Seconds(Fed * FeedInterval + CastTime));
 }
 
+FText UGenGA_Leap::GetCompactTooltipLine() const
+{
+	const int32 Top = GetTooltipMaxFeed();
+	if (Top <= 0)
+	{
+		return Super::GetCompactTooltipLine();
+	}
+	// Même décollage que GetFeedTooltipLines : nourrissage (Fed intervalles) puis incantation
+	TArray<float> TakeOff;
+	for (int32 Fed = 0; Fed <= Top; ++Fed)
+	{
+		TakeOff.Add(Fed * FeedInterval + CastTime);
+	}
+	return GenAbilityTooltip::FeedSummary(Top, { FText::Format(LOCTEXT("TakeOffSeries", "décollage {0}"), GenAbilityTooltip::SecondsSeries(TakeOff)) });
+}
+
 void UGenGA_Leap::GetTooltipEffectLines(TArray<FText>& OutLines) const
 {
 	OutLines.Add(FText::Format(LOCTEXT("Flight", "Vol {0}, sans sort ; un contrôle dur n'arrête pas le bond"), GenAbilityTooltip::Seconds(LeapDuration)));

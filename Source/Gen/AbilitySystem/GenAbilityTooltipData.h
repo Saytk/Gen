@@ -23,10 +23,13 @@ struct GEN_API FGenAbilityTooltipData
 	TArray<FText> Lines;
 
 	/**
-	 * Revue PIE finale, C-2 : nombre de lignes « par flamme » en tête de Lines (un seuil par ligne, ou l'effet unique d'un
-	 * sort non nourri), avant les lignes d'effet. La carte compacte n'affiche qu'elles.
+	 * Carte compacte (détails, Alt maintenu ; UI_Guidelines §4.1) : incantation, recharge et coût seulement (ni portée ni
+	 * nourrissage), sur une ligne.
 	 */
-	int32 CoreLineCount = 0;
+	TArray<FText> CompactStats;
+
+	/** Carte compacte : une ligne, la série par flamme d'un sort nourri ou l'effet clé (GetCompactTooltipLine du sort). */
+	FText CompactLine;
 
 	/** En-tête sur une ligne (« Incantation 0,4 s · Recharge 8 s »). */
 	FText GetStatsText() const;
@@ -34,11 +37,8 @@ struct GEN_API FGenAbilityTooltipData
 	/** Lignes d'effet, une par ligne. */
 	FText GetLinesText() const;
 
-	/**
-	 * Revue PIE finale, C-2 : lignes de la carte compacte (détails, Alt maintenu) : les lignes par flamme seulement ; un sort
-	 * qui n'en a pas garde sa première ligne d'effet (la carte dit toujours ce que fait le sort).
-	 */
-	FText GetCompactLinesText() const;
+	/** En-tête de la carte compacte sur une ligne (« Incantation 0,5 s · Recharge 6 s »). */
+	FText GetCompactStatsText() const;
 
 	/** Tout le texte (tests, journal). */
 	FString ToString() const;
@@ -61,6 +61,24 @@ namespace GenAbilityTooltip
 
 	/** Parties jointes par Separator (FText, pas de concaténation de chaînes). */
 	GEN_API FText Join(const TArray<FText>& Parts, const FText& Separator);
+
+	/** Série de valeurs, une par seuil (« 14/24/34/44 ») ; une seule valeur si elles sont toutes égales. */
+	GEN_API FText Series(TConstArrayView<float> Values);
+
+	/** Série de durées (« 0,1/0,4/0,7/1 s »). */
+	GEN_API FText SecondsSeries(TConstArrayView<float> InSeconds);
+
+	/** Série de distances, centimètres affichés en mètres (« 2/2,5/3/3,5 m »). */
+	GEN_API FText MetersSeries(TConstArrayView<float> Centimetres);
+
+	/**
+	 * Seuil d'apparition d'un effet sur la carte compacte : présent dès 0 flamme, Always (sa valeur, « 1,5 m ») ; à partir
+	 * d'un seuil intermédiaire, « dès 2 » ; au dernier seuil seulement, « à 3 ».
+	 */
+	GEN_API FText FromFeed(int32 FirstFed, int32 MaxFeed, const FText& Always);
+
+	/** Ligne compacte d'un sort nourri : « 0/1/2/3 flammes : » puis Parts jointes par « · ». */
+	GEN_API FText FeedSummary(int32 MaxFeed, const TArray<FText>& Parts);
 
 	/** Construit l'infobulle du sort Ability (son CDO suffit). */
 	GEN_API void Build(const UGenGameplayAbility& Ability, FGenAbilityTooltipData& Out);

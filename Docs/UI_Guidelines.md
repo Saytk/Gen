@@ -312,6 +312,7 @@ There is **no `status.warning` token.** At 10 s or less, the round timer stays `
 | `TS_LabelSecondary` | "/max" after HP, secondary labels | 20 | 15 | SemiBold | CAPS, +6% | `text.secondary` |
 | `TS_Name` | Names (overheads, frames, kill feed, scoreboard) | 20 | 15 | Medium (Semi Condensed) | As typed. Max 10 characters overhead, 12 elsewhere, then "…" | `text.relation.*` |
 | `TS_Body` | Tooltips, menus, captions | 20 | 15 | Regular | Sentence case, 1.5× line height, ≤ 80 characters per line | `text.primary` |
+| `TS_BodyCompact` | Compact ability cards (held details key, §4.1) | 20 | 15 | Regular | Sentence case, 1.0× line height (24 px per line) | `text.primary` |
 | `TS_StatusWord` | Overhead state word | 20 | 15 | Bold | CAPS, +8%, outlined | `text.primary` |
 | `TS_Value` | HP and energy numbers, team HP %, scoreboard stats | 24 | 18 | SemiBold | Equal-width digits | `text.primary` |
 | `TS_DamageNumber` | Damage and heal numbers | 24 | 18 | Bold | Equal-width digits, outlined | see §4.7 |
@@ -557,7 +558,13 @@ x=0                                                                   x=1920
   - Numbers use the current culture (`FText::AsNumber`); distances in metres, durations in seconds.
 - **Look:** `Common/WBP_Tooltip` (C++ base `UGenAbilityTooltip`). `bg.panelRaised` panel, `radius.panel` corners, 1 px `line.bronze` edge, 8 px padding (HUD panel), text in `TS_Body` (sentence case, left-aligned, wraps at `TooltipMaxWidth`, 480 px at text size 100%: about 80 characters). Tooltips scale fully with the text-size setting (§7.2).
 - **Placement:** above the hovered slot's disc, centred, 8 px gap, in a zero-size canvas inside `WBP_AbilitySlot` (it never changes the bar's layout and is never added to the viewport). With the details key, one card per ability in the bar's `DetailsPanel` (a wrap box above the row).
-- **Compact cards (details key):** the held-key view uses compact cards so all seven fit on screen. A compact card keeps the header (name, key, stats) and the per-flame lines, with no description and no extra effect lines. A spell without thresholds keeps its first effect line. Each card has a fixed width (`TooltipCompactWidth`, 340 px at text size 100%). The cards sit `DetailsColumns` (4) per row: 7 abilities take 2 rows, at most about 45% of a 1080p screen. The bar sets the wrap box's wrap size from these tokens. Hovering a slot still shows the full card.
+- **Compact cards (details key):** the held-key view uses compact cards so all seven fit on screen. A compact card has three parts, in `TS_BodyCompact` (same size as `TS_Body`, 1.0× line height):
+  - Header: name and key.
+  - One stats line: cast time, cooldown and energy cost only (no range, no feed interval).
+  - One effect line (`GetCompactTooltipLine` on the ability). Fed spells show one value per threshold, then the threshold where each extra effect starts: "0/1/2/3 flammes : 14/24/34/44 dégâts · explosion dès 2 · recul à 3" ("dès 2" from threshold 2, "à 3" at the last threshold only, the value itself when present from 0). Other spells show their single most important effect ("Nova 4 m, 30 dégâts ; embrasé 6 s").
+  - No description and no extra effect lines.
+  - Each card has a fixed width (`TooltipCompactWidth`, 340 px at text size 100%) and is at most about 122 px tall (an effect line may wrap to 2 lines). The cards sit `DetailsColumns` (4) per row: 7 abilities take 2 rows, about 250 px (23% of a 1080p screen). The bar sets the wrap box's wrap size from these tokens.
+  - The bar creates its seven cards on the first press and refills them on each press. Hovering a slot still shows the full card.
 
 ### 4.2 Own health and energy (bottom bar, left block)
 
@@ -1625,6 +1632,7 @@ Copy this into the PR description and tick each item.
 
 | Date | Section | Change |
 |---|---|---|
+| 2026-10-08 | §4.1 Ability tooltip, §2.6 | Changed: compact cards now show the header, one stats line (cast, cooldown, cost) and one effect line (per-flame series for fed spells), in the new `TS_BodyCompact` style (`TS_Body` at 1.0× line height). The 7 cards are reused across presses. The Alt panel drops from 894 to about 250 px at 1080p |
 | 2026-10-08 | §4.1 Ability tooltip | Added: compact cards for the held details key (header, stats, per-flame lines; no description), fixed width, 4 per row. New `DA_UIMetrics` values `TooltipCompactWidth`, `DetailsColumns` (final PIE matrix, C-2) |
 | 2026-10-08 | §4.1 Shared input | Added: a slot shared by several abilities shows the one its input would activate now (Pyroblast on LMB while ablaze), following the tag event (final integration review, M-9) |
 | 2026-10-08 | §4.1 Ready flash | Clarified: the flash fires on the change into Ready from Cooldown or Not enough energy, never from Cooldown into Not enough energy (review of Plan 3 Tasks 8–10, M4) |

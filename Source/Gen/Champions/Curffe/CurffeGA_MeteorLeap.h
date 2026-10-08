@@ -22,6 +22,8 @@ public:
 	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
 	/** Décollage puis anneau de Fed boules de feu (une par flamme). */
 	virtual FText GetFeedTooltipLines(int32 Fed) const override;
+	/** Décollage par flamme, puis l'anneau (« 1 boule par flamme »). */
+	virtual FText GetCompactTooltipLine() const override;
 
 protected:
 	virtual void OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation) override;

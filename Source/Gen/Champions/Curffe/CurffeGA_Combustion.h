@@ -34,6 +34,8 @@ public:
 	//~ UGenGameplayAbility (infobulle) : {Radius}, {Damage}, {Knockback}, {Duration}
 	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
 	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+	/** La nova puis l'état embrasé (« Nova 4 m, 30 dégâts ; embrasé 6 s »). */
+	virtual FText GetCompactTooltipLine() const override;
 
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;

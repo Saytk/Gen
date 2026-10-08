@@ -802,20 +802,6 @@ bool UGenAbilitySlot::FillTooltip(UGenAbilityTooltip& Tooltip) const
 	return true;
 }
 
-UGenAbilityTooltip* UGenAbilitySlot::CreateFilledTooltip() const
-{
-	if (!TooltipClass || !AbilityCDO.IsValid() || !GetOwningPlayer())
-	{
-		return nullptr;
-	}
-	UGenAbilityTooltip* Tooltip = CreateWidget<UGenAbilityTooltip>(GetOwningPlayer(), TooltipClass);
-	if (Tooltip && !FillTooltip(*Tooltip))
-	{
-		return nullptr;
-	}
-	return Tooltip;
-}
-
 UGenAbilityTooltip* UGenAbilitySlot::EnsureHoverTooltip()
 {
 	if (HoverTooltip || !TooltipClass || !GetOwningPlayer())

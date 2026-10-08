@@ -41,6 +41,8 @@ public:
 	//~ UGenGameplayAbility (infobulle) : {Duration}, {Radius}, {Damage}, {Knockback}, {Haste}, {HasteDuration}
 	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
 	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+	/** La forme de feu (« Forme de feu 0,5 s : intouchable »). */
+	virtual FText GetCompactTooltipLine() const override;
 
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
