@@ -8,6 +8,7 @@
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/Effects/GenGE_Gain.h"
 #include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenTargetData.h"
@@ -15,9 +16,11 @@
 #include "AbilitySystemComponent.h"
 #include "Actors/GenProjectile.h"
 #include "Character/GenCharacterBase.h"
+#include "Champions/Curffe/CurffeTuning.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GenGameplayTags.h"
+#include "HAL/PlatformTime.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGenProjectileAbility, Log, All);
 
@@ -28,6 +31,10 @@ UGenGA_Projectile::UGenGA_Projectile()
 	ProjectileClass = AGenProjectile::StaticClass();
 	DamageEffectClass = UGenGE_Damage::StaticClass();
 	Damage = FScalableFloat(20.f);
+
+	// Curffe est le seul champion qui nourrit ses sorts pour l'instant : ses règles servent de défaut
+	FeedInterval = CurffeTuning::FeedInterval;
+	MaxFeed = CurffeTuning::MaxFeedPerSpell;
 
 	ActivationOwnedTags.AddTag(GenGameplayTags::State_Casting);
 }
@@ -45,8 +52,8 @@ void UGenGA_Projectile::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	ReportedFedCount = INDEX_NONE;
 	bInterruptWatchStarted = false;
 	bServerShotLocked = false;
-	PendingLaunchDirection = FVector::ZeroVector;
-	PendingLaunchFed = 0;
+	PendingAimData.Clear();
+	DeferredAimKey = FPredictionKey();
 
 	if (bFeedable)
 	{
@@ -73,6 +80,10 @@ void UGenGA_Projectile::EndAbility(const FGameplayAbilitySpecHandle Handle, cons
 	// La ressource nourrie n'est dépensée qu'au lancer : rien à rendre.
 	StopCasting();
 
+	// Projectile différé abandonné (étourdi, mort) : on acquitte enfin la clé de la visée, le client retire
+	// le cooldown et la dépense de flammes qu'il avait prédits (rien n'a été payé côté serveur)
+	AcknowledgeDeferredAim();
+	PendingAimData.Clear();
 	bServerShotLocked = false;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -82,8 +93,24 @@ bool UGenGA_Projectile::CanBeCanceled() const
 {
 	// Serveur, projectile différé (visée reçue en avance) : le client a déjà tiré. La boule de feu relancée
 	// par son clic maintenu (ou tout autre sort lancé après le tir) arrive juste derrière la visée et ne
-	// doit pas annuler ce tir. La mort est gérée au départ du projectile (OnServerLaunchDelayFinished).
+	// doit pas annuler ce tir. Ce verrou ne protège que des autres sorts du joueur : un étourdissement
+	// annule quand même le tir (OnCastInterrupted le termine directement), la mort au départ du projectile.
 	return !bServerShotLocked && Super::CanBeCanceled();
+}
+
+void UGenGA_Projectile::AcknowledgeDeferredAim()
+{
+	if (!DeferredAimKey.IsValidKey())
+	{
+		return;
+	}
+
+	// Fenêtre vide sur la clé de la visée : en sortant, elle l'acquitte (réplication de la clé au client)
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		FScopedPredictionWindow Acknowledge(ASC, DeferredAimKey);
+	}
+	DeferredAimKey = FPredictionKey();
 }
 
 bool UGenGA_Projectile::IsServerForRemoteClient() const
@@ -93,31 +120,39 @@ bool UGenGA_Projectile::IsServerForRemoteClient() const
 
 void UGenGA_Projectile::ApplyReportedFedCount(int32 Reported)
 {
-	if (!bFeedable || !IsServerForRemoteClient())
+	// Visée déjà reçue : le compte validé au lancer fait foi, une annonce en retard ne le change plus
+	if (!bFeedable || !IsServerForRemoteClient() || bServerShotLocked)
 	{
 		return;
 	}
 
+	// On garde l'annonce brute : tant que le nourrissage continue, sa borne de temps monte à chaque tick
+	ReportedFedCount = Reported;
+	const int32 Shown = ReconcileFedVisual();
+	if (Shown != Reported)
+	{
+		GEN_ABILITY_LOG(Verbose, "Compte annoncé par le client : %d, affiché %d (estimation %d)", Reported, Shown, FedCount);
+	}
+
+	// L'annonce (RPC du personnage) et le signal de fin (RPC de l'ASC) n'ont pas d'ordre garanti :
+	// arrivée après la fin du nourrissage, elle corrige la barre vue par les autres joueurs (sans la faire reculer)
+	if (!bIsFeeding)
+	{
+		MarkFeedEnded(Shown);
+	}
+}
+
+int32 UGenGA_Projectile::ReconcileFedVisual()
+{
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const float Available = ASC ? ASC->GetNumericAttribute(UGenAttributeSet::GetResourceAttribute()) : 0.f;
 
-	// À ±1 de l'estimation du serveur, borné à la ressource et aux flammes disponibles à l'appui (crans de la barre)
-	const int32 Accepted = GenFeeding::ClampReportedFed(Reported, FedCount, FMath::Min(MaxFeed, FeedSlotsAtPress), Available);
-	if (Accepted != Reported)
-	{
-		GEN_ABILITY_LOG(Verbose, "Compte annoncé par le client borné : %d -> %d (estimation %d, ressource %.0f)", Reported, Accepted, FedCount, Available);
-	}
-
-	// On garde l'annonce brute : si l'estimation avance encore, elle est rebornée au tick suivant
-	ReportedFedCount = Reported;
-	SetFedVisual(Accepted);
-
-	// L'annonce (RPC du personnage) et le signal de fin (RPC de l'ASC) n'ont pas d'ordre garanti :
-	// arrivée après la fin du nourrissage, elle corrige la barre vue par les autres joueurs
-	if (!bIsFeeding)
-	{
-		MarkFeedEnded(Accepted);
-	}
+	// Même borne de temps que le tir : pendant le nourrissage le temps écoulé, ensuite celui mesuré à la synchro
+	const float Elapsed = bIsFeeding ? GetWorld()->GetTimeSeconds() - FeedStartTime : ServerFeedElapsed;
+	const int32 Shown = GenFeeding::ReconcileDisplayedFed(FedVisualCount, FedCount, ReportedFedCount,
+		FMath::Min(MaxFeed, FeedSlotsAtPress), Available, Elapsed, FeedInterval);
+	SetFedVisual(Shown);
+	return Shown;
 }
 
 int32 UGenGA_Projectile::GetAvailableFeed() const
@@ -177,8 +212,10 @@ void UGenGA_Projectile::StartFeeding()
 
 void UGenGA_Projectile::ScheduleFeedTick()
 {
-	// Calé sur le début du nourrissage : les retards des ticks ne s'additionnent pas
-	const float Delay = GenFeeding::GetNextFeedTickDelay(FeedStartTime, FedCount, FeedInterval, GetWorld()->GetTimeSeconds());
+	// Calé sur le début du nourrissage : les retards des ticks ne s'additionnent pas.
+	// Serveur pour un client distant : estimation volontairement en retard (le client la corrige vers le haut).
+	const float EstimateStart = FeedStartTime + (IsServerForRemoteClient() ? GenFeeding::ServerEstimateLag : 0.f);
+	const float Delay = GenFeeding::GetNextFeedTickDelay(EstimateStart, FedCount, FeedInterval, GetWorld()->GetTimeSeconds());
 	FeedTickTask = UAbilityTask_WaitDelay::WaitDelay(this, Delay);
 	FeedTickTask->OnFinish.AddDynamic(this, &ThisClass::OnFeedTick);
 	FeedTickTask->ReadyForActivation();
@@ -196,11 +233,11 @@ void UGenGA_Projectile::OnFeedTick()
 	{
 		++FedCount;
 
-		// Serveur : le compte annoncé par le client (ServerReportFedResource) a pu arriver avant ce
-		// tick de l'estimation : c'est lui qui fait foi pour l'affichage (reborné à la nouvelle estimation)
-		if (ReportedFedCount != INDEX_NONE)
+		// Serveur pour un client distant : estimation, ou annonce du client si elle est déjà arrivée
+		// (sa borne de temps a monté), sans jamais faire reculer l'affichage
+		if (IsServerForRemoteClient())
 		{
-			ApplyReportedFedCount(ReportedFedCount);
+			ReconcileFedVisual();
 		}
 		else
 		{
@@ -233,6 +270,15 @@ void UGenGA_Projectile::StopFeedingLocal()
 	if (!bIsFeeding)
 	{
 		return;
+	}
+
+	// Seuil déjà franchi mais tick pas encore traité (le relâché est lu avant le minuteur de cette image) :
+	// la flamme est acquise, la barre l'a déjà montrée. Le serveur l'accepte (borne de temps + 1).
+	const int32 Limit = FMath::Min(GetAvailableFeed(), FeedSlotsAtPress);
+	if (FedCount < Limit && FeedInterval > 0.f && GetWorld()->GetTimeSeconds() >= FeedStartTime + (FedCount + 1) * FeedInterval)
+	{
+		++FedCount;
+		SetFedVisual(FedCount);
 	}
 
 	EndFeedTasks();
@@ -276,8 +322,12 @@ void UGenGA_Projectile::OnFeedSynced()
 		FedCount, GetWorld()->GetTimeSeconds() - FeedStartTime);
 
 	// Barre : les segments inutilisés se replient. Compte affiché = flammes qui quittent l'orbite
-	// (serveur pour un client distant : son estimation, ou l'annonce du client si elle est déjà arrivée).
-	// L'annonce du client arrivée après coup corrige la barre (ApplyReportedFedCount).
+	// (serveur pour un client distant : son estimation, ou l'annonce du client si elle est déjà arrivée,
+	// rebornée au temps mesuré). L'annonce du client arrivée après coup corrige la barre (ApplyReportedFedCount).
+	if (IsServerForRemoteClient())
+	{
+		ReconcileFedVisual();
+	}
 	MarkFeedEnded(FedVisualCount);
 
 	if (CastTime > 0.f)
@@ -304,11 +354,11 @@ void UGenGA_Projectile::EndFeedTasks()
 	}
 }
 
-void UGenGA_Projectile::MarkFeedEnded(int32 Count)
+void UGenGA_Projectile::MarkFeedEnded(int32 Count, bool bFinal)
 {
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		Character->MarkFeedEnded(GetClass(), Count); // sans effet si la barre n'est plus la nôtre
+		Character->MarkFeedEnded(GetClass(), Count, bFinal); // sans effet si la barre n'est plus la nôtre
 	}
 }
 
@@ -365,32 +415,54 @@ void UGenGA_Projectile::StartCasting()
 
 void UGenGA_Projectile::OnServerAimReceived(const FGameplayAbilityTargetDataHandle& DataHandle)
 {
+	// Une seule visée par activation : une seconde visée (client modifié, renvoi) ne tire jamais deux fois
+	if (bServerShotLocked)
+	{
+		GEN_ABILITY_LOG(Verbose, "Visée en double ignorée");
+		return;
+	}
+
 	// Le client a tiré à la fin de SON incantation. Les RPC du joueur arrivent dans l'ordre : un nouvel
 	// appui qui annule ce sort côté client arrive avant toute visée, un sort lancé après le tir arrive
 	// après. À partir d'ici, un autre sort du joueur ne peut donc plus annuler ce tir.
 	bServerShotLocked = true;
 
-	// Le client a fini d'incanter : ralenti et barre de cast s'arrêtent maintenant (déplacements cohérents)
-	EndCastPresentation();
-
 	const float Elapsed = GetWorld()->GetTimeSeconds() - CastStartTime;
 	const float Wait = GenFeeding::GetServerCastWait(CastTime, Elapsed, GenFeeding::CastTimeTolerance);
 	if (Wait <= 0.f)
 	{
-		// Cas normal : le sort part et se termine pendant le RPC de la visée, avant tout sort envoyé après
+		// Cas normal : le client a fini d'incanter, ralenti et barre de cast s'arrêtent maintenant ; le sort part
+		// et se termine pendant le RPC de la visée, avant tout sort envoyé après
 		GEN_ABILITY_LOG(Verbose, "Visée reçue après %.3fs d'incantation (%.2fs demandées)", Elapsed, CastTime);
+		EndCastPresentation();
 		OnTargetDataReady(DataHandle);
 		return;
 	}
 
-	// Visée trop tôt (triche, ou activation retardée par une perte de paquet) : le tir est lancé maintenant,
-	// dans la fenêtre de prédiction de la visée comme chez le client (cooldown, coût, flammes : pas de
-	// correction visible), mais le projectile n'apparaît qu'à CastTime - tolérance. Le sort reste actif
-	// d'ici là : un client ne peut ni sauter l'incantation ni enchaîner les tirs plus vite.
-	GEN_ABILITY_LOG(Log, "Visée en avance : %.3fs d'incantation sur %.2fs, projectile différé de %.3fs", Elapsed, CastTime, Wait);
-	if (!ReleaseShot(DataHandle, PendingLaunchDirection, PendingLaunchFed))
+	// Visée trop tôt (triche, ou activation retardée par une perte de paquet). Le serveur garde toute l'incantation
+	// jusqu'à SA fin (CastTime - tolérance) : barre de cast et effet de main vus par les autres, ralenti, interruption
+	// par un étourdissement. Cooldown et flammes ne sont payés qu'au départ du projectile (OnServerLaunchDelayFinished).
+	LogEarlyAim(Elapsed, Wait);
+	PendingAimData = DataHandle;
+
+	// Compte validé du tir, connu dès maintenant : c'est le compte final de la barre vue par les autres
+	if (bFeedable)
 	{
-		return; // sort déjà terminé (visée invalide, CommitAbility refusé)
+		const int32 Fed = ResolveFedCount(DataHandle.Get(0), /*bLog*/ false);
+		SetFedVisual(Fed);
+		MarkFeedEnded(Fed, /*bFinal*/ true);
+	}
+
+	// Pas d'acquittement de la clé de la visée tant que le tir n'est pas parti : le cooldown et la dépense prédits
+	// par le client restent en place jusqu'au commit du serveur (acquitté avec lui), au lieu d'être retirés puis
+	// réappliqués. Seulement dans la fenêtre du RPC qui porte cette visée (elle l'acquitterait en sortant).
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	const UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC);
+	const FPredictionKey AimKey = GenASC ? GenASC->GetReplicatedTargetDataKey(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey()) : FPredictionKey();
+	if (ASC && AimKey.IsValidKey() && ASC->ScopedPredictionKey == AimKey)
+	{
+		DeferredAimKey = AimKey;
+		ASC->ScopedPredictionKey = FPredictionKey(); // la fenêtre du RPC restaure sa clé à la sortie, sans acquitter
 	}
 
 	UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, Wait);
@@ -398,10 +470,33 @@ void UGenGA_Projectile::OnServerAimReceived(const FGameplayAbilityTargetDataHand
 	WaitTask->ReadyForActivation();
 }
 
+void UGenGA_Projectile::LogEarlyAim(float Elapsed, float Wait) const
+{
+	if (!GenFeeding::IsAimSuspiciouslyEarly(CastTime, Elapsed, GenFeeding::CastTimeTolerance))
+	{
+		GEN_ABILITY_LOG(Log, "Visée en avance : %.3fs d'incantation sur %.2fs, projectile différé de %.3fs", Elapsed, CastTime, Wait);
+		return;
+	}
+
+	// Triche ou lien très dégradé : Warning, au plus un toutes les 5 s (tous sorts confondus) avec le nombre de visées tues
+	static double LastWarningTime = -1.e9;
+	static int32 Suppressed = 0;
+	const double Now = FPlatformTime::Seconds();
+	if (Now - LastWarningTime < 5.0)
+	{
+		++Suppressed;
+		return;
+	}
+	GEN_ABILITY_LOG(Warning, "Visée très en avance : %.3fs d'incantation sur %.2fs (tolérance %.2fs), projectile différé de %.3fs (%d autres depuis le dernier avertissement)",
+		Elapsed, CastTime, GenFeeding::CastTimeTolerance, Wait, Suppressed);
+	LastWarningTime = Now;
+	Suppressed = 0;
+}
+
 void UGenGA_Projectile::OnServerLaunchDelayFinished()
 {
-	// Mort pendant l'attente : pas de projectile (le verrou a empêché CancelAllAbilities de couper le sort)
-	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	// Mort pendant l'attente : pas de projectile ni de coût (le verrou a empêché CancelAllAbilities de couper le sort)
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	if (!ASC || ASC->HasMatchingGameplayTag(GenGameplayTags::State_Dead))
 	{
 		GEN_ABILITY_LOG(Verbose, "Projectile différé abandonné (mort)");
@@ -409,7 +504,17 @@ void UGenGA_Projectile::OnServerLaunchDelayFinished()
 		return;
 	}
 
-	LaunchShot(PendingLaunchDirection, PendingLaunchFed);
+	// Fin de l'incantation du serveur : le tir part maintenant, dans la fenêtre de prédiction de la visée.
+	// Cooldown et dépense sont répliqués avec l'acquittement de la clé : le client garde ses valeurs prédites
+	// jusqu'aux valeurs du serveur, sans trou.
+	FScopedPredictionWindow AimWindow(ASC, DeferredAimKey);
+	DeferredAimKey = FPredictionKey();
+
+	const FGameplayAbilityTargetDataHandle AimData = PendingAimData;
+	PendingAimData.Clear();
+
+	EndCastPresentation();
+	OnTargetDataReady(AimData);
 }
 
 void UGenGA_Projectile::ApplyCastSlow()
@@ -472,11 +577,13 @@ void UGenGA_Projectile::StopCasting()
 
 void UGenGA_Projectile::OnCastInterrupted()
 {
-	if (bServerShotLocked)
+	if (IsWaitingForDeferredLaunch())
 	{
-		// Serveur : étourdi après la visée. Le client a déjà tiré et le coût est payé ; seul le projectile
-		// attendait la fin de l'incantation mesurée par le serveur. Il part quand même.
-		GEN_ABILITY_LOG(Verbose, "Étourdi après le tir : le projectile différé part quand même");
+		// Serveur : visée reçue en avance, l'incantation du serveur n'est pas finie. Un étourdissement l'interrompt
+		// comme n'importe quelle incantation : pas de projectile, rien de payé. CanBeCanceled est faux (verrou du tir
+		// contre les autres sorts du joueur) : on termine le sort directement.
+		GEN_ABILITY_LOG(Log, "Étourdi pendant l'incantation (visée reçue en avance) : tir annulé, sans coût");
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
 
@@ -495,7 +602,7 @@ void UGenGA_Projectile::OnCastFinished()
 	TargetTask->ReadyForActivation();
 }
 
-int32 UGenGA_Projectile::ResolveFedCount(const FGameplayAbilityTargetData* Data) const
+int32 UGenGA_Projectile::ResolveFedCount(const FGameplayAbilityTargetData* Data, bool bLog) const
 {
 	if (!bFeedable)
 	{
@@ -517,6 +624,10 @@ int32 UGenGA_Projectile::ResolveFedCount(const FGameplayAbilityTargetData* Data)
 	if (IsServerForRemoteClient())
 	{
 		const int32 Validated = GenFeeding::ValidateFedCount(Reported, FeedCap, Available, ServerFeedElapsed, FeedInterval);
+		if (!bLog)
+		{
+			return Validated;
+		}
 		if (Validated != Reported)
 		{
 			GEN_ABILITY_LOG(Warning, "Nourrissage corrigé par le serveur : %d -> %d (ressource %.0f, %.2fs)", Reported, Validated, Available, ServerFeedElapsed);

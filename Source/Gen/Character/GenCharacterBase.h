@@ -186,10 +186,11 @@ public:
 
 	/**
 	 * Fin du nourrissage avec FedCount flammes : les segments inutilisés se replient et la même barre
-	 * continue sur l'incantation. Rappelable pour corriger le compte (l'heure de fin reste la première).
+	 * continue sur l'incantation. Rappelable pour corriger le compte (l'heure de fin reste la première) :
+	 * une correction ne fait jamais reculer le compteur, sauf bFinal (compte validé au lancer, visée reçue).
 	 * Sans effet si la barre n'est plus celle d'Ability.
 	 */
-	void MarkFeedEnded(UClass* Ability, int32 FedCount);
+	void MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFinal = false);
 
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 

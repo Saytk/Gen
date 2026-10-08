@@ -70,7 +70,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	FLinearColor BarBackgroundColor = FLinearColor(0.f, 0.f, 0.f, 0.7f);
 
-	/** Crans pas encore atteints et compteur des sorts nourris (token text.primary, UI_Guidelines §2.2 et §4.5). */
-	UPROPERTY(EditDefaultsOnly, Category = "HUD")
-	FLinearColor CastTickColor = FLinearColor(0.791f, 0.807f, 0.831f);
+	/** Crans pas encore atteints et compteur des sorts nourris : jeton text.primary de DA_UIPalette (UI_Guidelines §2.2 et §4.5). */
+	FLinearColor GetCastTickColor() const;
 };

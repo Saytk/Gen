@@ -34,7 +34,11 @@ public:
 	/** Libellé actuel de l'action (mapping Enhanced Input actif) : glyphe si disponible, sinon texte court. */
 	bool ResolveKeyLabel(const UInputAction* Action, FText& OutText, UTexture2D*& OutGlyph) const;
 
-	/** Appelé par le pion local quand son ASC est initialisé (OnRep_PlayerState / PossessedBy). */
+	/**
+	 * Appelé quand l'ASC du pion local est initialisé : par le pion (OnRep_PlayerState / PossessedBy) et par le
+	 * contrôleur (AcknowledgePossession), le premier des deux qui le voit prêt. Une seconde annonce pour le même
+	 * ASC et le même avatar est ignorée ; un nouvel avatar (respawn) est diffusé.
+	 */
 	void NotifyAbilitySystemReady(UAbilitySystemComponent* ASC);
 
 	/** Appelle tout de suite si l'ASC est déjà prêt, puis à chaque (ré)initialisation. */
@@ -49,5 +53,7 @@ private:
 	UPROPERTY(Transient) TObjectPtr<const UGenUIKeyGlyphs> KeyGlyphs;
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
+	/** Avatar de l'ASC lors de la dernière annonce (dédoublonnage des deux chemins). */
+	TWeakObjectPtr<AActor> AbilitySystemAvatar;
 	FGenOnAbilitySystemReady OnAbilitySystemReady;
 };

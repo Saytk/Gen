@@ -18,6 +18,16 @@ enum class EGenAbilitySlotState : uint8
 namespace GenUIRules
 {
 	/**
+	 * Temps restant d'une recharge, borné à sa durée. Côté client, le GE de recharge répliqué du serveur part de
+	 * l'heure serveur estimée par le GameState, en retard de la latence et de la période de réplication de
+	 * cette heure : pendant quelques images il reste plus que la durée ("7" sur une recharge de 6 s).
+	 */
+	inline float ClampCooldownRemaining(float Remaining, float TotalDuration)
+	{
+		return TotalDuration > 0.f ? FMath::Min(Remaining, TotalDuration) : Remaining;
+	}
+
+	/**
 	 * Texte du chiffre de recharge (§4.1) : secondes entières arrondies au-dessus dès 1 s,
 	 * une décimale sous 1 s, rien si la recharge est finie ou si sa durée totale est < HideBelowTotal.
 	 */
@@ -38,6 +48,29 @@ namespace GenUIRules
 			return FString(TEXT("1"));
 		}
 		return FString::Printf(TEXT("%.1f"), FMath::Max(Tenths, 0.1f));
+	}
+
+	/**
+	 * Texte affiché du chiffre de recharge : la valeur de FormatCooldown (indépendante de la culture, "0.6", "12"),
+	 * mise en forme dans la culture courante (ou Culture) : "0,6" en français (§9 Localisation). Sans séparateur de milliers.
+	 * FormatCooldown reste la référence pour la classe de format et les mesures de largeur.
+	 */
+	inline FText CooldownDisplayText(const FString& CultureInvariant, const FCulturePtr& Culture = nullptr)
+	{
+		if (CultureInvariant.IsEmpty())
+		{
+			return FText::GetEmpty();
+		}
+
+		int32 DotIndex = INDEX_NONE;
+		CultureInvariant.FindChar(TEXT('.'), DotIndex);
+		const int32 FractionalDigits = DotIndex == INDEX_NONE ? 0 : CultureInvariant.Len() - DotIndex - 1;
+
+		FNumberFormattingOptions Options;
+		Options.SetUseGrouping(false);
+		Options.SetMinimumFractionalDigits(FractionalDigits);
+		Options.SetMaximumFractionalDigits(FractionalDigits);
+		return FText::AsNumber(FCString::Atod(*CultureInvariant), &Options, Culture);
 	}
 
 	/**

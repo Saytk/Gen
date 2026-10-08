@@ -70,7 +70,7 @@ Quand l'utilisateur annonce qu'il va modifier des assets à la main, proposer de
 
 **Tests**
 - **Dans l'éditeur ouvert** : `AutomationTestToolset` → `DiscoverTests` (une fois par session), puis
-  `RunTestsByFilter("StartsWith:Gen.")`, puis `GetTestResults`.
+  `RunTestsByFilter` avec `filterExpression: "StartsWith:Gen."`, puis `GetTestResults`.
 - **Multijoueur** : les vérifications déterministes (réplication, GAS, autorité serveur) s'écrivent en CQTest
   `NETWORK_TEST_CLASS` dans le module éditeur `GenTests`, qui fait tourner un serveur dédié et des clients
   dans un seul process (guide : `Docs/Dev/CQTestNetworkTests.md`). Le PIE manuel (2 clients + serveur dédié)

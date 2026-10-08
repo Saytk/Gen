@@ -7,6 +7,9 @@
 class UGenGameplayAbility;
 class UGameplayEffect;
 
+/** Sort accordé (bRemoved = faux) ou retiré (vrai), sur le serveur et sur le client propriétaire (réplication des specs). */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FGenOnAbilitiesChanged, const FGameplayAbilitySpec& /*Spec*/, bool /*bRemoved*/);
+
 /**
  * ASC du projet.
  *
@@ -68,7 +71,20 @@ public:
 	/** Toutes les machines : retire State.CastLocked et ferme la fenêtre (mort : un verrou oublié bloquerait tout après le respawn). */
 	void ClearCastLock();
 
+	/**
+	 * Serveur : clé de prédiction portée par la dernière visée (target data) reçue du client pour ce sort et cette
+	 * activation, sinon une clé invalide. Sert à reporter son acquittement (UGenGA_Projectile, visée en avance).
+	 */
+	FPredictionKey GetReplicatedTargetDataKey(FGameplayAbilitySpecHandle Handle, FPredictionKey ActivationKey) const;
+
+	/**
+	 * Sorts accordés ou retirés (respawn, changement de champion) : l'interface se recâble dessus au lieu d'interroger
+	 * l'ASC. Retrait : diffusé AVANT que le spec quitte la liste des sorts activables.
+	 */
+	FGenOnAbilitiesChanged OnAbilitiesChanged;
+
 protected:
+	virtual void OnGiveAbility(FGameplayAbilitySpec& AbilitySpec) override;
 	/** Un sort retiré efface l'affichage des unités nourries qu'il possédait (AGenCharacterBase::ClearFedResourceFrom). */
 	virtual void OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec) override;
 

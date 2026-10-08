@@ -83,19 +83,26 @@ void AGenCharacterBase::StartFeedCast(UClass* Ability, int32 FeedSlots, float Fe
 	CastInfo.FeedInterval = FeedInterval;
 }
 
-void AGenCharacterBase::MarkFeedEnded(UClass* Ability, int32 FedCount)
+void AGenCharacterBase::MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFinal)
 {
 	if (CastInfo.Ability != Ability)
 	{
 		return;
 	}
 
-	// Seconde annonce (compte corrigé par le serveur) : le repli garde son heure de départ
+	const uint8 Count = static_cast<uint8>(FMath::Clamp(FedCount, 0, static_cast<int32>(CastInfo.FeedSlots)));
+
+	// Première annonce : début du repli
 	if (CastInfo.FeedEndTime <= 0.f)
 	{
 		CastInfo.FeedEndTime = FMath::Max(GetCastClockSeconds(), KINDA_SMALL_NUMBER); // 0 = nourrissage en cours
+		CastInfo.FedCount = Count;
+		return;
 	}
-	CastInfo.FedCount = static_cast<uint8>(FMath::Clamp(FedCount, 0, static_cast<int32>(CastInfo.FeedSlots)));
+
+	// Correction (annonce du client arrivée après coup) : le repli garde son heure de départ et le compteur
+	// ne recule pas ; seul le compte validé au lancer peut le faire descendre
+	CastInfo.FedCount = bFinal ? Count : FMath::Max(CastInfo.FedCount, Count);
 }
 
 void AGenCharacterBase::StopCast(UClass* Ability)
@@ -117,7 +124,7 @@ void AGenCharacterBase::ServerReportFedResource_Implementation(UClass* Ability, 
 		return;
 	}
 
-	// Le sort actif borne l'annonce : à ±1 de sa propre estimation, à la ressource et à son maximum
+	// Le sort actif borne l'annonce : par le temps qu'il a mesuré, la ressource et son maximum
 	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
 	{
 		if (Spec.IsActive() && Spec.Ability && Spec.Ability->GetClass() == Ability)

@@ -77,6 +77,12 @@ TArray<FActiveGameplayEffectHandle> UGenAbilitySystemComponent::ApplyEffectsToSe
 	return Handles;
 }
 
+void UGenAbilitySystemComponent::OnGiveAbility(FGameplayAbilitySpec& AbilitySpec)
+{
+	Super::OnGiveAbility(AbilitySpec);
+	OnAbilitiesChanged.Broadcast(AbilitySpec, /*bRemoved*/ false);
+}
+
 void UGenAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
 	if (!InputTag.IsValid())
@@ -123,6 +129,12 @@ bool UGenAbilitySystemComponent::IsAnotherAbilityCasting(FGameplayAbilitySpecHan
 		}
 	}
 	return false;
+}
+
+FPredictionKey UGenAbilitySystemComponent::GetReplicatedTargetDataKey(FGameplayAbilitySpecHandle Handle, FPredictionKey ActivationKey) const
+{
+	const TSharedPtr<FAbilityReplicatedDataCache> Cached = AbilityTargetDataMap.Find(FGameplayAbilitySpecHandleAndPredictionKey(Handle, ActivationKey));
+	return Cached.IsValid() ? Cached->PredictionKey : FPredictionKey();
 }
 
 void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGamePaused)
@@ -269,6 +281,9 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 
 void UGenAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec)
 {
+	// Diffusé avant que le spec quitte la liste (l'interface lâche son handle).
+	OnAbilitiesChanged.Broadcast(AbilitySpec, /*bRemoved*/ true);
+
 	if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetAvatarActor_Direct()))
 	{
 		for (const UGameplayAbility* Instance : AbilitySpec.GetAbilityInstances())

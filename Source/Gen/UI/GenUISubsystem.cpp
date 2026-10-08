@@ -86,7 +86,14 @@ bool UGenUISubsystem::ResolveKeyLabel(const UInputAction* Action, FText& OutText
 
 void UGenUISubsystem::NotifyAbilitySystemReady(UAbilitySystemComponent* ASC)
 {
+	AActor* Avatar = ASC ? ASC->GetAvatarActor() : nullptr;
+	if (ASC && AbilitySystem.Get() == ASC && AbilitySystemAvatar.Get() == Avatar)
+	{
+		return; // même ASC, même corps : déjà annoncé par l'autre chemin
+	}
+
 	AbilitySystem = ASC;
+	AbilitySystemAvatar = Avatar;
 	UE_LOG(LogGenUI, Log, TEXT("ASC prêt pour l'interface : %s"), *GetNameSafe(ASC));
 	OnAbilitySystemReady.Broadcast(ASC);
 }
