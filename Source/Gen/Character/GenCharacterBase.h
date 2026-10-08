@@ -137,6 +137,12 @@ public:
 	 */
 	void SetFedResource(const UObject* Source, uint8 Count);
 
+	/** Le sort Source disparaît (retiré, ramassé) : s'il possède l'affichage, il est effacé (sinon rien ne l'effacerait). */
+	void ClearFedResourceFrom(const UObject* Source);
+
+	/** Efface l'affichage quel que soit son propriétaire (mort, réapparition). */
+	void ResetFedResource();
+
 	/**
 	 * Client propriétaire -> serveur : nombre exact d'unités nourries par Ability à la fin du nourrissage.
 	 * Purement visuel (les autres joueurs voient les flammes quitter l'orbite) : sans cela le serveur
@@ -156,7 +162,9 @@ public:
 	/**
 	 * Serveur : un coup ennemi de nature Kind arrive (Source = projectile, zone...). À appeler par toute
 	 * source de dégâts AVANT d'appliquer quoi que ce soit. Countered : le coup n'inflige rien, et le
-	 * contre actif reçoit Event.Counter.Blocked (Instigator = Attacker, EventMagnitude = Kind).
+	 * contre actif reçoit Event.Counter.Blocked (Instigator = Attacker, peut être nul ; EventMagnitude =
+	 * GenHitRules::ToEventMagnitude(Kind), jamais 0). Ignored : cible intouchable, le coup la traverse.
+	 * Seul un ennemi déclenche un contre (un attaquant nul, déjà détruit, compte comme ennemi).
 	 * Futures attaques de mêlée : Kind = Melee.
 	 */
 	EGenHitResponse ResolveIncomingHit(AActor* Attacker, EGenHitKind Kind, const UObject* Source);

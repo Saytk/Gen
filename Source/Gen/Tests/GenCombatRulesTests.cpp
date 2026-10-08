@@ -21,6 +21,15 @@ bool FGenCounterTriggerTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("projectile sur un contre : bloqué"), GenHitRules::Resolve(true, false, EGenHitKind::Projectile) == EGenHitResponse::Countered);
 	TestTrue(TEXT("zone sur un contre : touché"), GenHitRules::Resolve(true, false, EGenHitKind::Area) == EGenHitResponse::Hit);
 	TestTrue(TEXT("projectile sans contre : touché"), GenHitRules::Resolve(false, false, EGenHitKind::Projectile) == EGenHitResponse::Hit);
+
+	// Nature du coup dans un événement : jamais 0 (charge utile vide)
+	EGenHitKind Kind = EGenHitKind::Area;
+	TestTrue(TEXT("projectile : magnitude non nulle"), GenHitRules::ToEventMagnitude(EGenHitKind::Projectile) > 0.5f);
+	TestFalse(TEXT("magnitude 0 : aucune nature"), GenHitRules::FromEventMagnitude(0.f, Kind));
+	TestTrue(TEXT("aller-retour projectile"), GenHitRules::FromEventMagnitude(GenHitRules::ToEventMagnitude(EGenHitKind::Projectile), Kind) && Kind == EGenHitKind::Projectile);
+	TestTrue(TEXT("aller-retour mêlée"), GenHitRules::FromEventMagnitude(GenHitRules::ToEventMagnitude(EGenHitKind::Melee), Kind) && Kind == EGenHitKind::Melee);
+	TestTrue(TEXT("aller-retour zone"), GenHitRules::FromEventMagnitude(GenHitRules::ToEventMagnitude(EGenHitKind::Area), Kind) && Kind == EGenHitKind::Area);
+	TestFalse(TEXT("hors plage"), GenHitRules::FromEventMagnitude(9.f, Kind));
 	return true;
 }
 

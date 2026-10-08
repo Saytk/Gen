@@ -1404,6 +1404,11 @@ git commit -m "Resolve incoming hits through counters, single owner for the fed 
     - a direct hit is P and a splash is A;
     - a countered direct hit deals nothing to the counterer (no splash on him either), but the explosion still splashes others;
     - the instigator gains only if at least one target was actually hit.
+  - **Amended by the review of Tasks 3–4** (the source is authoritative; the code blocks below show the original):
+    - `OnSphereOverlap` resolves the direct hit (`ResolveIncomingHit`) **before** `Explode` and passes the response in. An `Ignored` response (untouchable target) returns at once: the projectile passes through, with no explosion, no splash and no salvo claim. A countered projectile still explodes and splashes the counterer's allies, and is consumed (`HasExploded()`).
+    - A countered ring projectile still claims its target in the salvo (one interaction per enemy per ring, now a spec rule in `Curffe.md`); the salvo covers direct hits only (documented in `GenSalvo.h`).
+    - `ResolveIncomingHit` only lets enemies trigger a counter, and reports the hit kind as `GenHitRules::ToEventMagnitude(Kind)` (never 0).
+    - `HasLineOfSight` documents its caveats (origin above the floor, no foot sample, about 20 % of the radius must be visible).
 
 - [ ] **Step 1: Create `Source/Gen/AbilitySystem/GenWorldQueries.h`**
 
@@ -5837,6 +5842,8 @@ git commit -m "PIE helpers for counter, area, leap and latency verification; rep
 
 - **Plan 3** (power spells) builds on `UGenGA_Cast`, `AGenGroundArea` and `ApplyHardCC`: Untouchable, Living Flame, Combustion, Resilience, energy costs and the cancel key.
 - The status shapes, the block burst and the impact effects are placeholders until the VFX pass (Art Bible §7.4, §7.6).
+- **No opt-out from the hard-CC and cast-lock blocks** (review of Tasks 3–4, M-4). `UGenGameplayAbility::CanActivateAbility` refuses every ability under hard CC or `State.CastLocked`, including future passive, event-triggered or cleanse abilities. Add `bUsableUnderCrowdControl` / `bUsableWhileCastLocked` before the first such ability exists.
+- **Incapacitate doesn't end on damage yet** (guidelines §3.2). `ApplyHardCC` carries a TODO; no spell applies it today.
 
 **Spec gaps (questions for the user; this plan doesn't invent answers):**
 - **Backfire's sound cue.** Guidelines §3.4 and Art Bible §7.6 pair the stance with a sound cue; the spec doesn't describe it and no sound assets exist yet. The pillar's wind-up sound (Art Bible §7.3) is in the same state.

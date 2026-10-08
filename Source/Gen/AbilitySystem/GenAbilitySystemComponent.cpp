@@ -3,6 +3,7 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "AbilitySystem/GenFeeding.h"
+#include "Character/GenCharacterBase.h"
 #include "Engine/World.h"
 #include "GameplayEffect.h"
 #include "GenGameplayTags.h"
@@ -243,6 +244,14 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 		return FActiveGameplayEffectHandle();
 	}
 
+	// Seuls les contrôles durs passent ici (ex : State.Countering n'en est pas un)
+	if (!ensureMsgf(GenGameplayTags::GetHardCCTags().HasTagExact(StateTag), TEXT("ApplyHardCC : %s n'est pas un contrôle dur"), *StateTag.ToString()))
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	// TODO (guidelines §3.2) : neutralisé (State.Incapacitated) doit finir au premier dégât subi ; pas encore fait
+
 	FGameplayEffectContextHandle Context = MakeEffectContext();
 	Context.AddInstigator(Source, Source);
 
@@ -256,6 +265,19 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 	const bool bImmobile = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) || StateTag.MatchesTagExact(GenGameplayTags::State_Incapacitated);
 	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, bImmobile ? 0.f : 1.f, FGameplayTagContainer(StateTag));
 	return ApplyGameplayEffectSpecToSelf(*Spec.Data);
+}
+
+void UGenAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec)
+{
+	if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetAvatarActor_Direct()))
+	{
+		for (const UGameplayAbility* Instance : AbilitySpec.GetAbilityInstances())
+		{
+			Character->ClearFedResourceFrom(Instance);
+		}
+	}
+
+	Super::OnRemoveAbility(AbilitySpec);
 }
 
 void UGenAbilitySystemComponent::RemoveTimedStates()

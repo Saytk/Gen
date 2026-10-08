@@ -270,6 +270,20 @@ void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)
 	FedResource = FedDisplay.Count;
 }
 
+void AGenCharacterBase::ClearFedResourceFrom(const UObject* Source)
+{
+	if (Source && FedDisplay.Source == FObjectKey(Source))
+	{
+		ResetFedResource();
+	}
+}
+
+void AGenCharacterBase::ResetFedResource()
+{
+	FedDisplay = GenFeeding::FFedDisplay();
+	FedResource = 0;
+}
+
 bool AGenCharacterBase::IsUntouchable() const
 {
 	return AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Untouchable);
@@ -282,7 +296,9 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 		return EGenHitResponse::Hit;
 	}
 
-	const bool bCountering = AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Countering);
+	// Seul un ennemi déclenche le contre ; un attaquant nul (instigateur détruit, ex. zone d'un lanceur mort) reste un ennemi
+	const bool bFromEnemy = !Attacker || AreEnemies(Attacker, this);
+	const bool bCountering = bFromEnemy && AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Countering);
 	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, IsUntouchable(), Kind);
 
 	if (Response == EGenHitResponse::Countered)
@@ -293,7 +309,7 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 		Payload.Instigator = Attacker;
 		Payload.Target = this;
 		Payload.OptionalObject = Source;
-		Payload.EventMagnitude = static_cast<float>(Kind);
+		Payload.EventMagnitude = GenHitRules::ToEventMagnitude(Kind);
 		AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
 	}
 
@@ -487,6 +503,7 @@ void AGenCharacterBase::OnDeathStarted()
 	{
 		AbilitySystemComponent->ClearCastLock();
 	}
+	ResetFedResource();
 
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	Movement->StopMovementImmediately();

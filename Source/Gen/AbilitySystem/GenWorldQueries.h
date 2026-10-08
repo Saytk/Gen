@@ -16,7 +16,15 @@ namespace GenWorldQueries
 	/** Premier mur entre Start et End. */
 	GEN_API bool FindWallHit(const UWorld* World, const FVector& Start, const FVector& End, const TArray<const AActor*>& IgnoredActors, FHitResult& OutHit);
 
-	/** Vrai si au moins un point de la capsule de Target (centre, deux bords, haut) est visible depuis Origin. */
+	/**
+	 * Vrai si au moins un point de la capsule de Target (centre, deux bords, haut) est visible depuis Origin.
+	 * Limites assumées :
+	 * - le sol est un « mur » : Origin doit être AU-DESSUS du sol (sinon, sur un sol inégal, tous les points
+	 *   sont cachés). Une zone au sol relève donc son point de départ (Task 6, LineOrigin) ;
+	 * - pas de point aux pieds : une cible sur un rebord au-dessus d'une explosion est protégée par l'arête ;
+	 * - les bords sont pris à 80 % du rayon : une cible dont moins d'environ 20 % du rayon dépasse n'est pas touchée.
+	 * Les pions ne bloquent pas la vue (seuls WorldStatic et WorldDynamic, hors projectiles et volumes sans blocage Pawn).
+	 */
 	GEN_API bool HasLineOfSight(const UWorld* World, const FVector& Origin, const AActor* Target, const TArray<const AActor*>& IgnoredActors);
 
 	/** Sol sous Point (trace vers le bas sur WorldStatic) ; Point lui-même si rien n'est trouvé. */

@@ -41,6 +41,27 @@ namespace GenHitRules
 		return bCountering && TriggersCounter(Kind) ? EGenHitResponse::Countered : EGenHitResponse::Hit;
 	}
 
+	/**
+	 * Nature du coup dans un FGameplayEventData (EventMagnitude) : Kind + 1, jamais 0, pour qu'une charge utile
+	 * vide (magnitude 0) ne se lise pas comme un projectile.
+	 */
+	inline float ToEventMagnitude(EGenHitKind Kind)
+	{
+		return static_cast<float>(Kind) + 1.f;
+	}
+
+	/** Inverse de ToEventMagnitude ; faux si la magnitude ne désigne aucune nature (événement sans nature). */
+	inline bool FromEventMagnitude(float Magnitude, EGenHitKind& OutKind)
+	{
+		const int32 Value = FMath::RoundToInt32(Magnitude) - 1;
+		if (Value < static_cast<int32>(EGenHitKind::Projectile) || Value > static_cast<int32>(EGenHitKind::Area))
+		{
+			return false;
+		}
+		OutKind = static_cast<EGenHitKind>(Value);
+		return true;
+	}
+
 	/** Récompense d'un coup bloqué. */
 	struct FCounterReward
 	{

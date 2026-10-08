@@ -69,6 +69,9 @@ public:
 	void ClearCastLock();
 
 protected:
+	/** Un sort retiré efface l'affichage des unités nourries qu'il possédait (AGenCharacterBase::ClearFedResourceFrom). */
+	virtual void OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec) override;
+
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
 

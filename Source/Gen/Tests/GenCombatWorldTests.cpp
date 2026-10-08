@@ -2,6 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
@@ -150,7 +151,48 @@ bool FGenCounterResolveTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("le contre est prévenu de chaque blocage"), Received, 2);
 	TestTrue(TEXT("instigateur transmis"), ReceivedInstigator == static_cast<const AActor*>(Attacker));
-	TestEqual(TEXT("nature du dernier coup bloqué"), ReceivedKind, static_cast<float>(EGenHitKind::Melee));
+	TestEqual(TEXT("nature du dernier coup bloqué"), ReceivedKind, GenHitRules::ToEventMagnitude(EGenHitKind::Melee));
+
+	// Seul un ennemi déclenche le contre ; un attaquant détruit (nul) compte comme ennemi
+	TestTrue(TEXT("son propre coup (non ennemi) : pas de contre"), Defender->ResolveIncomingHit(Defender, EGenHitKind::Projectile, nullptr) == EGenHitResponse::Hit);
+	TestTrue(TEXT("attaquant nul : bloqué"), Defender->ResolveIncomingHit(nullptr, EGenHitKind::Projectile, nullptr) == EGenHitResponse::Countered);
+	TestEqual(TEXT("aucun événement pour le coup non ennemi"), Received, 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFedDisplayOwnerRemovedTest, "Gen.Feeding.FedDisplayOwnerRemoved",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenFedDisplayOwnerRemovedTest::RunTest(const FString& Parameters)
+{
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Dummy = TestWorld.SpawnDummy();
+	UAbilitySystemComponent* ASC = Dummy ? Dummy->GetAbilitySystemComponent() : nullptr;
+	if (!TestNotNull(TEXT("ASC du mannequin"), ASC))
+	{
+		return false;
+	}
+
+	// Un sort instancié par acteur possède l'affichage, puis il est retiré sans l'avoir effacé
+	const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(FGameplayAbilitySpec(UGenGA_Projectile::StaticClass()));
+	const FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromHandle(Handle);
+	UGameplayAbility* Instance = Spec ? Spec->GetPrimaryInstance() : nullptr;
+	if (!TestNotNull(TEXT("instance du sort"), Instance))
+	{
+		return false;
+	}
+
+	Dummy->SetFedResource(Instance, 3);
+	TestEqual(TEXT("3 affichées"), Dummy->GetFedResource(), 3);
+	Dummy->ClearFedResourceFrom(Dummy);
+	TestEqual(TEXT("un autre objet n'efface rien"), Dummy->GetFedResource(), 3);
+
+	ASC->ClearAbility(Handle);
+	TestEqual(TEXT("sort retiré : affichage effacé"), Dummy->GetFedResource(), 0);
+
+	Dummy->SetFedResource(Dummy, 2);
+	Dummy->ResetFedResource();
+	TestEqual(TEXT("remise à zéro (mort)"), Dummy->GetFedResource(), 0);
 	return true;
 }
 

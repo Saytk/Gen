@@ -6,6 +6,7 @@
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/Effects/GenGE_Gain.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenHitRules.h"
 #include "AbilitySystemComponent.h"
 #include "Actors/GenProjectile.h"
 #include "Character/GenPlayerCharacter.h"
@@ -223,7 +224,7 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 				if (bCountering)
 				{
 					ASSERT_THAT(IsTrue(BlockedInstigator == Attacker, TEXT("Instigateur du blocage = attaquant")));
-					ASSERT_THAT(IsNear(0.f, BlockedKind, 0.01f, TEXT("Nature du coup bloqué = Projectile (0)")));
+					ASSERT_THAT(IsNear(GenHitRules::ToEventMagnitude(EGenHitKind::Projectile), BlockedKind, 0.01f, TEXT("Nature du coup bloqué = Projectile (ToEventMagnitude, jamais 0)")));
 				}
 				if (Defence != EDefence::None)
 				{
