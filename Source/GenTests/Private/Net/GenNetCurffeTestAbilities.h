@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystem/Abilities/GenGA_Counter.h"
+#include "AbilitySystem/Abilities/GenGA_Projectile.h"
+#include "AbilitySystemComponent.h"
 #include "AbilitySystem/Abilities/GenGA_GroundArea.h"
 #include "Actors/GenGroundArea.h"
 #include "Actors/GenProjectile.h"
@@ -111,5 +113,31 @@ protected:
 	{
 		CooldownTags = TestCooldownTags;
 		Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+	}
+};
+
+/**
+ * Pyroblast de test (Plan 3 Task 9) : comme l'asset GA_Pyroblast, n'est lançable que sous State.Curffe.Ablaze
+ * (ActivationRequiredTags dans l'asset ; ici par CanActivateAbility, le tag de Curffe n'étant pas exporté).
+ */
+UCLASS(NotBlueprintable, HideDropdown)
+class UGenNetTestGA_Pyroblast : public UGenGA_Projectile
+{
+	GENERATED_BODY()
+
+public:
+	UGenNetTestGA_Pyroblast()
+	{
+		CastTime = 0.35f;
+		Damage = FScalableFloat(13.f);
+		BaseExplosionRadius = 120.f;
+	}
+
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
+		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override
+	{
+		const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+		return ASC && ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Curffe.Ablaze")))
+			&& Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
 	}
 };
