@@ -44,8 +44,8 @@ void UGenGA_Projectile::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	ReportedFedCount = INDEX_NONE;
 	bInterruptWatchStarted = false;
 	bServerShotLocked = false;
-	PendingAimData.Clear();
-	PendingAimPredictionKey = FPredictionKey();
+	PendingLaunchDirection = FVector::ZeroVector;
+	PendingLaunchFed = 0;
 
 	if (bFeedable)
 	{
@@ -73,16 +73,15 @@ void UGenGA_Projectile::EndAbility(const FGameplayAbilitySpecHandle Handle, cons
 	StopCasting();
 
 	bServerShotLocked = false;
-	PendingAimData.Clear();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 bool UGenGA_Projectile::CanBeCanceled() const
 {
-	// Le client a déjà tiré : la boule de feu relancée par son clic maintenu (ou tout autre sort lancé
-	// après le tir) arrive juste derrière la visée et ne doit pas annuler ce tir côté serveur.
-	// Étourdi et mort restent gérés (OnCastInterrupted, FinishServerCast).
+	// Serveur, projectile différé (visée reçue en avance) : le client a déjà tiré. La boule de feu relancée
+	// par son clic maintenu (ou tout autre sort lancé après le tir) arrive juste derrière la visée et ne
+	// doit pas annuler ce tir. La mort est gérée au départ du projectile (OnServerLaunchDelayFinished).
 	return !bServerShotLocked && Super::CanBeCanceled();
 }
 
@@ -338,11 +337,6 @@ void UGenGA_Projectile::OnServerAimReceived(const FGameplayAbilityTargetDataHand
 	// appui qui annule ce sort côté client arrive avant toute visée, un sort lancé après le tir arrive
 	// après. À partir d'ici, un autre sort du joueur ne peut donc plus annuler ce tir.
 	bServerShotLocked = true;
-	PendingAimData = DataHandle;
-
-	// Appelé pendant le RPC de la visée : c'est la clé dans laquelle le client a prédit coût et cooldown
-	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	PendingAimPredictionKey = ASC ? ASC->ScopedPredictionKey : FPredictionKey();
 
 	// Le client a fini d'incanter : ralenti et barre de cast s'arrêtent maintenant (déplacements cohérents)
 	EndCastPresentation();
@@ -351,42 +345,39 @@ void UGenGA_Projectile::OnServerAimReceived(const FGameplayAbilityTargetDataHand
 	const float Wait = GenFeeding::GetServerCastWait(CastTime, Elapsed, GenFeeding::CastTimeTolerance);
 	if (Wait <= 0.f)
 	{
+		// Cas normal : le sort part et se termine pendant le RPC de la visée, avant tout sort envoyé après
 		GEN_ABILITY_LOG(Verbose, "Visée reçue après %.3fs d'incantation (%.2fs demandées)", Elapsed, CastTime);
-		FinishServerCast();
+		OnTargetDataReady(DataHandle);
 		return;
 	}
 
-	// Visée trop tôt (triche ou paquet du début d'incantation très retardé) : le serveur fait respecter
-	// l'incantation et tire à CastTime - tolérance
-	GEN_ABILITY_LOG(Log, "Visée en avance : %.3fs d'incantation sur %.2fs, tir différé de %.3fs", Elapsed, CastTime, Wait);
+	// Visée trop tôt (triche, ou activation retardée par une perte de paquet) : le tir est lancé maintenant,
+	// dans la fenêtre de prédiction de la visée comme chez le client (cooldown, coût, flammes : pas de
+	// correction visible), mais le projectile n'apparaît qu'à CastTime - tolérance. Le sort reste actif
+	// d'ici là : un client ne peut ni sauter l'incantation ni enchaîner les tirs plus vite.
+	GEN_ABILITY_LOG(Log, "Visée en avance : %.3fs d'incantation sur %.2fs, projectile différé de %.3fs", Elapsed, CastTime, Wait);
+	if (!ReleaseShot(DataHandle, PendingLaunchDirection, PendingLaunchFed))
+	{
+		return; // sort déjà terminé (visée invalide, CommitAbility refusé)
+	}
+
 	UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, Wait);
-	WaitTask->OnFinish.AddDynamic(this, &ThisClass::OnServerCastWaitFinished);
+	WaitTask->OnFinish.AddDynamic(this, &ThisClass::OnServerLaunchDelayFinished);
 	WaitTask->ReadyForActivation();
 }
 
-void UGenGA_Projectile::OnServerCastWaitFinished()
+void UGenGA_Projectile::OnServerLaunchDelayFinished()
 {
-	// Même fenêtre de prédiction que la visée (sans la ré-acquitter) : les GE serveur portent la clé du client
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	FScopedPredictionWindow ScopedPrediction(ASC, PendingAimPredictionKey, /*InSetReplicatedPredictionKey*/ false);
-	FinishServerCast();
-}
-
-void UGenGA_Projectile::FinishServerCast()
-{
-	// Étourdi ou mort pendant l'attente d'un tir différé : le serveur a le dernier mot
+	// Mort pendant l'attente : pas de projectile (le verrou a empêché CancelAllAbilities de couper le sort)
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (ASC && ASC->HasAnyMatchingGameplayTags(ActivationBlockedTags))
+	if (!ASC || ASC->HasMatchingGameplayTag(GenGameplayTags::State_Dead))
 	{
-		GEN_ABILITY_LOG(Verbose, "Tir différé abandonné (étourdi ou mort)");
-		bServerShotLocked = false;
-		CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
+		GEN_ABILITY_LOG(Verbose, "Projectile différé abandonné (mort)");
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
 
-	const FGameplayAbilityTargetDataHandle AimData = PendingAimData;
-	PendingAimData.Clear();
-	OnTargetDataReady(AimData);
+	LaunchShot(PendingLaunchDirection, PendingLaunchFed);
 }
 
 void UGenGA_Projectile::ApplyCastSlow()
@@ -449,8 +440,15 @@ void UGenGA_Projectile::StopCasting()
 
 void UGenGA_Projectile::OnCastInterrupted()
 {
+	if (bServerShotLocked)
+	{
+		// Serveur : étourdi après la visée. Le client a déjà tiré et le coût est payé ; seul le projectile
+		// attendait la fin de l'incantation mesurée par le serveur. Il part quand même.
+		GEN_ABILITY_LOG(Verbose, "Étourdi après le tir : le projectile différé part quand même");
+		return;
+	}
+
 	GEN_ABILITY_LOG(Verbose, "Incantation interrompue (étourdi)");
-	bServerShotLocked = false; // un étourdissement annule même un tir différé
 	CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
 }
 
@@ -515,6 +513,16 @@ void UGenGA_Projectile::SpendResource(int32 Amount)
 
 void UGenGA_Projectile::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& DataHandle)
 {
+	FVector Direction = FVector::ZeroVector;
+	int32 Fed = 0;
+	if (ReleaseShot(DataHandle, Direction, Fed))
+	{
+		LaunchShot(Direction, Fed);
+	}
+}
+
+bool UGenGA_Projectile::ReleaseShot(const FGameplayAbilityTargetDataHandle& DataHandle, FVector& OutDirection, int32& OutFed)
+{
 	AActor* Avatar = GetAvatarActorFromActorInfo();
 	const FGameplayAbilityTargetData* Data = DataHandle.Get(0);
 	const FHitResult* Hit = Data ? Data->GetHitResult() : nullptr;
@@ -523,7 +531,7 @@ void UGenGA_Projectile::OnTargetDataReady(const FGameplayAbilityTargetDataHandle
 	{
 		GEN_ABILITY_LOG(Warning, "Visée invalide (avatar=%d, hit=%d)", Avatar != nullptr, Hit != nullptr);
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
-		return;
+		return false;
 	}
 
 	const int32 Fed = ResolveFedCount(Data);
@@ -535,7 +543,7 @@ void UGenGA_Projectile::OnTargetDataReady(const FGameplayAbilityTargetDataHandle
 	{
 		GEN_ABILITY_LOG(Verbose, "CommitAbility a échoué au lancer");
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
-		return;
+		return false;
 	}
 
 	SpendResource(Fed);
@@ -558,11 +566,21 @@ void UGenGA_Projectile::OnTargetDataReady(const FGameplayAbilityTargetDataHandle
 		MontageTask->ReadyForActivation();
 	}
 
-	SpawnProjectile(Avatar->GetActorLocation() + Direction * 1000.f, Fed);
+	OutDirection = Direction;
+	OutFed = Fed;
+	return true;
+}
+
+void UGenGA_Projectile::LaunchShot(const FVector& Direction, int32 Fed)
+{
+	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
+	{
+		SpawnProjectile(Avatar->GetActorLocation() + Direction * 1000.f, Fed);
+	}
 
 	// Le client ne réplique PAS la fin du sort : un EndAbility répliqué pourrait arriver au serveur
 	// avant qu'il ait traité la visée et fait apparaître le projectile. C'est le serveur qui termine
-	// (à la réception de la visée) et prévient le client.
+	// (à la réception de la visée, ou au départ d'un projectile différé) et prévient le client.
 	const bool bReplicateEnd = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, bReplicateEnd, false);
 }
