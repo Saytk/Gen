@@ -29,11 +29,8 @@ public:
 	 */
 	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const override;
 
-	/** Tir de base (non nourrissable, incantation < BasicAttackMaxCastTime) : jamais de ligne de visée par défaut. */
-	bool IsBasicAttack() const;
-
-	/** Au-delà, un sort non nourrissable n'est plus une attaque de base (Curffe-Visuals.md §3.1, ⚑ F11). */
-	static constexpr float BasicAttackMaxCastTime = 0.4f;
+	/** Tir de base (bIsBasicAttack, déclaré par le sort) : jamais de ligne de visée par défaut. */
+	bool IsBasicAttack() const { return bIsBasicAttack; }
 
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;

@@ -127,10 +127,10 @@ bool FGenCastTimingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("tolérance négative ignorée"), GenFeeding::GetServerCastWait(0.5f, 0.45f, -1.f), 0.05f, KINDA_SMALL_NUMBER);
 
 	const float Tolerance = GenFeeding::CastTimeTolerance;
-	// Boule de feu (0.35 s) sous 60 ms ± 15 ms : la gigue (± 30 ms + une image) ne diffère jamais le tir
-	TestEqual(TEXT("boule de feu, gigue défavorable"), GenFeeding::GetServerCastWait(0.35f, 0.35f - 0.03f - 0.017f, Tolerance), 0.f, KINDA_SMALL_NUMBER);
+	// Boule de feu (0.40 s) sous 60 ms ± 15 ms : la gigue (± 30 ms + une image) ne diffère jamais le tir
+	TestEqual(TEXT("boule de feu, gigue défavorable"), GenFeeding::GetServerCastWait(0.4f, 0.4f - 0.03f - 0.017f, Tolerance), 0.f, KINDA_SMALL_NUMBER);
 	// Activation perdue puis renvoyée (environ un aller-retour de retard) : le projectile attend le reste
-	TestEqual(TEXT("boule de feu, activation renvoyée"), GenFeeding::GetServerCastWait(0.35f, 0.21f, Tolerance), 0.04f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("boule de feu, activation renvoyée"), GenFeeding::GetServerCastWait(0.4f, 0.26f, Tolerance), 0.04f, KINDA_SMALL_NUMBER);
 	// Client tricheur qui colle la visée à l'activation : l'incantation est imposée à la tolérance près
 	TestEqual(TEXT("visée collée à l'activation"), GenFeeding::GetServerCastWait(0.5f, 0.f, Tolerance), 0.5f - Tolerance, KINDA_SMALL_NUMBER);
 

@@ -198,9 +198,11 @@ class UGenNetTestGA_Pyroblast : public UGenGA_Projectile
 public:
 	UGenNetTestGA_Pyroblast()
 	{
-		CastTime = 0.35f;
-		Damage = FScalableFloat(13.f);
+		// Valeurs de l'asset (spec : 0.40 s, 15 dégâts) ; attaque de base déclarée, comme sur GA_Pyroblast
+		CastTime = 0.4f;
+		Damage = FScalableFloat(15.f);
 		BaseExplosionRadius = 120.f;
+		bIsBasicAttack = true;
 	}
 
 	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override

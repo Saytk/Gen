@@ -50,6 +50,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Input")
 	EGenAbilityActivationPolicy ActivationPolicy = EGenAbilityActivationPolicy::OnInputTriggered;
 
+	/**
+	 * Attaque de base (clic gauche : Pyroblast, Fireball) : jamais de ligne de visée par défaut (Art Bible §7.2, Filler
+	 * sans télégraphe ; option gen.ShowBasicAttackAimLine). Déclaré par le sort, pas déduit de son incantation
+	 * (Curffe-Visuals.md §3.1, ⚑ F11 : les deux sont passés à 0.40 s). Python : is_basic_attack.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Input")
+	bool bIsBasicAttack = false;
+
 	/** Nom affiché dans l'UI. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|UI")
 	FText DisplayName;

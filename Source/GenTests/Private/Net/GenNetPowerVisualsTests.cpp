@@ -279,9 +279,10 @@ NETWORK_TEST_CLASS(PowerVisuals, "Gen.Net")
 #include "Net/GenNetCurffeTestAbilities.h"
 
 /**
- * Pyroblast (Curffe-Visuals.md §3.1, ⚑ F11) : comme la boule de feu, une attaque de base (non nourrissable, incantation
- * de 0.35 s) : pas de ligne de visée par défaut (gen.ShowBasicAttackAimLine). L'éclat de 1.2 m de la ligne optionnelle
- * est épinglé par Gen.Visuals.BaseExplosionAim.
+ * Pyroblast (Curffe-Visuals.md §3.1, ⚑ F11) : comme la boule de feu, une attaque de base (bIsBasicAttack, déclaré par le
+ * sort) : pas de ligne de visée par défaut (gen.ShowBasicAttackAimLine). L'incantation ne décide plus : à 0.40 s (valeur
+ * des assets), le Pyroblast reste une attaque de base, et un projectile qui ne la déclare pas n'en est pas une, même
+ * rapide. L'éclat de 1.2 m de la ligne optionnelle est épinglé par Gen.Visuals.BaseExplosionAim.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenPyroblastAimLineTest, "Gen.Visuals.PyroblastAimLine",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -290,6 +291,7 @@ bool FGenPyroblastAimLineTest::RunTest(const FString& Parameters)
 {
 	const UGenNetTestGA_Pyroblast* Pyroblast = GetDefault<UGenNetTestGA_Pyroblast>();
 	TestTrue(TEXT("Pyroblast : attaque de base, ligne de visée seulement sur option"), Pyroblast->IsBasicAttack());
+	TestFalse(TEXT("Projectile non déclaré : pas une attaque de base, même non nourrissable et rapide"), GetDefault<UGenGA_Projectile>()->IsBasicAttack());
 	return true;
 }
 

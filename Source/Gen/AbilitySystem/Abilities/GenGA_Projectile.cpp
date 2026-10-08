@@ -25,11 +25,6 @@ UGenGA_Projectile::UGenGA_Projectile()
 	Damage = FScalableFloat(20.f);
 }
 
-bool UGenGA_Projectile::IsBasicAttack() const
-{
-	return !bFeedable && CastTime < BasicAttackMaxCastTime;
-}
-
 bool UGenGA_Projectile::WantsAimIndicator() const
 {
 	if (IsBasicAttack())
