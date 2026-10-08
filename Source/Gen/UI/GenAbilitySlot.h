@@ -114,8 +114,16 @@ protected:
 
 private:
 	void ApplyLayout();
-	/** Cherche le sort de InputTag dans l'ASC (sauf Excluded, un spec en cours de retrait) et s'y câble. */
+	/**
+	 * Cherche le sort de InputTag dans l'ASC (sauf Excluded, un spec en cours de retrait) et s'y câble. Plusieurs sorts sur
+	 * la touche (revue finale, M-9) : celui que les tags du propriétaire choisissent (le sort qui partirait), sinon le
+	 * premier ; l'emplacement suit les changements de ces tags (OnSelectionTagChanged).
+	 */
 	void ResolveAbility(FGameplayAbilitySpecHandle Excluded = FGameplayAbilitySpecHandle());
+	/** Spec que la touche lancerait maintenant (voir ResolveAbility) ; nul s'il n'y en a aucun. */
+	const FGameplayAbilitySpec* FindPreferredSpec(FGameplayAbilitySpecHandle Excluded = FGameplayAbilitySpecHandle()) const;
+	/** Un tag qui départage les sorts de la touche change (ex. State.Curffe.Ablaze) : nouveau sort affiché s'il change. */
+	void OnSelectionTagChanged(const FGameplayTag Tag, int32 NewCount);
 	/** Oublie le sort résolu (tags de recharge, icône) sans délier l'ASC. */
 	void ClearResolvedAbility();
 	/** Sort accordé ou retiré (UGenAbilitySystemComponent::OnAbilitiesChanged) : respawn, changement de champion, sort tardif. */
@@ -176,6 +184,8 @@ private:
 	TArray<TPair<FGameplayTag, FDelegateHandle>> TagHandles;
 	/** Tags de recharge du sort résolu, retirés quand le sort change. */
 	TArray<TPair<FGameplayTag, FDelegateHandle>> CooldownTagHandles;
+	/** Tags qui départagent les sorts de la touche (M-9), retirés quand le sort change. */
+	TArray<TPair<FGameplayTag, FDelegateHandle>> SelectionTagHandles;
 	FDelegateHandle AbilitiesChangedHandle;
 	FDelegateHandle EnergyHandle;
 	FDelegateHandle MaxEnergyHandle;

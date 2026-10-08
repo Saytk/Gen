@@ -29,6 +29,12 @@ public:
 	/** Dégâts de la zone avec Fed unités nourries (zone et infobulle). */
 	float GetAreaDamage(int32 Fed, int32 Level = 1) const;
 
+	/**
+	 * Délai réel entre le départ et l'impact (0 = immédiat) : ImpactDelay, jamais sous MinTelegraph + la marge de latence
+	 * (GenAreaRules::TelegraphLatencyMargin). Revue finale, M-1 : seule source du jeu et de l'infobulle.
+	 */
+	float GetEffectiveImpactDelay() const;
+
 	//~ UGenGameplayAbility (infobulle) : {Damage}, {Radius} (sans flamme), {RadiusMax}, {Range}, {Stun}, {Delay}, {Knockback}
 	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
 	virtual float GetTooltipRange() const override { return Range; }

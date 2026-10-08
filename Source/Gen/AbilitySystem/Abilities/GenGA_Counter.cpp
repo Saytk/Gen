@@ -208,7 +208,11 @@ void UGenGA_Counter::GetTooltipEffectLines(TArray<FText>& OutLines) const
 	}
 	if (ResourcePerBlock > 0.f)
 	{
-		OutLines.Add(FText::Format(LOCTEXT("Resource", "+{0} {0}|plural(one=flamme,other=flammes) par coup bloqué"), ResourcePerBlock));
+		// Revue finale, M-10 : nombre dans la culture courante (GenAbilityTooltip::Number), pluriel sur la valeur brute
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Count"), GenAbilityTooltip::Number(ResourcePerBlock));
+		Args.Add(TEXT("Amount"), ResourcePerBlock);
+		OutLines.Add(FText::Format(LOCTEXT("Resource", "+{Count} {Amount}|plural(one=flamme,other=flammes) par coup bloqué"), Args));
 	}
 	if (EnergyOnFirstBlock > 0.f)
 	{

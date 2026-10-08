@@ -90,6 +90,44 @@ bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Ha
 	return true;
 }
 
+namespace GenGameplayAbilityPrivate
+{
+	/** Tag bloquant commun à tous les sorts (mort, contrôle dur) : ne départage pas les sorts d'une touche. */
+	bool IsUniversalBlock(const FGameplayTag& Tag)
+	{
+		return Tag.MatchesTagExact(GenGameplayTags::State_Dead) || GenGameplayTags::GetHardCCTags().HasTagExact(Tag);
+	}
+}
+
+bool UGenGameplayAbility::IsSelectedByOwnerTags(const UAbilitySystemComponent& AbilitySystemComponent) const
+{
+	const FGameplayTagContainer& Owned = AbilitySystemComponent.GetOwnedGameplayTags();
+	if (!Owned.HasAll(ActivationRequiredTags))
+	{
+		return false;
+	}
+	for (const FGameplayTag& Blocked : ActivationBlockedTags)
+	{
+		if (!GenGameplayAbilityPrivate::IsUniversalBlock(Blocked) && Owned.HasTag(Blocked))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void UGenGameplayAbility::GetSelectionTags(FGameplayTagContainer& OutTags) const
+{
+	OutTags.AppendTags(ActivationRequiredTags);
+	for (const FGameplayTag& Blocked : ActivationBlockedTags)
+	{
+		if (!GenGameplayAbilityPrivate::IsUniversalBlock(Blocked))
+		{
+			OutTags.AddTag(Blocked);
+		}
+	}
+}
+
 bool UGenGameplayAbility::DoesAbilitySatisfyTagRequirements(const UAbilitySystemComponent& AbilitySystemComponent, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
 {
 	FGameplayTagContainer Relevant;

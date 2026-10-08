@@ -32,12 +32,6 @@ namespace GenNetPowerStates
 		const UAbilitySystemComponent* ASC = GetASC(PlayerState);
 		return ASC && ASC->HasMatchingGameplayTag(Tag);
 	}
-
-	/** Le serveur a lancé le personnage (repoussement) dans cette image. */
-	inline bool IsBeingLaunched(const ACharacter* Character)
-	{
-		return !Character->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero();
-	}
 }
 
 using namespace GenNetPowerStates;

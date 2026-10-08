@@ -1,6 +1,7 @@
 #include "Champions/Curffe/CurffeGA_LivingFlame.h"
 
 #include "AbilitySystem/GenAbilityTooltipData.h"
+#include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
@@ -29,8 +30,23 @@ UCurffeGA_LivingFlame::UCurffeGA_LivingFlame()
 	RefillEffect = UCurffeGE_HearthFill::StaticClass();
 }
 
+namespace CurffeLivingFlamePrivate
+{
+	const FName HasteReason(TEXT("LivingFlameHaste"));
+}
+
 void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 {
+	// Revue finale, M-5 : client propriétaire, lancer prédit dans la fenêtre de la visée. Quand sa clé rattrape le serveur,
+	// on vérifie que le serveur l'a accepté (OnLaunchCaughtUp) : sinon la hâte, qui ne dépend pas du sort, survivrait au
+	// refus si la forme du client finit avant que le refus n'arrive (RTT > forme)
+	bLaunchRejected = false;
+	UAbilitySystemComponent* OwnerASC = GetAbilitySystemComponentFromActorInfo();
+	if (OwnerASC && CurrentActorInfo && !CurrentActorInfo->IsNetAuthority() && OwnerASC->ScopedPredictionKey.IsLocalClientKey())
+	{
+		OwnerASC->ScopedPredictionKey.NewCaughtUpDelegate().BindWeakLambda(this, [this]() { OnLaunchCaughtUp(); });
+	}
+
 	// Forme de feu prédite chez le client : intouchable, vue par tous (État + tag propre à Curffe pour son visuel).
 	// Revue P3 T8-10, M1 : le GE prédit est remplacé par celui du serveur (commencé ~½ RTT plus tard, retrait reçu ~½ RTT
 	// après sa fin) : le propriétaire garde les tags de la forme ~1 RTT après SA fin de forme, alors qu'il peut déjà agir
@@ -89,12 +105,12 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 	// forme, retiré HasteDuration plus tard. Prédite chez le client sans le RTT d'un GE du serveur ; le serveur ouvre sa
 	// grâce de mouvement aux deux bornes (NoteLocalSpeedChange). Clé : la classe du sort (une flamme vivante par personnage)
 	AGenCharacterBase* HasteCharacter = GetGenCharacterFromActorInfo();
-	if (HasteCharacter && HasteMultiplier > 1.f && HasteDuration > 0.f && GetWorld())
+	if (HasteCharacter && HasteMultiplier > 1.f && HasteDuration > 0.f && GetWorld() && !bLaunchRejected)
 	{
-		static const FName HasteReason(TEXT("LivingFlameHaste"));
+		const FName HasteReason = CurffeLivingFlamePrivate::HasteReason;
 		const UClass* HasteSource = GetClass();
 		HasteCharacter->SetLocalMoveSpeedMultiplier(HasteSource, HasteReason, HasteMultiplier);
-		GetWorld()->GetTimerManager().SetTimer(HasteTimer, FTimerDelegate::CreateWeakLambda(HasteCharacter, [HasteCharacter, HasteSource]()
+		GetWorld()->GetTimerManager().SetTimer(HasteTimer, FTimerDelegate::CreateWeakLambda(HasteCharacter, [HasteCharacter, HasteSource, HasteReason]()
 		{
 			HasteCharacter->ClearLocalMoveSpeedMultiplier(HasteSource, HasteReason);
 		}), HasteDuration, false);
@@ -115,6 +131,34 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 	}
 
 	FinishAbility();
+}
+
+void UCurffeGA_LivingFlame::OnLaunchCaughtUp()
+{
+	// Le temps de recharge est posé au lancer (CommitAbility). Le GE prédit vient d'être retiré (rattrapage, délégués
+	// appelés dans l'ordre d'enregistrement) ; celui du serveur est déjà là (ses GE arrivent avec la clé ou avant) s'il a
+	// accepté le lancer. Sans temps de recharge réglé, rien à vérifier
+	const UAbilitySystemComponent* OwnerASC = GetAbilitySystemComponentFromActorInfo();
+	const FGameplayTagContainer* Cooldown = GetCooldownTags();
+	if (!OwnerASC || !Cooldown || Cooldown->IsEmpty() || OwnerASC->HasAnyMatchingGameplayTags(*Cooldown))
+	{
+		return;
+	}
+	UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[CLIENT] %s : lancer refusé par le serveur, hâte retirée"), *GetName());
+	bLaunchRejected = true;
+	ClearHaste();
+}
+
+void UCurffeGA_LivingFlame::ClearHaste()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HasteTimer);
+	}
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+	{
+		Character->ClearLocalMoveSpeedMultiplier(GetClass(), CurffeLivingFlamePrivate::HasteReason);
+	}
 }
 
 void UCurffeGA_LivingFlame::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)

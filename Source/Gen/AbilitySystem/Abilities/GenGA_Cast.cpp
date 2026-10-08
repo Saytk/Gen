@@ -667,7 +667,12 @@ void UGenGA_Cast::PlayChargeMontage(float Delay)
 	const bool bScaled = GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, CastMontage != nullptr, CastTime);
 	// Retardée : jouée plus vite, sans avertissement de recalage pour cette accélération voulue
 	const float ExpectedRate = Delay > 0.f && CastTime > Delay ? CastTime / (CastTime - Delay) : 1.f;
-	const float Rate = bScaled ? GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), FMath::Max(CastTime - Delay, KINDA_SMALL_NUMBER), ExpectedRate) : 1.f;
+	// Revue finale, M-7 : la règle testée (Gen.Visuals.MontageTiming) ; GetPhaseRate ne sert qu'à l'avertissement de recalage
+	const float Rate = bScaled ? GenMontageTiming::GetDelayedChargeRate(ChargeMontage->GetPlayLength(), CastTime, Delay) : 1.f;
+	if (bScaled)
+	{
+		GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), FMath::Max(CastTime - Delay, KINDA_SMALL_NUMBER), ExpectedRate);
+	}
 	PlayPhaseMontage(ChargeMontage, Rate, /*bStopWhenAbilityEnds*/ false);
 }
 

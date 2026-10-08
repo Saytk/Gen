@@ -60,10 +60,23 @@ namespace GenAbilityTooltip
 		return FText::Join(Separator, NonEmpty);
 	}
 
+	/** Nom affichable de la classe d'un sort sans DisplayName (UClass::GetDisplayNameText n'existe qu'avec l'éditeur). */
+	static FText GetClassDisplayName(const UClass* Class)
+	{
+#if WITH_EDITOR
+		return Class->GetDisplayNameText();
+#else
+		// Revue finale, C-1 : même rendu hors éditeur ("GA_Fireball_C" -> "GA Fireball")
+		FString ClassName = Class->GetName();
+		ClassName.RemoveFromEnd(TEXT("_C"));
+		return FText::FromString(FName::NameToDisplayString(ClassName, false));
+#endif
+	}
+
 	void Build(const UGenGameplayAbility& Ability, FGenAbilityTooltipData& Out)
 	{
 		Out = FGenAbilityTooltipData();
-		Out.Name = Ability.DisplayName.IsEmpty() ? Ability.GetClass()->GetDisplayNameText() : Ability.DisplayName;
+		Out.Name = Ability.DisplayName.IsEmpty() ? GetClassDisplayName(Ability.GetClass()) : Ability.DisplayName;
 
 		// En-tête : incantation, recharge, coût, portée, nourrissage (valeurs de jeu, niveau 1)
 		const float CastTime = Ability.GetTooltipCastTime();

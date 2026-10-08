@@ -99,6 +99,18 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Pilier : 3,5 m dans l'infobulle"), Text.Contains(GenAbilityTooltip::Meters(350.f).ToString()));
 		TestTrue(TEXT("Pilier : 2 m sans flamme"), Data.Lines.Num() > 0 && Data.Lines[0].ToString().Contains(GenAbilityTooltip::Meters(200.f).ToString()));
 		TestTrue(TEXT("Pilier : portée"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Meters(Pillar->GetTooltipRange()).ToString()));
+
+		// Revue finale, M-1 : l'infobulle donne le délai d'impact du jeu (plancher MinTelegraph relevé de la marge de latence)
+		TestTrue(TEXT("Pilier : délai d'impact du jeu"), Text.Contains(GenAbilityTooltip::Seconds(Pillar->GetEffectiveImpactDelay()).ToString()));
+		if (const FFloatProperty* DelayProperty = FindFProperty<FFloatProperty>(UGenGA_GroundArea::StaticClass(), TEXT("ImpactDelay"));
+			TestNotNull(TEXT("ImpactDelay"), DelayProperty))
+		{
+			DelayProperty->SetPropertyValue_InContainer(Pillar, 0.3f);
+			FGenAbilityTooltipData ShortData;
+			const FString ShortText = Build(*Pillar, ShortData);
+			TestEqual(TEXT("Délai court : plancher 0.6 s + marge 0.1 s"), Pillar->GetEffectiveImpactDelay(), 0.7f, KINDA_SMALL_NUMBER);
+			TestTrue(TEXT("Délai court : 0.7 s dans l'infobulle"), ShortText.Contains(GenAbilityTooltip::Seconds(0.7f).ToString()));
+		}
 	}
 
 	// --- Bond (asset GA_FlameLeap, sinon le bond météore natif) : décollage par flamme, anneau ---

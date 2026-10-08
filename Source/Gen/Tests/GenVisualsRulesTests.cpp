@@ -35,8 +35,8 @@ bool FGenMontageTimingTest::RunTest(const FString& Parameters)
 {
 	// Grande boule de feu : anticipation de 15 images (0.5 s) pour CastTime 0.5 s => vitesse 1
 	TestEqual(TEXT("clip calé"), GenMontageTiming::GetPlayRate(0.5f, 0.5f), 1.f, 0.0001f);
-	// Boule de feu : 11 images (0.3667 s) pour 0.35 s
-	TestEqual(TEXT("léger écart"), GenMontageTiming::GetPlayRate(11.f / 30.f, 0.35f), (11.f / 30.f) / 0.35f, 0.0001f);
+	// Boule de feu : 11 images (0.3667 s) pour 0.40 s
+	TestEqual(TEXT("léger écart"), GenMontageTiming::GetPlayRate(11.f / 30.f, 0.40f), (11.f / 30.f) / 0.40f, 0.0001f);
 	// Nourrissage rapide (Combustion) : section de 0.3 s pour un intervalle de 0.15 s => x2, attendu
 	TestEqual(TEXT("nourrissage rapide"), GenMontageTiming::GetPlayRate(0.3f, 0.15f), 2.f, 0.0001f);
 	TestFalse(TEXT("x2 attendu : pas d'avertissement"), GenMontageTiming::ShouldWarn(2.f, 2.f));

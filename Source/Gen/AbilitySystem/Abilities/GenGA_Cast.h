@@ -4,6 +4,7 @@
 #include "ActiveGameplayEffectHandle.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
+#include "AbilitySystem/GenMontageTiming.h"
 #include "GenGA_Cast.generated.h"
 
 class AGenGroundArea;
@@ -262,7 +263,7 @@ protected:
 	 * Python : cast_montage_release_hold.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (ClampMin = "0.0", Units = "s"))
-	float CastMontageReleaseHold = 0.15f;
+	float CastMontageReleaseHold = GenMontageTiming::DefaultCastReleaseHold;
 
 	/**
 	 * Durée de jeu de la phase lancée, à laquelle CastMontage est calé (0 = vitesse 1 : geste au lancer puis suivi).
@@ -382,7 +383,9 @@ private:
 
 	/**
 	 * Ralenti de l'incantation posé (multiplicateur local de AGenCharacterBase). Revue Plan 2 Tasks 7-8, I-4 : plus de GE
-	 * prédit, chaque machine le pose à SON début et le retire à SA fin, comme ses propres mouvements (aucune correction).
+	 * prédit, chaque machine le pose à SON début et le retire à SA fin, comme ses propres mouvements. Aux bornes, les
+	 * mouvements en attente partent avant les RPC de sort et le serveur absorbe un petit écart (grâce bornée,
+	 * UGenCharacterMovementComponent) : pas de correction pour un client honnête.
 	 */
 	bool bCastSlowApplied = false;
 
@@ -399,12 +402,15 @@ private:
 #if !UE_BUILD_SHIPPING
 	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
 	bool bWarnedPhaseSlotGroups = false;
+#endif
 
-	/** Départ (temps du monde) du dernier CastMontage de cette instance ; gardé d'une activation à l'autre (auto-répétition). */
+	/**
+	 * Départ (temps du monde) du dernier CastMontage de cette instance ; gardé d'une activation à l'autre (auto-répétition).
+	 * Revue finale, C-1 : hors du #if, c'est du gameplay (ordonnancement des montages), pas du débogage.
+	 */
 	double LastCastMontageTime = -1.0;
 	/** Retard de la charge en cours d'attente (OnChargeDelayFinished). */
 	float PendingChargeDelay = 0.f;
-#endif
 	/** Tâche de visée en cours (serveur pour un client distant : attend la visée). */
 	UPROPERTY(Transient)
 	TObjectPtr<UGenAbilityTask_TargetDataUnderCursor> AimTask;

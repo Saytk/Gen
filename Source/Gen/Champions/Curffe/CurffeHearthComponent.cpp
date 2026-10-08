@@ -15,6 +15,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GenGameplayTags.h"
+#include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -154,6 +155,13 @@ void UCurffeHearthComponent::OnFedResourceChanged(AGenCharacterBase* Character, 
 		return;
 	}
 
+	// Revue finale, M-4 : à la mort (remise à zéro du compte, annulation du sort), rien ne revient au Foyer d'un mort
+	if (IsOwnerDead())
+	{
+		FlownCount = FMath::Min(FlownCount, New);
+		return;
+	}
+
 	// Flammes illimitées (Combustion) : les emplacements se sont rallumés au départ de chaque flamme, rien ne revient
 	if (IsUnlimited())
 	{
@@ -229,6 +237,7 @@ void UCurffeHearthComponent::StartFlight(int32 Socket, bool bReturning, FName Sp
 	++(bReturning ? StartedReturnFlights : StartedFlights);
 
 	Slot->bNiagaraVisual = false;
+	Slot->NiagaraComponent.Reset();
 
 	// Vol en Niagara (contrat de NS_Curffe_FeedFly / FeedReturn) : attaché au socket du sort, axe local −X de la main
 	// vers l'emplacement du Foyer, échelle = distance / 100. Il remplace l'instance de vol
@@ -244,10 +253,23 @@ void UCurffeHearthComponent::StartFlight(int32 Socket, bool bReturning, FName Sp
 		{
 			const bool bHasSocket = !SpellSocket.IsNone() && Mesh->DoesSocketExist(SpellSocket);
 			const FRotator Rotation = FRotationMatrix::MakeFromXZ(HandFromSocket, FVector::UpVector).Rotator();
-			Slot->bNiagaraVisual = UNiagaraFunctionLibrary::SpawnSystemAttached(System, Mesh, bHasSocket ? SpellSocket : NAME_None, Hand, Rotation,
-				FVector(Distance / FlightPathLength), EAttachLocation::KeepWorldPosition, /*bAutoDestroy*/ true, ENCPoolMethod::AutoRelease) != nullptr;
+			UNiagaraComponent* Component = UNiagaraFunctionLibrary::SpawnSystemAttached(System, Mesh, bHasSocket ? SpellSocket : NAME_None, Hand, Rotation,
+				FVector(Distance / FlightPathLength), EAttachLocation::KeepWorldPosition, /*bAutoDestroy*/ true, ENCPoolMethod::AutoRelease);
+			Slot->bNiagaraVisual = Component != nullptr;
+			Slot->NiagaraComponent = Component;
 		}
 	}
+}
+
+bool UCurffeHearthComponent::IsOwnerDead() const
+{
+	const AGenCharacterBase* Character = OwnerCharacter.Get();
+	if (!Character)
+	{
+		return false;
+	}
+	const UAbilitySystemComponent* ASC = Character->GetAbilitySystemComponent();
+	return Character->IsDead() || (ASC && ASC->HasMatchingGameplayTag(GenGameplayTags::State_Dead));
 }
 
 bool UCurffeHearthComponent::IsUnlimited() const
@@ -299,6 +321,15 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			VisibleFlames = 0;
 			for (FFlight& Flight : Flights)
 			{
+				// Revue finale, M-4 : un vol Niagara parti juste avant la mort (annulation reçue avant elle) s'éteint aussi. Le
+				// composant vient du pool : seulement s'il dessine encore CE vol (vol actif, même système)
+				UNiagaraComponent* Component = Flight.NiagaraComponent.Get();
+				if (Flight.bActive && Component && Component->IsActive()
+					&& (Component->GetAsset() == FeedReturnSystem.Get() || Component->GetAsset() == FeedFlySystem.Get()))
+				{
+					Component->DeactivateImmediate();
+				}
+				Flight.NiagaraComponent.Reset();
 				Flight.bActive = false;
 			}
 			ShownLitSockets = 0;

@@ -78,6 +78,7 @@ void AGenProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AGenProjectile, bExploded);
+	DOREPLIFETIME(AGenProjectile, bFizzled);
 	DOREPLIFETIME(AGenProjectile, ImpactLocation);
 	DOREPLIFETIME_CONDITION(AGenProjectile, Speed, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AGenProjectile, ShotScale, COND_InitialOnly);
@@ -126,8 +127,7 @@ void AGenProjectile::BeginPlay()
 
 	if (HasAuthority())
 	{
-		// En bout de portée, le projectile explose dans le vide (FX d'impact, sans dégâts)
-		// plutôt que de disparaître d'un coup
+		// En bout de portée, le projectile disparaît en fondu, sans explosion (revue finale, M-2 : Fizzle)
 		if (Speed > 0.f)
 		{
 			FTimerHandle RangeTimer;
@@ -135,7 +135,7 @@ void AGenProjectile::BeginPlay()
 			{
 				if (!bExploded)
 				{
-					Explode(nullptr, GetActorLocation());
+					Fizzle();
 				}
 			}), MaxRange / Speed, false);
 		}
@@ -438,6 +438,20 @@ void AGenProjectile::Explode(AActor* HitActor, const FVector& Location, EGenHitR
 	SetLifeSpan(0.5f);
 }
 
+void AGenProjectile::Fizzle()
+{
+	UE_LOG(LogGenProjectile, Verbose, TEXT("%s s'éteint en bout de portée (%.2fs après spawn)"), *GetName(), GetGameTimeSinceCreation());
+
+	ImpactLocation = GetActorLocation();
+	bFizzled = true;
+	bExploded = true;
+	OnRep_Exploded(); // listen server : pas de RepNotify sur le serveur
+
+	ProjectileMovement->StopMovementImmediately();
+	CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SetLifeSpan(0.5f);
+}
+
 void AGenProjectile::OnRep_Exploded()
 {
 	if (bExploded)
@@ -453,6 +467,17 @@ void AGenProjectile::PlayImpactEffects()
 		return;
 	}
 	bImpactEffectsPlayed = true;
+
+	// Revue finale, M-2 : fin de course sans impact, la traînée s'éteint en fondu (Deactivate laisse vivre ses particules
+	// jusqu'à la destruction de l'acteur) ; ni FX d'impact, ni éclat, ni marqueur au sol
+	if (bFizzled)
+	{
+		ProjectileMovement->StopMovementImmediately();
+		CollisionSphere->SetVisibility(false, true);
+		ProjectileFX->SetVisibility(true);
+		ProjectileFX->Deactivate();
+		return;
+	}
 
 	const FVector Location = ImpactLocation;
 

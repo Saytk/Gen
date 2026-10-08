@@ -102,7 +102,8 @@ NETWORK_TEST_CLASS(Hearth, "Gen.Net")
 			.UntilClient(Description, 0, [this, Seconds](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + Seconds; }, DefaultWait());
 	}
 
-	TEST_METHOD(SocketsFollowFlames_FlightsAtThresholds_ReturnOnCancel)
+	/** Sol, bond accordé au lanceur (client 0), observateur (client 1) à 6 m ; attend un Foyer plein sur chaque client. */
+	void QueueSetup()
 	{
 		Network
 			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
@@ -136,7 +137,13 @@ NETWORK_TEST_CLASS(Hearth, "Gen.Net")
 				const UCurffeHearthComponent* Hearth = GetHearthIn(Client.World);
 				return Caster && Hearth && Hearth->GetInstanceCount() == 8 && Caster->GetResource() >= 5.f - KINDA_SMALL_NUMBER
 					&& Hearth->GetVisibleFlameCount() == 5 && Caster->GetCharacterMovement()->IsMovingOnGround();
-			}, DefaultWait())
+			}, DefaultWait());
+	}
+
+	TEST_METHOD(SocketsFollowFlames_FlightsAtThresholds_ReturnOnCancel)
+	{
+		QueueSetup();
+		Network
 			.ThenClient(TEXT("Client 0 : vise et nourrit le bond"), 0, [](FBasePIENetworkComponentState& Client)
 			{
 				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
@@ -193,6 +200,70 @@ NETWORK_TEST_CLASS(Hearth, "Gen.Net")
 				const UCurffeHearthComponent* Hearth = GetHearthIn(Client.World);
 				ASSERT_THAT(IsNotNull(Hearth));
 				ASSERT_THAT(AreEqual(ReturnsBeforeLaunch[Client.ClientIndex], Hearth->GetStartedReturnFlightCount()));
+			});
+	}
+
+	/** Lanceur vu par chaque client, retenu avant sa mort (le PlayerState peut perdre son pion ensuite). */
+	TMap<int32, TWeakObjectPtr<AGenCharacterBase>> ClientCasters;
+
+	/**
+	 * Revue finale, M-4 : mort en plein nourrissage. La remise à zéro du compte nourri (mort) et l'annulation du sort ne
+	 * font revenir aucune flamme au Foyer d'un mort. Observateur : compte nourri et mort arrivent ensemble, aucun vol de
+	 * retour. Lanceur : l'annulation du serveur peut le précéder d'une image ; le Foyer est éteint (rien ne vole).
+	 */
+	TEST_METHOD(DeathMidFeed_NoFlightBackIntoDeadCaster)
+	{
+		QueueSetup();
+		Network
+			.ThenClient(TEXT("Client 0 : vise et nourrit le bond"), 0, [](FBasePIENetworkComponentState& Client)
+			{
+				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
+				PC->bDebugAimOverride = true;
+				PC->DebugAimLocation = FVector(500.f, 0.f, StandingHeight);
+				SendLeapInput(Client, true);
+			});
+		QueueClientWait(TEXT("Client 0 : touche tenue 0.75 s (2 flammes)"), 0.75f);
+		Network
+			.UntilClients(TEXT("Clients : flammes nourries vues ; relevé des retours"), [this](FBasePIENetworkComponentState& Client)
+			{
+				AGenCharacterBase* Caster = GetCasterIn(Client.World);
+				const UCurffeHearthComponent* Hearth = GetHearthIn(Client.World);
+				if (!Caster || !Hearth || Caster->GetFedResource() < 1)
+				{
+					return false;
+				}
+				ClientCasters.Add(Client.ClientIndex, Caster);
+				ReturnsBeforeLaunch[Client.ClientIndex] = Hearth->GetStartedReturnFlightCount();
+				return true;
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : l'observateur tue le lanceur en plein nourrissage"), [this](FBasePIENetworkComponentState& Server)
+			{
+				AGenPlayerCharacter* Observer = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Observer));
+				ASSERT_THAT(IsTrue(ServerCaster.IsValid() && ServerCaster->GetFedResource() > 0, TEXT("Le lanceur nourrit encore")));
+				ApplyDamage(Observer->GetAbilitySystemComponent(), ServerCaster->GetAbilitySystemComponent(), 100000.f);
+				ASSERT_THAT(IsTrue(ServerCaster->IsDead(), TEXT("Lanceur mort")));
+			})
+			.UntilClients(TEXT("Clients : mort reçue, compte nourri à zéro"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = ClientCasters.FindRef(Client.ClientIndex).Get();
+				return Caster && Caster->IsDead() && Caster->GetFedResource() == 0;
+			}, DefaultWait());
+		QueueClientWait(TEXT("Client 0 : 0.4 s (durée d'un vol de retour)"), 0.4f);
+		Network
+			.ThenClients(TEXT("Clients : rien ne vole vers le mort"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = ClientCasters.FindRef(Client.ClientIndex).Get();
+				const UCurffeHearthComponent* Hearth = Caster ? Caster->FindComponentByClass<UCurffeHearthComponent>() : nullptr;
+				ASSERT_THAT(IsNotNull(Hearth));
+				TestRunner->AddInfo(FString::Printf(TEXT("Client %d : vols de retour %d -> %d"), Client.ClientIndex,
+					ReturnsBeforeLaunch[Client.ClientIndex], Hearth->GetStartedReturnFlightCount()));
+				ASSERT_THAT(AreEqual(0, Hearth->GetFlyingFlameCount(), TEXT("Aucun vol en cours")));
+				ASSERT_THAT(AreEqual(0, Hearth->GetVisibleFlameCount(), TEXT("Foyer éteint")));
+				if (Client.ClientIndex == 1)
+				{
+					ASSERT_THAT(AreEqual(ReturnsBeforeLaunch[1], Hearth->GetStartedReturnFlightCount(), TEXT("Observateur : aucun vol de retour")));
+				}
 			});
 	}
 };

@@ -8,6 +8,7 @@
 class AGenCharacterBase;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
+class UNiagaraComponent;
 class UNiagaraSystem;
 class UStaticMesh;
 
@@ -169,7 +170,12 @@ private:
 		FName SpellSocket;
 		/** Dessiné par un système Niagara (FeedFlySystem, FeedReturnSystem) : pas d'instance de vol. */
 		bool bNiagaraVisual = false;
+		/** Système Niagara du vol (éteint à la mort s'il vole encore). */
+		TWeakObjectPtr<UNiagaraComponent> NiagaraComponent;
 	};
+
+	/** Le personnage est mort (bIsDead, ou State.Dead déjà reçu) : le Foyer ne fait plus rien voler. */
+	bool IsOwnerDead() const;
 
 	void OnFedResourceChanged(AGenCharacterBase* Character, int32 Old, int32 New);
 	void OnFedThresholdReached(AGenCharacterBase* Character, int32 NewCount);

@@ -19,7 +19,8 @@ using namespace GenNetTest;
  * Gen.Net.MoveCorrection (revue V6-V8, I-2) : les ralentis propres à chaque machine (incantation, fenêtre de contre)
  * ne provoquent aucune correction du serveur, même en bougeant sans arrêt à travers leurs bornes : le client envoie ses
  * mouvements en attente avant les RPC de sort (FlushMovesToServer), et le serveur accepte un petit écart juste après
- * un changement de ralenti (UGenCharacterMovementComponent, grâce de correction).
+ * un changement de ralenti (UGenCharacterMovementComponent, grâce de correction). Revue finale, I-1 : cette grâce est un
+ * budget par changement de ralenti ; un client qui triche pendant la grâce est corrigé une fois le budget épuisé.
  */
 NETWORK_TEST_CLASS(MoveCorrection, "Gen.Net")
 {
@@ -61,11 +62,22 @@ NETWORK_TEST_CLASS(MoveCorrection, "Gen.Net")
 		}
 	}
 
+	UGenCharacterMovementComponent* GetServerMovement() const
+	{
+		return ServerCaster.IsValid() ? Cast<UGenCharacterMovementComponent>(ServerCaster->GetCharacterMovement()) : nullptr;
+	}
+
 	int32 GetServerCorrections() const
 	{
-		const UGenCharacterMovementComponent* Movement = ServerCaster.IsValid() ? Cast<UGenCharacterMovementComponent>(ServerCaster->GetCharacterMovement()) : nullptr;
+		const UGenCharacterMovementComponent* Movement = GetServerMovement();
 		return Movement ? Movement->GetServerCorrectionCount() : -1;
 	}
+
+	/** Revue finale, I-1 : vitesse ajoutée par le client tricheur (+55 % ; ~5 cm par mouvement à 60 Hz, sous l'ancienne tolérance par mouvement de 10 cm). */
+	static constexpr float CheatSpeed = 300.f;
+	/** Durée de la triche, dans la fenêtre de grâce du serveur (0.2 s). */
+	static constexpr float CheatDuration = 0.12f;
+	float AcceptedDistanceBefore = 0.f;
 
 	TEST_METHOD(BackfireWindow_ContinuousMovement_NoServerCorrection)
 	{
@@ -143,6 +155,73 @@ NETWORK_TEST_CLASS(MoveCorrection, "Gen.Net")
 				TestRunner->AddInfo(FString::Printf(TEXT("Corrections : %d avant, %d après ; écarts acceptés par la grâce : %d"),
 					CorrectionsBefore, GetServerCorrections(), Movement ? Movement->GetGraceAcceptedCount() : -1));
 				ASSERT_THAT(AreEqual(CorrectionsBefore, GetServerCorrections(), TEXT("Corrections du serveur pendant l'incantation et la fenêtre")));
+			});
+	}
+
+	/**
+	 * Revue finale, I-1 : la grâce d'un changement de ralenti n'est pas une fenêtre de triche. Un client modifié qui court
+	 * plus vite que permis pendant la grâce (CheatSpeed en plus, par petits pas sous l'ancienne tolérance par mouvement)
+	 * gagne au plus le budget de la fenêtre (SpeedChangeErrorTolerance, cumulé) ; au-delà, le serveur le corrige.
+	 */
+	TEST_METHOD(CheatingClient_InSpeedChangeGrace_CorrectedOnceBudgetUsed)
+	{
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : sol de test"), [](FBasePIENetworkComponentState& Server) { SpawnTestFloor(Server.World); })
+			.UntilClients(TEXT("Clients : sol de test reçu"), [](FBasePIENetworkComponentState& Client) { return HasTestFloor(Client.World); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : coureur placé"), [this](FBasePIENetworkComponentState& Server)
+			{
+				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Caster));
+				ServerCaster = Caster;
+				ASSERT_THAT(IsNotNull(GetServerMovement(), TEXT("Les personnages utilisent UGenCharacterMovementComponent")));
+				Caster->TeleportTo(FVector(0.f, -1500.f, StandingHeight), FRotator::ZeroRotator, false, true);
+			})
+			.UntilClient(TEXT("Client 0 : posé au sol"), 0, [](FBasePIENetworkComponentState& Client)
+			{
+				const AGenPlayerCharacter* Character = GetLocalCharacter(Client);
+				return Character && Character->GetCharacterMovement()->IsMovingOnGround() && FVector::Dist2D(Character->GetActorLocation(), FVector(0.f, -1500.f, 0.f)) < 20.f;
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : départ de la course"), 0, [this](FBasePIENetworkComponentState& Client) { ClientMark = Client.World->GetTimeSeconds(); })
+			.UntilClient(TEXT("Client 0 : court 0.5 s (vitesse établie)"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				MoveOn(Client);
+				return Client.World->GetTimeSeconds() >= ClientMark + 0.5f;
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : changement de ralenti (ouvre la grâce), relevés"), [this](FBasePIENetworkComponentState&)
+			{
+				UGenCharacterMovementComponent* Movement = GetServerMovement();
+				ASSERT_THAT(IsNotNull(Movement));
+				CorrectionsBefore = Movement->GetServerCorrectionCount();
+				AcceptedDistanceBefore = Movement->GetGraceAcceptedDistance();
+				Movement->NoteLocalSpeedChange();
+				ASSERT_THAT(IsTrue(Movement->IsInCorrectionGrace(), TEXT("Grâce ouverte")));
+			})
+			.ThenClient(TEXT("Client 0 : début de la triche"), 0, [this](FBasePIENetworkComponentState& Client) { ClientMark = Client.World->GetTimeSeconds(); })
+			.UntilClient(TEXT("Client 0 : court plus vite que permis pendant la grâce"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				MoveOn(Client);
+				if (AGenPlayerCharacter* Character = GetLocalCharacter(Client))
+				{
+					Character->AddActorWorldOffset(FVector(0.f, CheatSpeed * Client.World->GetDeltaSeconds(), 0.f));
+				}
+				return Client.World->GetTimeSeconds() >= ClientMark + CheatDuration;
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : fin de la triche"), 0, [this](FBasePIENetworkComponentState& Client) { ClientMark = Client.World->GetTimeSeconds(); })
+			.UntilClient(TEXT("Client 0 : court honnêtement 0.3 s"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				MoveOn(Client);
+				return Client.World->GetTimeSeconds() >= ClientMark + 0.3f;
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : écart accepté borné au budget, puis corrigé"), [this](FBasePIENetworkComponentState&)
+			{
+				const UGenCharacterMovementComponent* Movement = GetServerMovement();
+				const float Accepted = Movement->GetGraceAcceptedDistance() - AcceptedDistanceBefore;
+				TestRunner->AddInfo(FString::Printf(TEXT("Triche : %.1f cm acceptés par la grâce (budget %.1f), corrections %d -> %d"),
+					Accepted, Movement->GetSpeedChangeErrorBudget(), CorrectionsBefore, Movement->GetServerCorrectionCount()));
+				ASSERT_THAT(IsTrue(Accepted <= Movement->GetSpeedChangeErrorBudget() + 0.01f, TEXT("Écart total accepté pendant la grâce <= budget")));
+				ASSERT_THAT(IsTrue(Movement->GetServerCorrectionCount() > CorrectionsBefore, TEXT("Le client tricheur est corrigé")));
 			});
 	}
 };

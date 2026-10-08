@@ -113,6 +113,16 @@ public:
 	/** Tags requis pour l'activation (lus par l'ASC pour en suivre les retraits, RegisterGraceTags). */
 	const FGameplayTagContainer& GetActivationRequiredTagsForGrace() const { return ActivationRequiredTags; }
 
+	/**
+	 * Revue finale, M-9 : les tags du propriétaire choisissent CE sort parmi ceux d'une même touche (ex. clic gauche :
+	 * Pyroblast exige State.Curffe.Ablaze, la boule de feu en est bloquée). Tags requis présents et aucun tag bloquant
+	 * propre au sort ; la mort et les contrôles durs, qui bloquent tous les sorts, ne départagent rien.
+	 */
+	bool IsSelectedByOwnerTags(const UAbilitySystemComponent& AbilitySystemComponent) const;
+
+	/** Tags qui peuvent changer IsSelectedByOwnerTags (requis et bloquants propres au sort). */
+	void GetSelectionTags(FGameplayTagContainer& OutTags) const;
+
 	/** Refuse aussi sous EnergyCost (GenEnergy::CanAfford, même règle que la barre de sorts). */
 	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	/** Dépense EnergyCost (UGenGE_Gain négatif), dans la fenêtre de prédiction du commit. */
