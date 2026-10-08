@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/ObjectKey.h"
 
 /**
  * Règles pures du "nourrissage" : un sort maintenu absorbe la ressource du champion
@@ -79,5 +80,45 @@ namespace GenFeeding
 	inline bool ReachesThreshold(int32 Fed, int32 Threshold)
 	{
 		return Threshold > 0 && Fed >= Threshold;
+	}
+
+	/**
+	 * Affichage des unités nourries (elles quittent l'orbite) : un seul sort à la fois en est propriétaire.
+	 * Un sort qui n'affiche rien (annulé avant de nourrir) ne peut pas effacer l'affichage d'un autre.
+	 */
+	struct FFedDisplay
+	{
+		uint8 Count = 0;
+		FObjectKey Source;
+
+		/** Renvoie vrai si l'affichage change. */
+		bool Set(FObjectKey InSource, uint8 InCount)
+		{
+			if (InCount == 0 && Source != FObjectKey() && Source != InSource)
+			{
+				return false;
+			}
+			const bool bChanged = Count != InCount || (InCount > 0 && Source != InSource);
+			Count = InCount;
+			Source = InCount > 0 ? InSource : FObjectKey();
+			return bChanged;
+		}
+	};
+
+	/**
+	 * Verrou de lancement (State.CastLocked, ex : bond en vol) : jusqu'à quand le serveur le fait respecter
+	 * à un client distant. Chaque machine pose le verrou à SON départ et le retire à SON atterrissage ; celui
+	 * du serveur commence ~½ RTT après celui du client et finit d'autant plus tard. Le serveur ne refuse donc
+	 * que pendant LockDuration - Tolerance : un client honnête n'est jamais refusé, un tricheur gagne au plus Tolerance.
+	 */
+	inline float GetCastLockEnforcedUntil(float LockStart, float LockDuration, float Tolerance)
+	{
+		return LockStart + FMath::Max(LockDuration - Tolerance, 0.f);
+	}
+
+	/** Activation refusée par le verrou ? Le côté qui prédit (client, hôte, IA) le respecte toujours ; le serveur seulement avant EnforcedUntil. */
+	inline bool IsRefusedByCastLock(bool bLocked, bool bPredictingSide, float Now, float EnforcedUntil)
+	{
+		return bLocked && (bPredictingSide || Now < EnforcedUntil);
 	}
 }
