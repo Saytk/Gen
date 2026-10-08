@@ -80,6 +80,13 @@ void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 		Character->StartChannel(GetClass(), FormDuration);
 	}
 
+	// Revue PIE finale, C-1 : la hâte commencera à la fin de la forme (minuteur de chaque machine) ; le serveur accepte
+	// les mouvements hâtés du client un peu avant la sienne
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo(); Character && HasteMultiplier > 1.f && HasteDuration > 0.f)
+	{
+		Character->ExpectLocalMoveSpeedMultiplier(GetClass(), CurffeLivingFlamePrivate::HasteReason, HasteMultiplier, FormDuration);
+	}
+
 	UAbilityTask_WaitDelay* FormTask = UAbilityTask_WaitDelay::WaitDelay(this, FormDuration);
 	FormTask->OnFinish.AddDynamic(this, &ThisClass::OnFormEnded);
 	FormTask->ReadyForActivation();
@@ -109,7 +116,7 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 	{
 		const FName HasteReason = CurffeLivingFlamePrivate::HasteReason;
 		const UClass* HasteSource = GetClass();
-		HasteCharacter->SetLocalMoveSpeedMultiplier(HasteSource, HasteReason, HasteMultiplier);
+		HasteCharacter->SetLocalMoveSpeedMultiplier(HasteSource, HasteReason, HasteMultiplier, HasteDuration);
 		GetWorld()->GetTimerManager().SetTimer(HasteTimer, FTimerDelegate::CreateWeakLambda(HasteCharacter, [HasteCharacter, HasteSource, HasteReason]()
 		{
 			HasteCharacter->ClearLocalMoveSpeedMultiplier(HasteSource, HasteReason);

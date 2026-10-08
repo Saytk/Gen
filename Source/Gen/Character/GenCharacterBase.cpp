@@ -681,9 +681,10 @@ void AGenCharacterBase::OnMoveSpeedChanged(const FOnAttributeChangeData& Data)
 	RefreshMaxWalkSpeed();
 }
 
-void AGenCharacterBase::SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier)
+void AGenCharacterBase::SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier, float ExpectedDuration)
 {
 	const FObjectKey Key(Source);
+	const float ProductBefore = GetLocalMoveSpeedMultiplier();
 	FLocalMoveSpeedMultiplier* Entry = LocalMoveSpeedMultipliers.FindByPredicate([&Key, Reason](const FLocalMoveSpeedMultiplier& Item)
 	{
 		return Item.Source == Key && Item.Reason == Reason;
@@ -697,9 +698,15 @@ void AGenCharacterBase::SetLocalMoveSpeedMultiplier(const UObject* Source, FName
 	const float NewMultiplier = FMath::Max(Multiplier, 0.f);
 	const bool bChanged = Entry->Multiplier != NewMultiplier;
 	Entry->Multiplier = NewMultiplier;
+	// Revue PIE finale, C-1 : fin prévue par le minuteur de cette machine (le serveur accepte la vitesse d'après juste avant)
+	const UWorld* World = GetWorld();
+	Entry->ExpectedEndTime = ExpectedDuration > 0.f && World ? World->GetTimeSeconds() + ExpectedDuration : -1.0;
+	// Annoncé puis posé : l'annonce a servi
+	ExpectedLocalMoveSpeedMultipliers.RemoveAll([&Key, Reason](const FLocalMoveSpeedMultiplier& Item) { return Item.Source == Key && Item.Reason == Reason; });
 	RefreshMaxWalkSpeed();
 	if (bChanged)
 	{
+		RecordLocalMoveSpeedChange(ProductBefore);
 		NoteLocalSpeedChange();
 	}
 }
@@ -707,11 +714,102 @@ void AGenCharacterBase::SetLocalMoveSpeedMultiplier(const UObject* Source, FName
 void AGenCharacterBase::ClearLocalMoveSpeedMultiplier(const UObject* Source, FName Reason)
 {
 	const FObjectKey Key(Source);
+	const float ProductBefore = GetLocalMoveSpeedMultiplier();
+	ExpectedLocalMoveSpeedMultipliers.RemoveAll([&Key, Reason](const FLocalMoveSpeedMultiplier& Item) { return Item.Source == Key && Item.Reason == Reason; });
 	if (LocalMoveSpeedMultipliers.RemoveAll([&Key, Reason](const FLocalMoveSpeedMultiplier& Item) { return Item.Source == Key && Item.Reason == Reason; }) > 0)
 	{
 		RefreshMaxWalkSpeed();
+		RecordLocalMoveSpeedChange(ProductBefore);
 		NoteLocalSpeedChange();
 	}
+}
+
+void AGenCharacterBase::ExpectLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier, float Delay)
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	const FObjectKey Key(Source);
+	FLocalMoveSpeedMultiplier* Entry = ExpectedLocalMoveSpeedMultipliers.FindByPredicate([&Key, Reason](const FLocalMoveSpeedMultiplier& Item)
+	{
+		return Item.Source == Key && Item.Reason == Reason;
+	});
+	if (!Entry)
+	{
+		Entry = &ExpectedLocalMoveSpeedMultipliers.AddDefaulted_GetRef();
+		Entry->Source = Key;
+		Entry->Reason = Reason;
+	}
+	Entry->Multiplier = FMath::Max(Multiplier, 0.f);
+	Entry->ExpectedEndTime = World->GetTimeSeconds() + FMath::Max(Delay, 0.f); // ici : début prévu
+}
+
+void AGenCharacterBase::RecordLocalMoveSpeedChange(float ProductBefore)
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Quelques changements suffisent (la fenêtre de grâce est courte) : le plus ancien laisse sa place
+	if (RecentLocalMoveSpeedChanges.Num() >= 4)
+	{
+		RecentLocalMoveSpeedChanges.RemoveAt(0);
+	}
+	FLocalMoveSpeedChange& Change = RecentLocalMoveSpeedChanges.AddDefaulted_GetRef();
+	Change.Time = World->GetTimeSeconds();
+	Change.ProductBefore = ProductBefore;
+}
+
+float AGenCharacterBase::GetMaxClaimableLocalMoveSpeedMultiplier(float Window) const
+{
+	const float Current = GetLocalMoveSpeedMultiplier();
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return Current;
+	}
+	const double Now = World->GetTimeSeconds();
+	float MaxClaimable = Current;
+
+	// Le client n'a pas encore simulé un changement récent du serveur : la valeur d'avant
+	for (const FLocalMoveSpeedChange& Change : RecentLocalMoveSpeedChanges)
+	{
+		if (Now - Change.Time <= Window)
+		{
+			MaxClaimable = FMath::Max(MaxClaimable, Change.ProductBefore);
+		}
+	}
+
+	// Le client a déjà simulé un changement que le minuteur du serveur fera bientôt : sans les multiplicateurs qui
+	// finissent dans la fenêtre, avec ceux qui commencent dans la fenêtre (ou viennent d'être en retard)
+	float Anticipated = 1.f;
+	bool bAnticipates = false;
+	for (const FLocalMoveSpeedMultiplier& Item : LocalMoveSpeedMultipliers)
+	{
+		if (Item.ExpectedEndTime >= 0.0 && Item.ExpectedEndTime - Now <= Window)
+		{
+			bAnticipates = true;
+			continue;
+		}
+		Anticipated *= Item.Multiplier;
+	}
+	for (const FLocalMoveSpeedMultiplier& Item : ExpectedLocalMoveSpeedMultipliers)
+	{
+		if (FMath::Abs(Item.ExpectedEndTime - Now) <= Window)
+		{
+			bAnticipates = true;
+			Anticipated *= Item.Multiplier;
+		}
+	}
+	return bAnticipates ? FMath::Max(MaxClaimable, Anticipated) : MaxClaimable;
+}
+
+float AGenCharacterBase::GetBaseMoveSpeed() const
+{
+	return AttributeSet ? AttributeSet->GetMoveSpeed() : -1.f;
 }
 
 void AGenCharacterBase::NoteLocalSpeedChange()
