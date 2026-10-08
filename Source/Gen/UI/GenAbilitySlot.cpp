@@ -3,6 +3,7 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystemComponent.h"
+#include "GameplayEffect.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
@@ -13,6 +14,7 @@
 #include "TimerManager.h"
 #include "UI/GenTextBlock.h"
 #include "UI/GenUIDataAssets.h"
+#include "UI/GenUILog.h"
 #include "UI/GenUISubsystem.h"
 
 namespace
@@ -29,10 +31,12 @@ void UGenAbilitySlot::NativeConstruct()
 	if (SweepImage)
 	{
 		SweepMID = SweepImage->GetDynamicMaterial();
+		UE_CLOG(!SweepMID, LogGenUI, Warning, TEXT("%s : SweepImage n'a pas de matériau (M_UI_CooldownSweep attendu), recharge et flash invisibles."), *GetPathName());
 	}
 	if (ArcImage)
 	{
 		ArcMID = ArcImage->GetDynamicMaterial();
+		UE_CLOG(!ArcMID, LogGenUI, Warning, TEXT("%s : ArcImage n'a pas de matériau (M_UI_SegmentArc attendu), arc d'énergie invisible."), *GetPathName());
 		ArcImage->SetVisibility(bIsUltimate ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	RefreshVisuals();
@@ -68,12 +72,17 @@ void UGenAbilitySlot::Bind(UAbilitySystemComponent* InASC)
 	TagHandles.Emplace(GenGameplayTags::State_Stunned, StunHandle);
 	bLocked = ASC->HasMatchingGameplayTag(GenGameplayTags::State_Stunned);
 
+	// Le GE de recharge du serveur remplace le GE prédit (compte 1 -> 2 -> 1, aucun événement de tag) : on relit la recharge (§8.2)
+	EffectAddedHandle = ASC->OnActiveGameplayEffectAddedDelegateToSelf.AddUObject(this, &ThisClass::OnEffectAdded);
+
 	if (bIsUltimate)
 	{
 		EnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
-		const UGenUISubsystem* UI = UGenUISubsystem::Get(this);
-		const int32 Segments = (UI ? UI->GetMetrics() : GetDefault<UGenUIMetrics>())->UltimateSegments;
-		bUltimateWasFull = GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Segments) == Segments;
+		MaxEnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMaxEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
+
+		// Déjà pleine au moment du Bind (respawn, rebind) : pas d'impulsion
+		const int32 Segments = GetUIMetrics()->UltimateSegments;
+		bUltimateWasReadyFull = Segments > 0 && GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Segments) == Segments;
 	}
 
 	ResolveAbility();
@@ -98,16 +107,34 @@ void UGenAbilitySlot::Unbind()
 		{
 			ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).Remove(EnergyHandle);
 		}
+		if (MaxEnergyHandle.IsValid())
+		{
+			ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMaxEnergyAttribute()).Remove(MaxEnergyHandle);
+		}
+		if (EffectAddedHandle.IsValid())
+		{
+			ASC->OnActiveGameplayEffectAddedDelegateToSelf.Remove(EffectAddedHandle);
+		}
 	}
 
 	TagHandles.Reset();
 	EnergyHandle.Reset();
+	MaxEnergyHandle.Reset();
+	EffectAddedHandle.Reset();
 	ASC.Reset();
 	SpecHandle = FGameplayAbilitySpecHandle();
 	AbilityCDO.Reset();
 	CooldownTags.Reset();
 	CooldownEndTime = 0.f;
 	CooldownDuration = 0.f;
+
+	// Un rebind en plein flash ne doit pas figer un bord à moitié allumé
+	FlashStartTime = -1.f;
+	FlashDuration = 0.f;
+	if (SweepMID)
+	{
+		SweepMID->SetScalarParameterValue(TEXT("RimFlash"), 0.f);
+	}
 }
 
 void UGenAbilitySlot::ResolveAbility()
@@ -208,8 +235,10 @@ void UGenAbilitySlot::RefreshCooldown()
 		AbilityCDO->GetCooldownTimeRemainingAndDuration(SpecHandle, ASC->AbilityActorInfo.Get(), Remaining, Duration);
 	}
 
+	// CooldownEndTime n'est remis à zéro qu'à la fin d'une recharge et dans Unbind : un événement de tag
+	// arrivant après la fin locale, ou un rebind, ne peut donc pas déclencher un second flash
 	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-	const bool bWasCooling = CooldownEndTime > Now;
+	const bool bWasCooling = CooldownEndTime > 0.f;
 	CooldownEndTime = Remaining > 0.f ? Now + Remaining : 0.f;
 	CooldownDuration = Duration;
 
@@ -220,7 +249,7 @@ void UGenAbilitySlot::RefreshCooldown()
 	else if (bWasCooling)
 	{
 		// Fin de recharge : flash du bord (§4.1 Ready flash)
-		StartFlash(UGenUISubsystem::Get(this) ? UGenUISubsystem::Get(this)->GetMetrics()->ReadyFlashDuration : 0.2f);
+		StartFlash(GetUIMetrics()->ReadyFlashDuration);
 	}
 
 	RefreshVisuals();
@@ -230,8 +259,7 @@ void UGenAbilitySlot::StartRefreshTimer()
 {
 	if (UWorld* World = GetWorld())
 	{
-		const UGenUISubsystem* UI = UGenUISubsystem::Get(this);
-		const float Interval = UI ? UI->GetMetrics()->CooldownRefreshInterval : 0.05f;
+		const float Interval = GetUIMetrics()->CooldownRefreshInterval;
 		if (!World->GetTimerManager().IsTimerActive(RefreshTimer))
 		{
 			World->GetTimerManager().SetTimer(RefreshTimer, this, &ThisClass::TickRefresh, Interval, true);
@@ -270,9 +298,8 @@ void UGenAbilitySlot::StartFlash(float Duration)
 
 void UGenAbilitySlot::RefreshVisuals()
 {
-	const UGenUISubsystem* UI = UGenUISubsystem::Get(this);
-	const UGenUIMetrics* Metrics = UI ? UI->GetMetrics() : GetDefault<UGenUIMetrics>();
-	const UGenUIPalette* Palette = UI ? UI->GetPalette() : GetDefault<UGenUIPalette>();
+	const UGenUIMetrics* Metrics = GetUIMetrics();
+	const UGenUIPalette* Palette = GetUIPalette();
 	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 	const float Remaining = FMath::Max(CooldownEndTime - Now, 0.f);
 
@@ -283,6 +310,12 @@ void UGenAbilitySlot::RefreshVisuals()
 	CooldownText->SetText(FText::FromString(CooldownString));
 	CooldownText->SetVisibility(CooldownString.IsEmpty() ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
 	LockImage->SetVisibility(State == EGenAbilitySlotState::Locked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+
+	// Avant le balayage : l'impulsion de l'ultime peut démarrer un flash à appliquer dès cette passe
+	if (bIsUltimate)
+	{
+		UpdateUltimateArc();
+	}
 
 	if (SweepMID)
 	{
@@ -302,11 +335,6 @@ void UGenAbilitySlot::RefreshVisuals()
 		SweepMID->SetVectorParameterValue(TEXT("RimColour"), bIsUltimate ? Palette->Energy_Full : Palette->Line_Bronze);
 		SweepMID->SetVectorParameterValue(TEXT("FlashColour"), Palette->Flash_White);
 	}
-
-	if (bIsUltimate)
-	{
-		UpdateUltimateArc();
-	}
 }
 
 void UGenAbilitySlot::OnCooldownTagChanged(const FGameplayTag Tag, int32 NewCount)
@@ -325,30 +353,66 @@ void UGenAbilitySlot::OnEnergyChanged(const FOnAttributeChangeData& Data)
 	RefreshVisuals();
 }
 
-void UGenAbilitySlot::UpdateUltimateArc()
+void UGenAbilitySlot::OnEffectAdded(UAbilitySystemComponent* Target, const FGameplayEffectSpec& Spec, FActiveGameplayEffectHandle Handle)
 {
-	if (!ArcMID || !ASC.IsValid())
+	if (CooldownTags.IsEmpty())
 	{
 		return;
 	}
 
-	const UGenUISubsystem* UI = UGenUISubsystem::Get(this);
-	const UGenUIMetrics* Metrics = UI ? UI->GetMetrics() : GetDefault<UGenUIMetrics>();
-	const UGenUIPalette* Palette = UI ? UI->GetPalette() : GetDefault<UGenUIPalette>();
-
-	const int32 Funded = GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()),
-		ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Metrics->UltimateSegments);
-	const bool bFull = Funded == Metrics->UltimateSegments;
-
-	ArcMID->SetScalarParameterValue(TEXT("Segments"), Metrics->UltimateSegments);
-	ArcMID->SetScalarParameterValue(TEXT("Funded"), Funded);
-	ArcMID->SetScalarParameterValue(TEXT("FullOutline"), bFull ? 1.f : 0.f);
-	ArcMID->SetVectorParameterValue(TEXT("Colour"), bFull ? Palette->Energy_Full : Palette->Energy_Charging);
-
-	// Ultime prête : une seule impulsion de 300 ms, jamais de boucle (§4.1)
-	if (bFull && !bUltimateWasFull)
+	FGameplayTagContainer GrantedTags;
+	Spec.GetAllGrantedTags(GrantedTags);
+	if (GrantedTags.HasAny(CooldownTags))
 	{
-		StartFlash(Metrics->UltimatePulseDuration);
+		RefreshCooldown();
 	}
-	bUltimateWasFull = bFull;
+}
+
+void UGenAbilitySlot::UpdateUltimateArc()
+{
+	if (!ASC.IsValid())
+	{
+		return;
+	}
+
+	const UGenUIMetrics* Metrics = GetUIMetrics();
+	const UGenUIPalette* Palette = GetUIPalette();
+
+	const int32 Segments = Metrics->UltimateSegments;
+	const int32 Funded = GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()),
+		ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Segments);
+	const bool bFull = Segments > 0 && Funded == Segments;
+
+	if (ArcMID)
+	{
+		ArcMID->SetScalarParameterValue(TEXT("Segments"), Segments);
+		ArcMID->SetScalarParameterValue(TEXT("Funded"), Funded);
+		ArcMID->SetScalarParameterValue(TEXT("FullOutline"), bFull ? 1.f : 0.f);
+		ArcMID->SetVectorParameterValue(TEXT("Colour"), bFull ? Palette->Energy_Full : Palette->Energy_Charging);
+	}
+
+	// Ultime prête : une seule impulsion de 300 ms via le RimFlash du balayage (indépendante de l'arc), jamais de boucle (§4.1).
+	// Seulement quand elle est lançable : pleine pendant un étourdissement ou une recharge => impulsion quand elle le redevient.
+	// Tant que le sort n'est pas résolu (Empty), on garde l'état précédent.
+	if (State != EGenAbilitySlotState::Empty)
+	{
+		const bool bReadyFull = bFull && State == EGenAbilitySlotState::Ready;
+		if (bReadyFull && !bUltimateWasReadyFull)
+		{
+			StartFlash(Metrics->UltimatePulseDuration);
+		}
+		bUltimateWasReadyFull = bReadyFull;
+	}
+}
+
+const UGenUIMetrics* UGenAbilitySlot::GetUIMetrics() const
+{
+	const UGenUISubsystem* UI = UGenUISubsystem::Get(this);
+	return UI ? UI->GetMetrics() : GetDefault<UGenUIMetrics>();
+}
+
+const UGenUIPalette* UGenAbilitySlot::GetUIPalette() const
+{
+	const UGenUISubsystem* UI = UGenUISubsystem::Get(this);
+	return UI ? UI->GetPalette() : GetDefault<UGenUIPalette>();
 }

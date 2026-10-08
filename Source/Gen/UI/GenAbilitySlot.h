@@ -10,8 +10,12 @@
 class UAbilitySystemComponent;
 class UGenGameplayAbility;
 class UGenTextBlock;
+class UGenUIMetrics;
+class UGenUIPalette;
 class UImage;
 class UMaterialInstanceDynamic;
+struct FActiveGameplayEffectHandle;
+struct FGameplayEffectSpec;
 struct FOnAttributeChangeData;
 
 /**
@@ -31,11 +35,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|UI") EGenAbilitySlotState GetState() const { return State; }
 	UFUNCTION(BlueprintPure, Category = "Gen|UI") FString GetCooldownText() const { return CooldownString; }
 
-	/** Tag d'entrée du sort affiché (InputTag.Ability.*). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gen|UI", meta = (Categories = "InputTag")) FGameplayTag InputTag;
+	/** Tag d'entrée du sort affiché (InputTag.Ability.*). Posé par UGenAbilityBar, donc non éditable dans le WBP. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|UI", meta = (Categories = "InputTag")) FGameplayTag InputTag;
 
-	/** Emplacement de l'ultime : arc d'énergie toujours visible, impulsion quand l'énergie est pleine. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gen|UI") bool bIsUltimate = false;
+	/** Emplacement de l'ultime : arc d'énergie toujours visible, impulsion quand l'énergie est pleine. Posé par UGenAbilityBar. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|UI") bool bIsUltimate = false;
 
 protected:
 	virtual void NativeConstruct() override;
@@ -60,7 +64,10 @@ private:
 	void OnCooldownTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void OnEnergyChanged(const FOnAttributeChangeData& Data);
+	void OnEffectAdded(UAbilitySystemComponent* Target, const FGameplayEffectSpec& Spec, FActiveGameplayEffectHandle Handle);
 	void UpdateUltimateArc();
+	const UGenUIMetrics* GetUIMetrics() const;
+	const UGenUIPalette* GetUIPalette() const;
 
 	TWeakObjectPtr<UAbilitySystemComponent> ASC;
 	FGameplayAbilitySpecHandle SpecHandle;
@@ -72,6 +79,8 @@ private:
 
 	TArray<TPair<FGameplayTag, FDelegateHandle>> TagHandles;
 	FDelegateHandle EnergyHandle;
+	FDelegateHandle MaxEnergyHandle;
+	FDelegateHandle EffectAddedHandle;
 	FTimerHandle RefreshTimer;
 	FTimerHandle ResolveRetryTimer;
 
@@ -82,6 +91,7 @@ private:
 	float FlashStartTime = -1.f;
 	float FlashDuration = 0.f;
 	bool bLocked = false;
-	bool bUltimateWasFull = false;
+	/** Ultime pleine ET lançable lors du dernier rafraîchissement : l'impulsion part sur le front montant. */
+	bool bUltimateWasReadyFull = false;
 	int32 ResolveAttempts = 0;
 };
