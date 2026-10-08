@@ -139,8 +139,8 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 ## 7. Checks against the guidelines
 
 - **Time to kill** (any 3 s window, vs 210 HP):
-  - without F: Flame Pillar 12 + Great Fireball (5) 44 + Meteor Leap 8 + 1 ring 8 = **72 (34 %)**, cap 35 %;
-  - with F: nova 20 + Great Fireball (5) 44 + 3 Pyroblasts 39 = **103 (49 %)**, cap 55 %;
+  - without F: Flame Pillar 12 + Great Fireball (3) 44 + Meteor Leap 8 + 1 ring 8 = **72 (34 %)**, cap 35 %;
+  - with F: nova 20 + Great Fireball (3 flames, fast fed) 44 + 2 Pyroblasts 36 = **100 (48 %)**, cap 55 % (0.5 s nova + 0.95 s Great Fireball leaves room for 2 Pyroblasts at 0.55 s);
   - full 5 s Combustion ≈ 130 (62 %): strong, can't kill alone.
 - **Hard CC:** Flame Pillar only (knockbacks are not hard CC).
 - **Energy pace:** ≈ 50 s to the ultimate without R, ≈ 65 s with one R (estimate: 50 % active combat,
