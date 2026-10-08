@@ -15,7 +15,9 @@ class UGameplayEffect;
  * départ de la forme et affiché à sa fin (revue P3 T8-10, I2 : le combo vers la grande boule de feu sans attendre un RTT).
  *
  * - Hâte : multiplicateur de vitesse local (AGenCharacterBase::SetLocalMoveSpeedMultiplier) posé par chaque machine à SA
- *   fin de forme et retiré HasteDuration plus tard : prédite chez le client, sans correction (grâce du serveur).
+ *   fin de forme et retiré HasteDuration plus tard : prédite chez le client. Aux bornes, les mouvements en attente partent
+ *   avant les RPC et le serveur absorbe un petit écart (grâce bornée, UGenCharacterMovementComponent). Lancer refusé par
+ *   le serveur : le client retire sa hâte (OnLaunchCaughtUp).
  * - Forme : un état à durée prédit (State.Untouchable + State.Curffe.LivingFlame, vu par tous) et le verrou de
  *   lancement (SetCastLock : tag local + fenêtre du serveur, UGenAbilitySystemComponent::NoteCastLock).
  * - Visuels : la forme se lit comme une canalisation (barre qui se vide, StartChannel), télégraphe centré de
@@ -49,6 +51,15 @@ protected:
 
 	UFUNCTION()
 	void OnFormEnded();
+
+	/**
+	 * Client propriétaire : la clé de prédiction du lancer a rattrapé le serveur. Sans le temps de recharge du serveur, il a
+	 * refusé le lancer (revue finale, M-5) : la hâte prédite est retirée (ou pas posée, si la forme dure encore).
+	 */
+	void OnLaunchCaughtUp();
+
+	/** Retire la hâte de cette machine et son minuteur. */
+	void ClearHaste();
 
 	/** Durée de la forme de feu (intouchable, sans sort). Guidelines §3.5 : 0.5 s au plus. */
 	UPROPERTY(EditDefaultsOnly, Category = "Living Flame", meta = (ClampMin = "0.05", ClampMax = "0.5", Units = "s"))
@@ -85,4 +96,6 @@ private:
 	FActiveGameplayEffectHandle FormEffectHandle;
 	/** Fin de la hâte (multiplicateur local de cette machine), HasteDuration après SA fin de forme. */
 	FTimerHandle HasteTimer;
+	/** Client : le serveur a refusé ce lancer (OnLaunchCaughtUp). */
+	bool bLaunchRejected = false;
 };

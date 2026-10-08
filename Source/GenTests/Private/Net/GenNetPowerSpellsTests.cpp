@@ -388,7 +388,49 @@ NETWORK_TEST_CLASS(PowerSpells, "Gen.Net")
 		Network.ThenServer(TEXT("Serveur : vitesse de base"), [this](FBasePIENetworkComponentState&)
 		{
 			ASSERT_THAT(IsNear(BaseSpeed, Speed(CasterASC.Get()), 0.5f, TEXT("Hâte de 2 s finie")));
-		});
+		})
+		// Revue finale, M-5 : la hâte du client (posée à SA fin de forme, un peu avant celle du serveur) finit aussi
+		.UntilClient(TEXT("Client 0 : hâte finie aussi chez le client"), 0, [this](FBasePIENetworkComponentState& Client)
+		{
+			return FMath::IsNearlyEqual(Speed(LocalASC(Client)), BaseSpeed, 0.5f);
+		}, FTimespan::FromSeconds(1.0));
+	}
+
+	/**
+	 * Revue finale, M-5 : lancer refusé par le serveur (recharge présente sur le serveur seul, posée après son activation :
+	 * son CommitAbility échoue au lancer). Le client, qui a prédit le lancer, ne garde aucune hâte ; rien n'est payé.
+	 */
+	TEST_METHOD(LivingFlame_LaunchRejected_NoHasteOnClient)
+	{
+		QueueSetup({ UCurffeGA_LivingFlame::StaticClass() }, 60.f, 0.f, 1500.f, 1500.f);
+		Network
+			.ThenServer(TEXT("Serveur : vitesse de base"), [this](FBasePIENetworkComponentState&) { BaseSpeed = Speed(CasterASC.Get()); })
+			.ThenClient(TEXT("Client 0 : lance la flamme vivante"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				ASSERT_THAT(IsTrue(ClientActivate(Client, UCurffeGA_LivingFlame::StaticClass()), TEXT("Activation refusée côté client")));
+			})
+			.UntilServer(TEXT("Serveur : sort activé"), [this](FBasePIENetworkComponentState&) { return IsActive(CasterASC.Get(), UCurffeGA_LivingFlame::StaticClass()); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : recharge locale (non répliquée), le lancer sera refusé"), [this](FBasePIENetworkComponentState&)
+			{
+				CasterASC->AddLooseGameplayTag(Tag(TEXT("Cooldown.Ability.LivingFlame")));
+			})
+			.UntilServer(TEXT("Serveur : sort terminé (lancer refusé)"), [this](FBasePIENetworkComponentState&) { return !IsActive(CasterASC.Get(), UCurffeGA_LivingFlame::StaticClass()); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : rien de payé, pas de hâte"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsNear(60.f, Energy(CasterASC.Get()), 0.01f, TEXT("Lancer refusé : rien de payé")));
+				ASSERT_THAT(IsNear(BaseSpeed, Speed(CasterASC.Get()), 0.5f, TEXT("Serveur : pas de hâte")));
+			});
+		QueueClientWait(TEXT("Client 0 : 1 s (forme prédite comprise)"), 1.f);
+		Network
+			.UntilClient(TEXT("Client 0 : le sort est fini, énergie rendue"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = LocalASC(Client);
+				return !IsActive(ASC, UCurffeGA_LivingFlame::StaticClass()) && FMath::IsNearlyEqual(Energy(ASC), 60.f, 0.01f);
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : aucune hâte gardée"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				ASSERT_THAT(IsNear(BaseSpeed, Speed(LocalASC(Client)), 0.5f, TEXT("Client : vitesse de base après le refus")));
+			});
 	}
 
 	TSubclassOf<UGameplayAbility> GreatFireballClass;
