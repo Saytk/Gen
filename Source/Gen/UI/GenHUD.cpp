@@ -1,13 +1,50 @@
 #include "UI/GenHUD.h"
 
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
-#include "AbilitySystem/GenAbilitySystemComponent.h"
+#include "Blueprint/UserWidget.h"
 #include "Character/GenCharacterBase.h"
+#include "CommonActivatableWidget.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
 #include "EngineUtils.h"
 #include "Player/GenPlayerState.h"
+#include "UI/GenPrimaryGameLayout.h"
+#include "UI/GenUISettings.h"
+#include "UI/GenUITags.h"
+
+void AGenHUD::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Interface UMG : uniquement pour le joueur local, jamais sur un serveur dédié (§8.2)
+	APlayerController* PC = GetOwningPlayerController();
+	if (!PC || !PC->IsLocalController() || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const UGenUISettings* Settings = GetDefault<UGenUISettings>();
+	TSubclassOf<UGenPrimaryGameLayout> LayoutClass = Settings->PrimaryLayoutClass.LoadSynchronous();
+	if (!LayoutClass)
+	{
+		return;
+	}
+
+	PrimaryLayout = CreateWidget<UGenPrimaryGameLayout>(PC, LayoutClass);
+	PrimaryLayout->AddToPlayerScreen(1000); // la racine est le seul widget ajouté à l'écran (§8.1)
+	PrimaryLayout->PushWidgetToLayer(GenUITags::UI_Layer_Game, Settings->HUDLayoutClass.LoadSynchronous());
+}
+
+void AGenHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (PrimaryLayout)
+	{
+		PrimaryLayout->RemoveFromParent();
+		PrimaryLayout = nullptr;
+	}
+	Super::EndPlay(EndPlayReason);
+}
 
 void AGenHUD::DrawHUD()
 {
@@ -158,43 +195,5 @@ void AGenHUD::DrawLocalPlayerPanel(const AGenCharacterBase* LocalCharacter)
 		const FString ResourceText = FString::Printf(TEXT("Flammes : %.0f / %.0f"), LocalCharacter->GetResource(), MaxResource);
 		DrawText(ResourceText, FLinearColor(1.f, 0.6f, 0.2f), X, Y, Font);
 		Y += 22.f;
-	}
-
-	// Sorts + cooldowns
-	const UGenAbilitySystemComponent* ASC = LocalCharacter->GetGenAbilitySystemComponent();
-	if (!ASC || !ASC->AbilityActorInfo.IsValid())
-	{
-		return;
-	}
-
-	float SlotX = X;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-	{
-		const UGenGameplayAbility* Ability = Cast<UGenGameplayAbility>(Spec.Ability);
-		if (!Ability)
-		{
-			continue;
-		}
-
-		float Remaining = 0.f;
-		float Duration = 0.f;
-		Ability->GetCooldownTimeRemainingAndDuration(Spec.Handle, ASC->AbilityActorInfo.Get(), Remaining, Duration);
-
-		// "InputTag.Ability.Primary" -> "Primary"
-		FString SlotName = Ability->InputTag.ToString();
-		SlotName.Split(TEXT("."), nullptr, &SlotName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
-
-		const FString Name = Ability->DisplayName.IsEmpty() ? Ability->GetClass()->GetName() : Ability->DisplayName.ToString();
-		const bool bReady = Remaining <= 0.f;
-		const FString Label = bReady
-			? FString::Printf(TEXT("[%s] %s"), *SlotName, *Name)
-			: FString::Printf(TEXT("[%s] %s  %.1fs"), *SlotName, *Name, Remaining);
-
-		DrawText(Label, bReady ? FLinearColor::White : FLinearColor(0.6f, 0.6f, 0.6f), SlotX, Y, Font);
-
-		float TextWidth = 0.f;
-		float TextHeight = 0.f;
-		GetTextSize(Label, TextWidth, TextHeight, Font);
-		SlotX += TextWidth + 24.f;
 	}
 }

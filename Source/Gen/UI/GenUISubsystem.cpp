@@ -96,7 +96,7 @@ FDelegateHandle UGenUISubsystem::CallOrRegister_OnAbilitySystemReady(FGenOnAbili
 {
 	if (AbilitySystem.IsValid())
 	{
-		Delegate.Execute(AbilitySystem.Get());
+		Delegate.ExecuteIfBound(AbilitySystem.Get());
 	}
 	return OnAbilitySystemReady.Add(MoveTemp(Delegate));
 }

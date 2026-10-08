@@ -5,12 +5,13 @@
 #include "GenHUD.generated.h"
 
 class AGenCharacterBase;
+class UGenPrimaryGameLayout;
 
 /**
- * HUD de prototypage dessiné au Canvas (aucun asset requis) :
- * - barre de vie au-dessus de chaque personnage (vert = soi, bleu = allié, rouge = ennemi)
- * - panneau du joueur local : vie, énergie, sorts et cooldowns.
- * À remplacer par de l'UMG quand l'UI sera designée.
+ * HUD du joueur local :
+ * - crée la racine CommonUI (UGenPrimaryGameLayout) et y empile le HUD UMG (barre de sorts) ;
+ * - dessine encore au Canvas, en prototype : barre de vie au-dessus de chaque personnage
+ *   (vert = soi, bleu = allié, rouge = ennemi) et panneau local (vie, énergie, ressource, cast).
  */
 UCLASS()
 class GEN_API AGenHUD : public AHUD
@@ -18,9 +19,14 @@ class GEN_API AGenHUD : public AHUD
 	GENERATED_BODY()
 
 public:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void DrawHUD() override;
 
 protected:
+	/** Racine CommonUI du joueur local (nulle sur serveur dédié ou si la classe n'est pas configurée). */
+	UPROPERTY(Transient) TObjectPtr<UGenPrimaryGameLayout> PrimaryLayout;
+
 	void DrawOverheadBars(const AGenCharacterBase* LocalCharacter, uint8 LocalTeam);
 	void DrawLocalPlayerPanel(const AGenCharacterBase* LocalCharacter);
 

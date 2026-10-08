@@ -5,6 +5,7 @@
 #include "GenUISettings.generated.h"
 
 class UCommonActivatableWidget;
+class UGenPrimaryGameLayout;
 class UGenUIKeyGlyphs;
 class UGenUIMetrics;
 class UGenUIPalette;
@@ -19,8 +20,7 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Tokens") TSoftObjectPtr<UGenUIPalette> Palette;
 	UPROPERTY(Config, EditAnywhere, Category = "Tokens") TSoftObjectPtr<UGenUIMetrics> Metrics;
 	UPROPERTY(Config, EditAnywhere, Category = "Tokens") TSoftObjectPtr<UGenUIKeyGlyphs> KeyGlyphs;
-	/** TODO Tâche 4 : restreindre à TSoftClassPtr<UGenPrimaryGameLayout> une fois la classe créée. */
-	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UCommonActivatableWidget> PrimaryLayoutClass;
+	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UGenPrimaryGameLayout> PrimaryLayoutClass;
 	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UCommonActivatableWidget> HUDLayoutClass;
 
 	virtual FName GetCategoryName() const override { return TEXT("Game"); }
