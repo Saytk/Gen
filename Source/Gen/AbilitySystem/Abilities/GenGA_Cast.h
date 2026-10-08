@@ -10,6 +10,7 @@ class AGenGroundArea;
 class AGenProjectile;
 class UAbilityTask_WaitDelay;
 class UAbilityTask_WaitInputRelease;
+class UGenAbilityTask_TargetDataUnderCursor;
 class UAnimMontage;
 class UGameplayEffect;
 class UNiagaraSystem;
@@ -98,7 +99,7 @@ protected:
 	 */
 	void SetCastLock(bool bLocked, float MinLockDuration = 0.f);
 
-	/** Spec du GE de dégâts (SetByCaller.Damage = Amount). Invalide si rien à infliger. */
+	/** Spec du GE de dégâts (SetByCaller.Damage = Amount, même 0 : tags et cues de l'effet). Invalide seulement sans EffectClass. */
 	FGameplayEffectSpecHandle MakeDamageSpec(TSubclassOf<UGameplayEffect> EffectClass, float Amount, UObject* SourceObject) const;
 
 	/** Spec des gains du lanceur (UGenGE_Gain). Invalide si rien à gagner. */
@@ -229,6 +230,15 @@ private:
 	 */
 	void StopClientCastMontages();
 
+	/**
+	 * Échec ou abandon d'un lancer (visée invalide, commit refusé, contrôle dur ou mort pendant le départ différé) :
+	 * coupe le geste chez le client propriétaire ET, sur le serveur, le montage répliqué aux autres joueurs.
+	 */
+	void AbortCastMontages();
+
+	/** Arrête d'écouter la visée (après la première : les suivantes sont ignorées). */
+	void EndAimTask();
+
 	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
 	bool IsServerForRemoteClient() const;
 
@@ -257,6 +267,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitInputRelease> FeedReleaseTask;
+
+	/** Tâche de visée en cours (serveur pour un client distant : attend la visée). */
+	UPROPERTY(Transient)
+	TObjectPtr<UGenAbilityTask_TargetDataUnderCursor> AimTask;
 
 	int32 FedCount = 0;
 	int32 FedVisualCount = 0;

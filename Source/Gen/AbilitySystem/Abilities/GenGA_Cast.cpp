@@ -51,11 +51,18 @@ void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 	bInterruptWatchStarted = false;
 	bServerShotLocked = false;
 	bReleased = false;
+	// Une fin de sort sans ASC (ou un ClearCastLock à la mort) a pu laisser l'instance croire qu'elle tient le verrou
+	bCastLockApplied = false;
 	PendingAimData.Clear();
 	DeferredAimKey = FPredictionKey();
+	AimTask = nullptr;
 
 	// Un seul sort incanté à la fois : celui-ci remplace l'incantation en cours (un sort déjà parti continue)
 	CancelOtherPendingCasts();
+
+	// Contrôles durs surveillés pendant TOUTE l'activation, quel que soit le déroulé (même sans nourrissage ni
+	// incantation) : OnCastInterrupted décide selon la phase (IsInterruptedByHardCC)
+	StartInterruptWatch();
 
 	if (bFeedable)
 	{
@@ -386,6 +393,16 @@ void UGenGA_Cast::EndFeedTasks()
 	}
 }
 
+void UGenGA_Cast::EndAimTask()
+{
+	if (AimTask)
+	{
+		UGenAbilityTask_TargetDataUnderCursor* Task = AimTask;
+		AimTask = nullptr;
+		Task->EndTask();
+	}
+}
+
 void UGenGA_Cast::MarkFeedEnded(int32 Count, bool bFinal)
 {
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
@@ -434,7 +451,7 @@ void UGenGA_Cast::StartCasting()
 		// latence après le client, donc un minuteur finissait à peu près quand la visée arrivait ; la boule
 		// de feu relancée par le clic maintenu, envoyée juste après, annulait alors un sort déjà lancé côté
 		// client. On écoute la visée dès maintenant : c'est elle qui termine l'incantation (OnServerAimReceived).
-		UGenAbilityTask_TargetDataUnderCursor* AimTask = UGenAbilityTask_TargetDataUnderCursor::CreateTargetDataUnderCursor(this);
+		AimTask = UGenAbilityTask_TargetDataUnderCursor::CreateTargetDataUnderCursor(this);
 		AimTask->ValidData.AddDynamic(this, &ThisClass::OnServerAimReceived);
 		AimTask->ReadyForActivation();
 		return;
@@ -458,6 +475,7 @@ void UGenGA_Cast::OnServerAimReceived(const FGameplayAbilityTargetDataHandle& Da
 	// appui qui annule ce sort côté client arrive avant toute visée, un sort lancé après le lancer arrive
 	// après. À partir d'ici, un autre sort du joueur ne peut donc plus annuler ce lancer.
 	bServerShotLocked = true;
+	EndAimTask(); // les visées suivantes ne sont plus écoutées
 
 	const float Elapsed = GetWorld()->GetTimeSeconds() - CastStartTime;
 	const float Wait = GenFeeding::GetServerCastWait(CastTime, Elapsed, GenFeeding::CastTimeTolerance);
@@ -532,6 +550,7 @@ void UGenGA_Cast::OnServerLaunchDelayFinished()
 	if (!ASC || ASC->HasMatchingGameplayTag(GenGameplayTags::State_Dead))
 	{
 		GEN_CAST_LOG(Verbose, "Départ différé abandonné (mort)");
+		AbortCastMontages();
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
@@ -573,11 +592,12 @@ void UGenGA_Cast::StartInterruptWatch()
 	}
 	bInterruptWatchStarted = true;
 
-	// Un contrôle dur (étourdi, silence, peur, neutralisé) interrompt le nourrissage et l'incantation
-	// (la mort annule déjà tous les sorts). Une tâche par tag : le premier arrivé interrompt.
+	// Un contrôle dur (étourdi, silence, peur, neutralisé) interrompt le nourrissage, l'incantation et les phases
+	// interruptibles après le départ (la mort annule déjà tous les sorts). Une tâche par tag, jamais terminée par un
+	// premier déclenchement : un contrôle ignoré (bond en vol) ne doit pas rendre aveugle aux suivants.
 	for (const FGameplayTag& HardCCTag : GenGameplayTags::GetHardCCTags())
 	{
-		UAbilityTask_WaitGameplayTagAdded* HardCCTask = UAbilityTask_WaitGameplayTagAdded::WaitGameplayTagAdd(this, HardCCTag, nullptr, true);
+		UAbilityTask_WaitGameplayTagAdded* HardCCTask = UAbilityTask_WaitGameplayTagAdded::WaitGameplayTagAdd(this, HardCCTag, nullptr, /*OnlyTriggerOnce*/ false);
 		HardCCTask->Added.AddDynamic(this, &ThisClass::OnCastInterrupted);
 		HardCCTask->ReadyForActivation();
 	}
@@ -624,6 +644,7 @@ void UGenGA_Cast::OnCastInterrupted()
 		// comme n'importe quelle incantation : rien ne part, rien n'est payé. CanBeCanceled est faux (verrou du
 		// lancer contre les autres sorts du joueur) : on termine le sort directement.
 		GEN_CAST_LOG(Log, "Contrôle dur pendant l'incantation (visée reçue en avance) : lancer annulé, sans coût");
+		AbortCastMontages();
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
@@ -644,7 +665,9 @@ void UGenGA_Cast::OnCastFinished()
 	EndCastPresentation();
 
 	// Visée lue maintenant : le joueur peut ajuster pendant toute l'incantation
+	// Client : la visée est lue et diffusée pendant ReadyForActivation (OnTargetDataReady termine la tâche)
 	UGenAbilityTask_TargetDataUnderCursor* TargetTask = UGenAbilityTask_TargetDataUnderCursor::CreateTargetDataUnderCursor(this, static_cast<uint8>(FMath::Clamp(FedCount, 0, 255)));
+	AimTask = TargetTask;
 	TargetTask->ValidData.AddDynamic(this, &ThisClass::OnTargetDataReady);
 	TargetTask->ReadyForActivation();
 }
@@ -706,6 +729,15 @@ void UGenGA_Cast::SpendResource(int32 Amount)
 
 void UGenGA_Cast::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& DataHandle)
 {
+	// Une seule visée par activation, quel que soit le chemin (incantation 0 comprise) : un sort déjà lancé ne
+	// repasse jamais par le commit (double effet, ou annulation d'une phase déjà partie)
+	if (bReleased)
+	{
+		GEN_CAST_LOG(Verbose, "Visée en double ignorée");
+		return;
+	}
+	EndAimTask(); // les visées suivantes ne sont plus écoutées
+
 	FGenCastRelease Release;
 	if (ReleaseCast(DataHandle, Release))
 	{
@@ -722,7 +754,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	if (!Avatar || !Hit)
 	{
 		GEN_CAST_LOG(Warning, "Visée invalide (avatar=%d, hit=%d)", Avatar != nullptr, Hit != nullptr);
-		StopClientCastMontages();
+		AbortCastMontages();
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return false;
 	}
@@ -735,7 +767,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
 	{
 		GEN_CAST_LOG(Verbose, "CommitAbility a échoué au lancer");
-		StopClientCastMontages();
+		AbortCastMontages();
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return false;
 	}
@@ -750,7 +782,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	OutRelease.AimDirection = (Hit->Location - Avatar->GetActorLocation()).GetSafeNormal2D();
 	if (OutRelease.AimDirection.IsNearlyZero())
 	{
-		OutRelease.AimDirection = Avatar->GetActorForwardVector().GetSafeNormal2D();
+		OutRelease.AimDirection = Avatar->GetActorForwardVector().GetSafeNormal2D(UE_SMALL_NUMBER, FVector::ForwardVector);
 	}
 	OutRelease.Fed = Fed;
 
@@ -784,6 +816,27 @@ void UGenGA_Cast::StopClientCastMontages()
 		if (Montage)
 		{
 			Character->ClientStopCastMontage(Montage);
+		}
+	}
+}
+
+void UGenGA_Cast::AbortCastMontages()
+{
+	// Une fin directe (EndAbility annulé, sans CancelAbility) n'arrête pas les montages joués avec bStopWhenAbilityEnds = faux
+	StopClientCastMontages();
+
+	// Serveur : le geste répliqué aux autres joueurs (montage du GAS) s'arrête aussi
+	if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+		{
+			for (const UAnimMontage* Montage : { ChargeMontage.Get(), CastMontage.Get() })
+			{
+				if (Montage)
+				{
+					ASC->StopMontageIfCurrent(*Montage);
+				}
+			}
 		}
 	}
 }
@@ -849,7 +902,8 @@ void UGenGA_Cast::SetCastLock(bool bLocked, float MinLockDuration)
 
 FGameplayEffectSpecHandle UGenGA_Cast::MakeDamageSpec(TSubclassOf<UGameplayEffect> EffectClass, float Amount, UObject* SourceObject) const
 {
-	if (!EffectClass || Amount <= 0.f)
+	// Toujours attaché dès qu'un effet est configuré, même à 0 dégât : ses tags et cues s'appliquent quand même
+	if (!EffectClass)
 	{
 		return FGameplayEffectSpecHandle();
 	}

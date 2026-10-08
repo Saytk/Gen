@@ -101,3 +101,14 @@ void UGenAbilityTask_TargetDataUnderCursor::OnTargetDataReplicatedCallback(const
 		ValidData.Broadcast(DataHandleCopy);
 	}
 }
+
+void UGenAbilityTask_TargetDataUnderCursor::OnDestroy(bool bInOwnerFinished)
+{
+	UAbilitySystemComponent* ASC = AbilitySystemComponent.Get();
+	if (ASC && !IsLocallyControlled())
+	{
+		ASC->AbilityTargetDataSetDelegate(GetAbilitySpecHandle(), GetActivationPredictionKey()).RemoveAll(this);
+	}
+
+	Super::OnDestroy(bInOwnerFinished);
+}
