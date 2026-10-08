@@ -1,11 +1,13 @@
 #include "Actors/GenProjectile.h"
 
+#include "AbilitySystem/GenWorldQueries.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Character/GenCharacterBase.h"
 #include "CollisionQueryParams.h"
 #include "Components/SphereComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
@@ -100,8 +102,8 @@ void AGenProjectile::BeginPlay()
 			}), MaxRange / Speed, false);
 		}
 
-		// Les overlaps initiaux (spawn à bout portant dans un ennemi) sont calculés avant
-		// BeginPlay, donc avant que le delegate soit branché : on les traite ici
+		// Les overlaps initiaux (spawn à bout portant dans un ennemi ou contre un mur) sont calculés
+		// avant BeginPlay, donc avant que le delegate soit branché : on les traite ici
 		TArray<UPrimitiveComponent*> OverlappingComponents;
 		CollisionSphere->GetOverlappingComponents(OverlappingComponents);
 		for (UPrimitiveComponent* Component : OverlappingComponents)
@@ -136,6 +138,12 @@ void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, A
 		{
 			return;
 		}
+
+		// Salve (anneau) : une cible déjà touchée par un autre projectile de la salve est traversée
+		if (Salvo && Salvo->HasHit(HitCharacter))
+		{
+			return;
+		}
 	}
 	else if (OtherActor->IsA<APawn>())
 	{
@@ -150,32 +158,7 @@ bool AGenProjectile::IsValidTarget(const AGenCharacterBase* Character) const
 	return Character && !Character->IsDead() && AGenCharacterBase::AreEnemies(GetInstigator(), Character);
 }
 
-bool AGenProjectile::FindWallHit(const FVector& Start, const FVector& End, const AActor* IgnoredActor, FHitResult& OutHit) const
-{
-	FCollisionObjectQueryParams WallObjects;
-	WallObjects.AddObjectTypesToQuery(ECC_WorldStatic);
-	WallObjects.AddObjectTypesToQuery(ECC_WorldDynamic);
-
-	FCollisionQueryParams LineParams(SCENE_QUERY_STAT(GenProjectileWallTrace), false, this);
-	LineParams.AddIgnoredActor(IgnoredActor);
-
-	TArray<FHitResult> Hits;
-	GetWorld()->LineTraceMultiByObjectType(Hits, Start, End, WallObjects, LineParams);
-	for (const FHitResult& Hit : Hits)
-	{
-		// Un autre projectile ou un volume qui ne bloque pas les Pawns n'est pas un mur
-		const UPrimitiveComponent* HitComponent = Hit.GetComponent();
-		if (Cast<AGenProjectile>(Hit.GetActor()) || !HitComponent || HitComponent->GetCollisionResponseToChannel(ECC_Pawn) != ECR_Block)
-		{
-			continue;
-		}
-		OutHit = Hit;
-		return true;
-	}
-	return false;
-}
-
-void AGenProjectile::AddExplosionTargets(const FVector& Origin, TArray<AGenCharacterBase*>& InOutTargets) const
+void AGenProjectile::AddExplosionTargets(const FVector& Origin, const AGenCharacterBase* Excluded, TArray<AGenCharacterBase*>& InOutTargets) const
 {
 	TArray<FOverlapResult> Overlaps;
 	const FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(GenProjectileExplosion), false, this);
@@ -185,15 +168,21 @@ void AGenProjectile::AddExplosionTargets(const FVector& Origin, TArray<AGenChara
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
 		AGenCharacterBase* Character = Cast<AGenCharacterBase>(Overlap.GetActor());
-		if (!Character || InOutTargets.Contains(Character) || !IsValidTarget(Character))
+		if (!Character || Character == Excluded || InOutTargets.Contains(Character) || !IsValidTarget(Character))
 		{
 			continue;
 		}
 
-		FHitResult WallHit;
-		if (FindWallHit(Origin, Character->GetActorLocation(), Character, WallHit))
+		// Un mur protège la cible, sauf si une partie de sa capsule est visible
+		if (!GenWorldQueries::HasLineOfSight(GetWorld(), Origin, Character, { this, Character }))
 		{
-			continue; // un mur protège la cible
+			continue;
+		}
+
+		// L'éclaboussure est une zone : elle traverse les contres
+		if (Character->ResolveIncomingHit(GetInstigator(), EGenHitKind::Area, this) != EGenHitResponse::Hit)
+		{
+			continue;
 		}
 
 		InOutTargets.Add(Character);
@@ -212,7 +201,7 @@ void AGenProjectile::ApplyHit(AGenCharacterBase* Target, const FVector& Origin, 
 		}
 	}
 
-	if (KnockbackDistance > 0.f)
+	if (KnockbackDistance > 0.f && !Target->IsDead())
 	{
 		// Coup direct : dans le sens du tir ; éclaboussure : en s'éloignant du centre de l'explosion
 		const FVector Direction = bDirectHit ? GetActorForwardVector() : Target->GetActorLocation() - Origin;
@@ -236,20 +225,37 @@ void AGenProjectile::Explode(AActor* HitActor, const FVector& Location)
 	if (!DirectTarget)
 	{
 		FHitResult SurfaceHit;
-		if (FindWallHit(Location - Forward * (ScaledRadius + Speed * 0.05f + 50.f), Location, nullptr, SurfaceHit))
+		if (GenWorldQueries::FindWallHit(GetWorld(), Location - Forward * (ScaledRadius + Speed * 0.05f + 50.f), Location, { this }, SurfaceHit))
 		{
 			Origin = FVector(SurfaceHit.ImpactPoint) - Forward * 5.f;
 		}
 	}
 
 	TArray<AGenCharacterBase*> Targets;
+	bool bCountered = false;
 	if (IsValidTarget(DirectTarget))
 	{
-		Targets.Add(DirectTarget);
+		if (Salvo)
+		{
+			Salvo->TryClaim(DirectTarget);
+		}
+
+		// Coup direct = projectile : un contre le bloque entièrement (pas d'éclaboussure sur lui non plus).
+		// Seul Hit inflige quelque chose : toute autre réponse (contre, et plus tard intouchable) n'applique rien.
+		const EGenHitResponse Response = DirectTarget->ResolveIncomingHit(GetInstigator(), EGenHitKind::Projectile, this);
+		if (Response == EGenHitResponse::Hit)
+		{
+			Targets.Add(DirectTarget);
+		}
+		else if (Response == EGenHitResponse::Countered)
+		{
+			bCountered = true;
+		}
 	}
+
 	if (ExplosionRadius > 0.f && HitActor)
 	{
-		AddExplosionTargets(Origin, Targets);
+		AddExplosionTargets(Origin, DirectTarget, Targets);
 	}
 
 	for (AGenCharacterBase* Target : Targets)
@@ -257,8 +263,9 @@ void AGenProjectile::Explode(AActor* HitActor, const FVector& Location)
 		ApplyHit(Target, Origin, Target == DirectTarget);
 	}
 
-	UE_LOG(LogGenProjectile, Verbose, TEXT("%s : %d cible(s) touchée(s)"), *GetName(), Targets.Num());
+	UE_LOG(LogGenProjectile, Verbose, TEXT("%s : %d cible(s) touchée(s)%s"), *GetName(), Targets.Num(), bCountered ? TEXT(", coup direct bloqué par un contre") : TEXT(""));
 
+	// Gains du lanceur seulement si quelqu'un a vraiment été touché (un coup bloqué ne rapporte rien)
 	if (Targets.Num() > 0 && InstigatorOnHitSpecHandle.IsValid())
 	{
 		if (UAbilitySystemComponent* InstigatorASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetInstigator()))

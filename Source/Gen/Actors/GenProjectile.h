@@ -1,10 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystem/GenSalvo.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
 #include "GenProjectile.generated.h"
 
+class AGenCharacterBase;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class UProjectileMovementComponent;
@@ -24,9 +26,10 @@ struct FGenProjectileShotParams
 };
 
 /**
- * Projectile répliqué. Créé par le serveur (UGenGA_Projectile), il porte le spec du GE de dégâts.
+ * Projectile répliqué. Créé par le serveur (UGenGA_Cast::SpawnProjectileShot), il porte le spec du GE de dégâts.
  *
  * - Traverse les alliés et les morts, explose sur un ennemi ou un obstacle.
+ * - Coup direct = projectile (déclenche les contres) ; éclaboussure = zone (ne les déclenche pas).
  * - Seul le serveur applique les dégâts ; l'explosion est répliquée (bExploded) pour les FX.
  */
 UCLASS()
@@ -43,6 +46,9 @@ public:
 
 	/** Gains du lanceur (énergie, ressource), appliqués s'il touche au moins un ennemi (serveur). */
 	FGameplayEffectSpecHandle InstigatorOnHitSpecHandle;
+
+	/** Salve dont fait partie ce projectile (anneau) : une cible touchée par la salve est traversée (serveur). */
+	TSharedPtr<FGenProjectileSalvo> Salvo;
 
 	/** Serveur, avant FinishSpawning. */
 	void InitializeShot(const FGenProjectileShotParams& Params);
@@ -107,17 +113,17 @@ protected:
 	float ExplosionRadius = 0.f;
 	float KnockbackDistance = 0.f;
 
-	bool IsValidTarget(const class AGenCharacterBase* Character) const;
+	bool IsValidTarget(const AGenCharacterBase* Character) const;
 
-	/** Ennemis vivants dans le rayon, en ligne de vue depuis Origin (pas à travers les murs). */
-	void AddExplosionTargets(const FVector& Origin, TArray<class AGenCharacterBase*>& InOutTargets) const;
+	/**
+	 * Éclaboussure : ennemis vivants dans le rayon, en ligne de vue depuis Origin (pas à travers les murs),
+	 * hors Excluded (cible directe, touchée ou bloquée) et qui ne l'ignorent pas (nature : zone).
+	 */
+	void AddExplosionTargets(const FVector& Origin, const AGenCharacterBase* Excluded, TArray<AGenCharacterBase*>& InOutTargets) const;
 
 	/** Dégâts + repoussement éventuel sur une cible. */
-	void ApplyHit(class AGenCharacterBase* Target, const FVector& Origin, bool bDirectHit);
+	void ApplyHit(AGenCharacterBase* Target, const FVector& Origin, bool bDirectHit);
 
 private:
-	/** Premier mur (objet qui bloque physiquement un personnage) entre Start et End ; ignore les projectiles et les volumes sans blocage Pawn. */
-	bool FindWallHit(const FVector& Start, const FVector& End, const AActor* IgnoredActor, FHitResult& OutHit) const;
-
 	bool bImpactEffectsPlayed = false;
 };
