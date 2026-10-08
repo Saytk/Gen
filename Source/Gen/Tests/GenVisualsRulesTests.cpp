@@ -49,12 +49,35 @@ bool FGenMontageTimingTest::RunTest(const FString& Parameters)
 
 	// PIE : avec 2 flammes, le lanceur ne joue jamais Feed_3 (section tenue = dernier seuil atteignable)
 	TestEqual(TEXT("2 flammes sur 3 sections : Feed_2 tenue"), GenMontageTiming::GetFeedHoldSection(2, 3), 2);
-	TestTrue(TEXT("2 flammes : boucle de Feed_2 imposée"), GenMontageTiming::ShouldHoldFeedSection(2, 3));
+	TestTrue(TEXT("2 flammes : Feed_2 figée à sa fin"), GenMontageTiming::ShouldHoldFeedSection(2, 3));
 	TestEqual(TEXT("1 flamme : Feed_1 tenue"), GenMontageTiming::GetFeedHoldSection(1, 3), 1);
-	TestFalse(TEXT("3 flammes : Feed_3 boucle déjà (dernière)"), GenMontageTiming::ShouldHoldFeedSection(3, 3));
+	TestTrue(TEXT("1 flamme : Feed_1 figée à sa fin"), GenMontageTiming::ShouldHoldFeedSection(1, 3));
+	TestFalse(TEXT("3 flammes : Feed_3 enchaîne sur Feed_3_Hold (asset), rien à figer"), GenMontageTiming::ShouldHoldFeedSection(3, 3));
 	TestEqual(TEXT("plus de flammes que de sections : la dernière"), GenMontageTiming::GetFeedHoldSection(5, 3), 3);
+	TestFalse(TEXT("plus de flammes que de sections : rien à figer"), GenMontageTiming::ShouldHoldFeedSection(5, 3));
 	TestFalse(TEXT("rien à nourrir : rien à tenir"), GenMontageTiming::ShouldHoldFeedSection(0, 3));
 	TestFalse(TEXT("montage sans section Feed_N"), GenMontageTiming::ShouldHoldFeedSection(2, 0));
+
+	// AM_Curffe_FeedHand : Feed_1 0-0.3, Feed_2 0.3-0.6, Feed_3 0.6-0.9, Feed_3_Hold 0.9-1.5 (boucle). La tenue n'est
+	// pas un seuil : 3 sections comptées, et un plafond à 3 ne fige rien
+	const TSet<FName> FeedHand = { TEXT("Feed_1"), TEXT("Feed_2"), TEXT("Feed_3"), TEXT("Feed_3_Hold") };
+	const int32 FeedHandCount = GenMontageTiming::CountFeedSections([&FeedHand](FName Section) { return FeedHand.Contains(Section); });
+	TestEqual(TEXT("Feed_3_Hold ne compte pas comme un seuil"), FeedHandCount, 3);
+	TestFalse(TEXT("3 flammes avec Feed_3_Hold : rien à figer"), GenMontageTiming::ShouldHoldFeedSection(3, FeedHandCount));
+	TestEqual(TEXT("2 flammes avec Feed_3_Hold : Feed_2"), GenMontageTiming::GetFeedSectionName(GenMontageTiming::GetFeedHoldSection(2, FeedHandCount)), FName(TEXT("Feed_2")));
+	const TSet<FName> Gap = { TEXT("Feed_1"), TEXT("Feed_3") };
+	TestEqual(TEXT("sections consécutives seulement"), GenMontageTiming::CountFeedSections([&Gap](FName Section) { return Gap.Contains(Section); }), 1);
+	TestEqual(TEXT("comptage borné"), GenMontageTiming::CountFeedSections([](FName) { return true; }), GenMontageTiming::MaxFeedSections);
+
+	// Gel à la fin de Feed_2 (0.6) depuis le début du geste, vitesse 1, images de 1/60 s : deux images d'avance
+	TestEqual(TEXT("Feed_2 : gel deux images avant la fin"), GenMontageTiming::GetFeedHoldDelay(0.6f, 0.f, 1.f, 1.f / 60.f), 0.6f - 2.f / 60.f, 0.0001f);
+	// Nourrissage rapide (x2) : 0.3 s de jeu jusqu'à la fin de Feed_2
+	TestEqual(TEXT("x2 : gel avant 0.3 s"), GenMontageTiming::GetFeedHoldDelay(0.6f, 0.f, 2.f, 1.f / 60.f), 0.3f - 2.f / 60.f, 0.0001f);
+	// Le geste figé ne franchit jamais la frontière : délai + deux images <= temps restant
+	TestTrue(TEXT("jamais au-delà de la fin"), GenMontageTiming::GetFeedHoldDelay(0.3f, 0.f, 1.f, 1.f / 30.f) + 2.f / 30.f <= 0.3f + 0.0001f);
+	TestEqual(TEXT("marge bornée à la moitié du temps restant"), GenMontageTiming::GetFeedHoldDelay(0.3f, 0.25f, 1.f, 0.1f), 0.025f, 0.0001f);
+	TestEqual(TEXT("fin déjà atteinte : gel immédiat"), GenMontageTiming::GetFeedHoldDelay(0.6f, 0.65f, 1.f, 1.f / 60.f), 0.f, 0.0001f);
+	TestEqual(TEXT("geste à l'arrêt : rien à figer"), GenMontageTiming::GetFeedHoldDelay(0.6f, 0.f, 0.f, 1.f / 60.f), -1.f, 0.0001f);
 
 	// PIE : clic gauche maintenu, la charge suivante ne coupe pas le geste de lancer (0.15 s protégées)
 	TestEqual(TEXT("une image après le lancer : charge retardée"), GenMontageTiming::GetChargeStartDelay(0.016f, 0.4f, 0.15f), 0.134f, 0.0001f);

@@ -8,7 +8,10 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "Animation/AnimMontage.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
+#include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenCastBarRules.h"
+#include "Animation/AnimInstance.h"
+#include "Champions/Curffe/CurffeEffects.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/World.h"
 #include "Net/GenNetTestHelpers.h"
@@ -402,6 +405,155 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 			{
 				return GetCasterMontage(Client.World) == GetGreatFireballChargeMontage();
 			}, DefaultWait());
+	}
+
+	// --- Geste figé sous le dernier seuil -----------------------------------------------------------------------
+
+	/** Fin de Feed_1 et de Feed_2 dans AM_Curffe_FeedHand (temps du montage). */
+	float Feed1End = 0.f;
+	float Feed2End = 0.f;
+	float ObserverHeldPosition = -1.f;
+	float ServerHeldPosition = -1.f;
+
+	/** AnimInstance du lanceur où l'ASC joue ses montages, vu par la machine (réplique de l'ASC chez l'observateur). */
+	UAnimInstance* GetCasterAnimInstance(const UWorld* World) const
+	{
+		const UAbilitySystemComponent* ASC = GetASC(FindPlayerStateById(World, CasterPlayerId));
+		return ASC && ASC->AbilityActorInfo.IsValid() ? ASC->AbilityActorInfo->GetAnimInstance() : nullptr;
+	}
+
+	/** Pose FeedInterval sur l'instance du sort de la machine (pas le CDO). */
+	static bool SetFeedInterval(UAbilitySystemComponent* ASC, TSubclassOf<UGameplayAbility> AbilityClass, float Interval)
+	{
+		FGameplayAbilitySpec* Spec = FindAbilitySpec(ASC, AbilityClass);
+		UGameplayAbility* Instance = Spec ? Spec->GetPrimaryInstance() : nullptr;
+		FFloatProperty* Property = FindFProperty<FFloatProperty>(UGenGA_Cast::StaticClass(), TEXT("FeedInterval"));
+		if (!Instance || !Property)
+		{
+			return false;
+		}
+		Property->SetPropertyValue_InContainer(Instance, Interval);
+		return true;
+	}
+
+	/**
+	 * Foyer à 2 flammes : le geste de nourrissage s'arrête au seuil 2. Il ne boucle plus Feed_2 sur elle-même (le
+	 * mouvement rejoué vers la pose faisait un pop) : le serveur le FIGE à la fin de Feed_2 (vitesse 0 par l'ASC) et
+	 * l'observateur, qui reçoit la vitesse 0, garde une pose immobile (jamais Feed_3, jamais de boucle) jusqu'à la charge,
+	 * qui la remplace et avance à sa propre vitesse.
+	 * Sans retard, la fin du nourrissage du client arrive au serveur avant la fin de SA Feed_2 (jouée ServerEstimateLag plus
+	 * tard) : le client du lanceur nourrit ici à 0.6 s par flamme (instance seulement), le serveur à 0.3 s. Le serveur
+	 * atteint son plafond à 0.7 s et attend la fin du nourrissage (1.2 s) : 0.5 s de pose tenue, comme un client en retard.
+	 */
+	TEST_METHOD(FeedMontage_CapOfTwo_ObserverPoseHoldsStillAtTheEndOfFeed2)
+	{
+		// Client du lanceur à 0.6 s par flamme : geste à x0.5, avertissement "recaler le clip" attendu
+		TestRunner->AddExpectedMessage(TEXT("recaler le clip"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, -1);
+		UAnimMontage* FeedHand = LoadObject<UAnimMontage>(nullptr, TEXT("/Game/Gen/Champions/Curffe/Animations/AM_Curffe_FeedHand.AM_Curffe_FeedHand"));
+
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : Foyer à 2 flammes sans régénération, geste AM_Curffe_FeedHand"), [this, FeedHand](FBasePIENetworkComponentState& Server)
+			{
+				ASSERT_THAT(IsNotNull(FeedHand, TEXT("AM_Curffe_FeedHand introuvable")));
+				ASSERT_THAT(IsNotNull(GreatFireballClass.Get(), TEXT("GA_GreatFireball introuvable")));
+				const int32 Feed1 = FeedHand->GetSectionIndex(TEXT("Feed_1"));
+				const int32 Feed2 = FeedHand->GetSectionIndex(TEXT("Feed_2"));
+				ASSERT_THAT(IsTrue(Feed1 != INDEX_NONE && Feed2 != INDEX_NONE && FeedHand->GetSectionIndex(TEXT("Feed_3")) != INDEX_NONE, TEXT("Sections Feed_1..Feed_3")));
+				float Start = 0.f;
+				FeedHand->GetSectionStartAndEndTime(Feed1, Start, Feed1End);
+				FeedHand->GetSectionStartAndEndTime(Feed2, Start, Feed2End);
+
+				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
+				AGenPlayerCharacter* Other = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Caster));
+				ASSERT_THAT(IsNotNull(Other));
+				CasterPlayerId = Caster->GetPlayerState()->GetPlayerId();
+				Other->TeleportTo(Caster->GetActorLocation() + FVector(0.f, 5000.f, 0.f), Other->GetActorRotation(), false, true);
+
+				UAbilitySystemComponent* ASC = Caster->GetAbilitySystemComponent();
+				ASC->RemoveActiveGameplayEffectBySourceEffect(UCurffeGE_HearthRegen::StaticClass(), nullptr);
+				ApplyGain(ASC, 0.f, 2.f - GetAttribute(ASC, UGenAttributeSet::GetResourceAttribute()));
+				ASSERT_THAT(IsNear(2.f, GetAttribute(ASC, UGenAttributeSet::GetResourceAttribute()), 0.01f, TEXT("2 flammes")));
+				ASSERT_THAT(IsTrue(SetFeedMontage(ASC, GreatFireballClass, FeedHand)));
+			})
+			.UntilClients(TEXT("Clients : le pion du lanceur est connu"), [this](FBasePIENetworkComponentState& Client) { return FindCaster(Client.World) != nullptr; }, DefaultWait())
+			.UntilClient(TEXT("Client 0 : 2 flammes répliquées"), 0, [](FBasePIENetworkComponentState& Client)
+			{
+				return FMath::IsNearlyEqual(GetAttribute(GetLocalGenASC(Client), UGenAttributeSet::GetResourceAttribute()), 2.f, 0.01f);
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : geste posé, 0.6 s par flamme, visée déterministe, appuie (tenu)"), 0, [this, FeedHand](FBasePIENetworkComponentState& Client)
+			{
+				ASSERT_THAT(IsTrue(SetFeedMontage(GetLocalGenASC(Client), GreatFireballClass, FeedHand)));
+				ASSERT_THAT(IsTrue(SetFeedInterval(GetLocalGenASC(Client), GreatFireballClass, 0.6f)));
+				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
+				ASSERT_THAT(IsNotNull(PC));
+				PC->bDebugAimOverride = true;
+				PC->DebugAimLocation = PC->GetPawn()->GetActorLocation() + FVector(1000.f, 0.f, 0.f);
+				SendInput(Client, GreatFireballClass, true);
+				ASSERT_THAT(IsTrue(GetCasterMontage(Client.World) == FeedHand, TEXT("Le client du lanceur joue le geste dès l'appui")));
+			})
+			.UntilClient(TEXT("Client 1 : vitesse 0 répliquée sur le geste"), 1, [this, FeedHand](FBasePIENetworkComponentState& Client)
+			{
+				const UAnimInstance* AnimInstance = GetCasterAnimInstance(Client.World);
+				return GetCasterMontage(Client.World) == FeedHand && AnimInstance && AnimInstance->Montage_IsPlaying(FeedHand)
+					&& AnimInstance->Montage_GetPlayRate(FeedHand) == 0.f;
+			}, DefaultWait())
+			// Positions : seule la borne compte (jamais au-delà de Feed_2). Le montage d'un pion piloté par un client avance, sur
+			// le serveur, avec les mouvements reçus (UCharacterMovementComponent::TickCharacterPose) : ici bien moins vite que
+			// le temps réel, et l'observateur, recalé sur la position du serveur dans une même section, peut être en Feed_1
+			.ThenClient(TEXT("Client 1 : pose figée avant la fin de Feed_2"), 1, [this, FeedHand](FBasePIENetworkComponentState& Client)
+			{
+				ObserverHeldPosition = GetCasterAnimInstance(Client.World)->Montage_GetPosition(FeedHand);
+				ASSERT_THAT(IsTrue(ObserverHeldPosition <= Feed2End,
+					*FString::Printf(TEXT("Figée avant la fin de Feed_2 (%.3f, fin de Feed_1 %.2f, de Feed_2 %.2f)"), ObserverHeldPosition, Feed1End, Feed2End)));
+				ClientMark = Client.World->GetTimeSeconds();
+			})
+			.ThenServer(TEXT("Serveur : geste figé, nourrissage en cours"), [this, FeedHand](FBasePIENetworkComponentState& Server)
+			{
+				const UAnimInstance* AnimInstance = GetCasterAnimInstance(Server.World);
+				ASSERT_THAT(IsNotNull(AnimInstance));
+				ASSERT_THAT(IsTrue(GetCasterMontage(Server.World) == FeedHand && AnimInstance->Montage_IsPlaying(FeedHand), TEXT("Toujours le geste de nourrissage")));
+				ASSERT_THAT(IsNear(0.f, AnimInstance->Montage_GetPlayRate(FeedHand), 0.0001f, TEXT("Vitesse 0")));
+				ServerHeldPosition = AnimInstance->Montage_GetPosition(FeedHand);
+				ASSERT_THAT(IsTrue(ServerHeldPosition <= Feed2End, *FString::Printf(TEXT("Serveur figé avant la fin de Feed_2 (%.3f)"), ServerHeldPosition)));
+				const AGenCharacterBase* Caster = FindCaster(Server.World);
+				ASSERT_THAT(IsTrue(Caster && Caster->GetCastInfo().FeedEndTime <= 0.f, TEXT("Pose tenue PENDANT le nourrissage")));
+			})
+			.UntilClient(TEXT("Client 1 : 0.2 s plus tard"), 1, [this](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + 0.2f; }, DefaultWait())
+			.ThenClient(TEXT("Client 1 : la pose n'a pas bougé (ni boucle, ni Feed_3)"), 1, [this, FeedHand](FBasePIENetworkComponentState& Client)
+			{
+				const UAnimInstance* AnimInstance = GetCasterAnimInstance(Client.World);
+				ASSERT_THAT(IsTrue(GetCasterMontage(Client.World) == FeedHand && AnimInstance->Montage_IsPlaying(FeedHand), TEXT("Toujours le geste de nourrissage")));
+				ASSERT_THAT(IsNear(ObserverHeldPosition, AnimInstance->Montage_GetPosition(FeedHand), 0.0001f, TEXT("Position immobile")));
+			})
+			.ThenServer(TEXT("Serveur : toujours figé"), [this, FeedHand](FBasePIENetworkComponentState& Server)
+			{
+				const UAnimInstance* AnimInstance = GetCasterAnimInstance(Server.World);
+				ASSERT_THAT(IsTrue(GetCasterMontage(Server.World) == FeedHand && AnimInstance->Montage_IsPlaying(FeedHand), TEXT("Toujours le geste de nourrissage")));
+				ASSERT_THAT(IsNear(ServerHeldPosition, AnimInstance->Montage_GetPosition(FeedHand), 0.0001f, TEXT("Position immobile")));
+			})
+			.UntilClient(TEXT("Client 1 : la phase suivante remplace la pose figée"), 1, [this, FeedHand](FBasePIENetworkComponentState& Client)
+			{
+				const UAnimMontage* Current = GetCasterMontage(Client.World);
+				return Current && Current != FeedHand;
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 1 : la phase suivante avance"), 1, [this](FBasePIENetworkComponentState& Client)
+			{
+				const UAnimInstance* AnimInstance = GetCasterAnimInstance(Client.World);
+				ASSERT_THAT(IsTrue(AnimInstance->Montage_GetPlayRate(GetCasterMontage(Client.World)) > 0.f, TEXT("Jouée à sa propre vitesse")));
+			})
+			.UntilServer(TEXT("Serveur : sort terminé"), [this](FBasePIENetworkComponentState& Server)
+			{
+				const AGenCharacterBase* Caster = FindCaster(Server.World);
+				return Caster && !Caster->GetCastInfo().IsCasting();
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : 2 flammes dépensées"), [this](FBasePIENetworkComponentState& Server)
+			{
+				const AGenPlayerState* PS = FindPlayerStateById(Server.World, CasterPlayerId);
+				ASSERT_THAT(IsNear(0.f, GetAttribute(GetASC(PS), UGenAttributeSet::GetResourceAttribute()), 0.01f, TEXT("Les 2 flammes nourries")));
+			});
 	}
 
 	// --- Canalisation (V4) -----------------------------------------------------------------------------------

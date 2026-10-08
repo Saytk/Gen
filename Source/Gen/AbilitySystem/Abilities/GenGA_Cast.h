@@ -235,8 +235,9 @@ protected:
 	/**
 	 * Montage de nourrissage (optionnel, répliqué par le GAS) : joué dès le début du nourrissage, pour que tout le monde
 	 * voie le geste (Art Bible §12 Q41). Sections Feed_1..Feed_N d'UN intervalle de base chacune, enchaînées, la dernière
-	 * en boucle (sécurité) : à la bonne vitesse les frontières tombent sur les seuils. Vitesse = longueur de Feed_1 /
-	 * intervalle actif (x2 en nourrissage rapide). Python : feed_montage.
+	 * suivie d'une boucle de tenue (Feed_3 -> Feed_3_Hold) : à la bonne vitesse les frontières tombent sur les seuils.
+	 * Plafond sous le dernier seuil : geste figé à la fin de Feed_<plafond> (OnFeedHoldReached). Vitesse = longueur de
+	 * Feed_1 / intervalle actif (x2 en nourrissage rapide). Python : feed_montage.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "bFeedable"))
 	TObjectPtr<UAnimMontage> FeedMontage;
@@ -313,6 +314,12 @@ private:
 	/** Revue V2-V4, I2 : serveur pour un client distant, geste de nourrissage lancé avec le retard de l'estimation. */
 	UFUNCTION()
 	void OnFeedMontageDelayFinished();
+	/**
+	 * Plafond sous le dernier seuil (1 ou 2 flammes) : fin de la section tenue atteinte, le geste est figé (vitesse 0).
+	 * Serveur : par l'ASC, répliqué aux autres joueurs (vitesse + position) ; client du lanceur : localement.
+	 */
+	UFUNCTION()
+	void OnFeedHoldReached();
 	/** Revue V2-V4, I3 : arrête FeedMontage s'il joue encore (courant : arrêt répliqué ; sinon arrêt local). */
 	void StopFeedMontage();
 	/**
@@ -398,6 +405,10 @@ private:
 	/** Revue V2-V4, I2 : attente avant le geste de nourrissage du serveur (ServerEstimateLag), arrêtée par EndFeedTasks. */
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitDelay> FeedMontageDelayTask;
+
+	/** Attente de la fin de la section tenue du geste de nourrissage (OnFeedHoldReached), arrêtée par EndFeedTasks. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitDelay> FeedHoldTask;
 
 #if !UE_BUILD_SHIPPING
 	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
