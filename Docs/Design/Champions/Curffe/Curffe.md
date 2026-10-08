@@ -35,7 +35,9 @@ approved part.
 Counter trigger: **P** = projectile (triggers counters), **A** = ground area (does not).
 
 ### LMB: Fireball
-- Projectile (P), cast **0.35 s**, no cooldown, range **11 m**, **10** damage.
+- Projectile (P), cast **0.55 s**, no cooldown, range **11 m**, **14** damage.
+  (Decision 2026-10-08, user playtest: 0.35 s felt far too fast; slowed to a Battlerite-like basic-attack pace,
+  about 1.8 shots/s, with damage raised so sustained damage stays close to before: 25 vs 29 per second.)
 - +1 flame on enemy hit; energy **+2** per hit.
 - During Combustion it becomes a **Pyroblast** (see F).
 - VisualWeight: Filler (2).
@@ -96,7 +98,7 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
   completes.
 - On cast: the mage **erupts**, a **3 m** nova (A) for **20** damage and a **3 m** knockback.
 - Then **ablaze for 5 s**:
-  1. **Pyroblasts:** LMB becomes a bigger projectile (P), cast 0.35 s, **13** damage, explodes in a
+  1. **Pyroblasts:** LMB becomes a bigger projectile (P), cast 0.55 s, **18** damage, explodes in a
      **1.2 m** area. Works with every other spell on cooldown.
   2. **Unlimited flames:** the Hearth refills after every spell.
   3. **Fast feeding:** 0.15 s per flame instead of 0.3 s; telegraphs never drop below 0.5 s.
