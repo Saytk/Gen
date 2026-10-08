@@ -51,6 +51,29 @@ namespace GenUIRules
 	}
 
 	/**
+	 * Texte affiché du chiffre de recharge : la valeur de FormatCooldown (indépendante de la culture, "0.6", "12"),
+	 * mise en forme dans la culture courante (ou Culture) : "0,6" en français (§9 Localisation). Sans séparateur de milliers.
+	 * FormatCooldown reste la référence pour la classe de format et les mesures de largeur.
+	 */
+	inline FText CooldownDisplayText(const FString& CultureInvariant, const FCulturePtr& Culture = nullptr)
+	{
+		if (CultureInvariant.IsEmpty())
+		{
+			return FText::GetEmpty();
+		}
+
+		int32 DotIndex = INDEX_NONE;
+		CultureInvariant.FindChar(TEXT('.'), DotIndex);
+		const int32 FractionalDigits = DotIndex == INDEX_NONE ? 0 : CultureInvariant.Len() - DotIndex - 1;
+
+		FNumberFormattingOptions Options;
+		Options.SetUseGrouping(false);
+		Options.SetMinimumFractionalDigits(FractionalDigits);
+		Options.SetMaximumFractionalDigits(FractionalDigits);
+		return FText::AsNumber(FCString::Atod(*CultureInvariant), &Options, Culture);
+	}
+
+	/**
 	 * Classe de format du chiffre de recharge (§2.6) : nombre de chiffres et de points ("6" = 1/0, "12" = 2/0, "0.6" = 2/1).
 	 * Les chiffres de Barlow sont proportionnels : la boîte garde la largeur de la classe, pas celle de la valeur.
 	 */

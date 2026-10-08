@@ -3,6 +3,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "InputCoreTypes.h"
+#include "Internationalization/Culture.h"
+#include "Internationalization/Internationalization.h"
 #include "UI/GenUIRules.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUICooldownFormatTest, "Gen.UI.CooldownFormat",
@@ -30,6 +32,33 @@ bool FGenUICooldownFormatTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("sous la durée : inchangé"), GenUIRules::ClampCooldownRemaining(4.2f, 6.f), 4.2f);
 	TestEqual(TEXT("durée inconnue : inchangé"), GenUIRules::ClampCooldownRemaining(0.5f, 0.f), 0.5f);
 	TestEqual(TEXT("négatif : inchangé"), GenUIRules::ClampCooldownRemaining(-0.1f, 6.f), -0.1f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUICooldownLocalisedTest, "Gen.UI.CooldownLocalised",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenUICooldownLocalisedTest::RunTest(const FString& Parameters)
+{
+	// §9 Localisation : séparateur décimal de la culture ; la valeur invariante reste celle de FormatCooldown
+	const FCulturePtr French = FInternationalization::Get().GetCulture(TEXT("fr"));
+	const FCulturePtr English = FInternationalization::Get().GetCulture(TEXT("en"));
+	if (!TestTrue(TEXT("cultures fr et en disponibles"), French.IsValid() && English.IsValid()))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("fr : 0.6 -> 0,6"), GenUIRules::CooldownDisplayText(TEXT("0.6"), French).ToString(), FString(TEXT("0,6")));
+	TestEqual(TEXT("en : 0.6 -> 0.6"), GenUIRules::CooldownDisplayText(TEXT("0.6"), English).ToString(), FString(TEXT("0.6")));
+	TestEqual(TEXT("fr : 0.1 garde sa décimale"), GenUIRules::CooldownDisplayText(TEXT("0.1"), French).ToString(), FString(TEXT("0,1")));
+	TestEqual(TEXT("fr : entier sans décimale"), GenUIRules::CooldownDisplayText(TEXT("6"), French).ToString(), FString(TEXT("6")));
+	TestEqual(TEXT("fr : 12 sans séparateur"), GenUIRules::CooldownDisplayText(TEXT("12"), French).ToString(), FString(TEXT("12")));
+	TestTrue(TEXT("vide -> vide"), GenUIRules::CooldownDisplayText(FString(), French).IsEmpty());
+
+	// Les échantillons de classe restent invariants (mesurés après mise en forme par le slot)
+	const TArray<FString> Tenths = GenUIRules::CooldownClassSamples(FIntPoint(2, 1));
+	TestTrue(TEXT("échantillons invariants (0.1 .. 0.9)"), Tenths.Num() == 9 && Tenths[0] == TEXT("0.1"));
+	TestTrue(TEXT("classe lue sur la valeur invariante"), GenUIRules::CooldownFormatClass(GenUIRules::FormatCooldown(0.6f, 6.f, 2.f)) == FIntPoint(2, 1));
 	return true;
 }
 

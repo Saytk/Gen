@@ -419,7 +419,8 @@ void UGenAbilitySlot::RefreshVisuals()
 
 	IconImage->SetVisibility(State == EGenAbilitySlotState::Empty ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
 	UpdateCooldownTextBox();
-	CooldownText->SetText(FText::FromString(CooldownString));
+	// Séparateur décimal de la culture courante ("0,6" en français) ; CooldownString reste invariant pour la classe de format
+	CooldownText->SetText(GenUIRules::CooldownDisplayText(CooldownString));
 	CooldownText->SetVisibility(CooldownString.IsEmpty() ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
 	LockImage->SetVisibility(State == EGenAbilitySlotState::Locked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 
@@ -592,7 +593,8 @@ bool UGenAbilitySlot::MeasureCooldownClass(FIntPoint FormatClass, GenUIRules::FC
 		{
 			WidestDigit = FMath::Max(WidestDigit, static_cast<float>(FontMeasure->Measure(FString::Chr(Digit), Font).X));
 		}
-		OutLayout.Width = GenUIRules::CooldownBoxWidth(FormatClass, WidestDigit, FontMeasure->Measure(TEXT("."), Font).X, OutlineSize);
+		const FString Separator = GenUIRules::CooldownDisplayText(TEXT("0.5")).ToString().Mid(1, 1);
+		OutLayout.Width = GenUIRules::CooldownBoxWidth(FormatClass, WidestDigit, FontMeasure->Measure(Separator.IsEmpty() ? FString(TEXT(".")) : Separator, Font).X, OutlineSize);
 		OutLayout.CentreShift = 0.f;
 	}
 	else
@@ -601,7 +603,8 @@ bool UGenAbilitySlot::MeasureCooldownClass(FIntPoint FormatClass, GenUIRules::FC
 		float Widest = 0.f;
 		for (const FString& Sample : Samples)
 		{
-			const float Width = FontMeasure->Measure(Sample, Font).X;
+			// Mesuré tel qu'affiché (séparateur décimal de la culture)
+			const float Width = FontMeasure->Measure(GenUIRules::CooldownDisplayText(Sample).ToString(), Font).X;
 			Narrowest = FMath::Min(Narrowest, Width);
 			Widest = FMath::Max(Widest, Width);
 		}
