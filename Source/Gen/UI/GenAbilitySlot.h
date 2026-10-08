@@ -18,6 +18,7 @@ class UOverlay;
 class USizeBox;
 class USpacer;
 class UTexture;
+class FViewport;
 struct FActiveGameplayEffectHandle;
 struct FGameplayEffectSpec;
 struct FOnAttributeChangeData;
@@ -64,7 +65,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USpacer> KeyGap;
 	/** Disque + arc : la bande de l'arc (CostArcBand) est réservée sous le disque, l'arc la déborde (§3.1). */
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UOverlay> DiscStack;
-	/** Boîte du chiffre de recharge, centrée sur le disque, à la largeur de la classe de format (§2.6). */
+	/** Boîte du chiffre de recharge (chiffre calé à droite), à la largeur de la classe de format (§2.6), centrée sur le disque au mieux. */
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> CooldownTextBox;
 
 private:
@@ -72,6 +73,8 @@ private:
 	void ResolveAbility();
 	/** Mappings Enhanced Input reconstruits (contexte ajouté, réassignation) : on relit le libellé de touche. */
 	UFUNCTION() void HandleControlMappingsRebuilt();
+	/** Viewport redimensionné : l'échelle DPI change, donc l'épaisseur minimale du bord (§7.1). */
+	void HandleViewportResized(FViewport* Viewport, uint32 Unused);
 	void RefreshKeyLabel();
 	void RefreshCooldown();
 	void RefreshVisuals();
@@ -84,8 +87,10 @@ private:
 	void OnEffectAdded(UAbilitySystemComponent* Target, const FGameplayEffectSpec& Spec, FActiveGameplayEffectHandle Handle);
 	/** Met à jour l'arc et l'impulsion ; renvoie vrai si l'ultime est pleine ET lançable (anneau à α 1.0). */
 	bool UpdateUltimateArc();
-	/** Largeur de la boîte du chiffre, changée seulement quand la classe de format change. */
+	/** Largeur et décalage de la boîte du chiffre, changés seulement quand la classe de format change. */
 	void UpdateCooldownTextBox();
+	/** Mesure (une fois par classe) la valeur la plus étroite et la plus large de la classe dans la police du chiffre. */
+	bool MeasureCooldownClass(FIntPoint FormatClass, GenUIRules::FCooldownBoxLayout& OutLayout);
 	const UGenUIMetrics* GetUIMetrics() const;
 	const UGenUIPalette* GetUIPalette() const;
 
@@ -107,6 +112,7 @@ private:
 	FDelegateHandle EffectAddedHandle;
 	FTimerHandle RefreshTimer;
 	FTimerHandle ResolveRetryTimer;
+	FDelegateHandle ViewportResizedHandle;
 
 	EGenAbilitySlotState State = EGenAbilitySlotState::Empty;
 	FString CooldownString;
@@ -118,9 +124,7 @@ private:
 	/** Ultime pleine ET lançable lors du dernier rafraîchissement : l'impulsion part sur le front montant. */
 	bool bUltimateWasReadyFull = false;
 	int32 ResolveAttempts = 0;
-	/** Mesures du style du chiffre (TS_Cooldown), prises une fois : chiffre le plus large, point, contour. */
-	float CooldownWidestDigit = 0.f;
-	float CooldownDotWidth = 0.f;
-	float CooldownOutlineSize = 0.f;
+	/** Boîte du chiffre par classe de format, mesurée dans le style du chiffre (TS_Cooldown) à la première utilisation. */
+	TMap<FIntPoint, GenUIRules::FCooldownBoxLayout> CooldownBoxLayouts;
 	FIntPoint CooldownBoxClass = FIntPoint(-1, -1);
 };

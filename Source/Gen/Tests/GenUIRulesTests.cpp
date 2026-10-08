@@ -39,6 +39,39 @@ bool FGenUICooldownBoxTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("vide"), GenUIRules::CooldownFormatClass(FString()), FIntPoint(0, 0));
 	TestEqual(TEXT("largeur 2 chiffres"), GenUIRules::CooldownBoxWidth(FIntPoint(2, 0), 17.f, 7.f, 1.f), 36.f);
 	TestEqual(TEXT("largeur 0.x"), GenUIRules::CooldownBoxWidth(FIntPoint(2, 1), 17.f, 7.f, 1.f), 43.f);
+
+	// Valeurs de chaque classe, pour mesurer la plus étroite et la plus large
+	const TArray<FString> OneDigit = GenUIRules::CooldownClassSamples(FIntPoint(1, 0));
+	TestEqual(TEXT("1 chiffre : 1 à 9"), OneDigit.Num(), 9);
+	TestTrue(TEXT("1 chiffre : pas de 0"), !OneDigit.Contains(TEXT("0")));
+	const TArray<FString> TwoDigits = GenUIRules::CooldownClassSamples(FIntPoint(2, 0));
+	TestEqual(TEXT("2 chiffres : 10 à 99"), TwoDigits.Num(), 90);
+	TestTrue(TEXT("2 chiffres : 10 et 99"), TwoDigits.Contains(TEXT("10")) && TwoDigits.Contains(TEXT("99")));
+	const TArray<FString> Tenths = GenUIRules::CooldownClassSamples(FIntPoint(2, 1));
+	TestEqual(TEXT("0.x : 0.1 à 0.9"), Tenths.Num(), 9);
+	TestTrue(TEXT("0.x : 0.1 et 0.9"), Tenths.Contains(TEXT("0.1")) && Tenths.Contains(TEXT("0.9")));
+	TestEqual(TEXT("3 chiffres : repli sur CooldownBoxWidth"), GenUIRules::CooldownClassSamples(FIntPoint(3, 0)).Num(), 0);
+
+	// Boîte à la largeur du plus large (+ contour), décalée à gauche du quart de l'écart
+	const GenUIRules::FCooldownBoxLayout Layout = GenUIRules::CooldownBoxLayout(27.f, 34.f, 1.f);
+	TestEqual(TEXT("largeur = plus large + contour"), Layout.Width, 36.f);
+	TestEqual(TEXT("décalage = -(34 - 27) / 4"), Layout.CentreShift, -1.75f);
+	TestEqual(TEXT("écart nul : centrée"), GenUIRules::CooldownBoxLayout(17.f, 17.f, 0.f).CentreShift, 0.f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUIRimWidthTest, "Gen.UI.RimWidth",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenUIRimWidthTest::RunTest(const FString& Parameters)
+{
+	// §7.1 : un trait fait au moins 1 px physique
+	TestEqual(TEXT("1080p : 1 px"), GenUIRules::RimLayoutWidth(1.f, 1.f), 1.f);
+	TestEqual(TEXT("720p plancher 0.9 : 1/0.9 px"), GenUIRules::RimLayoutWidth(1.f, 0.9f), 1.f / 0.9f);
+	TestEqual(TEXT("1440p : 1 px de mise en page suffit"), GenUIRules::RimLayoutWidth(1.f, 1.333f), 1.f);
+	TestEqual(TEXT("ultime 2 px à 0.9 : 2 px"), GenUIRules::RimLayoutWidth(2.f, 0.9f), 2.f);
+	TestEqual(TEXT("échelle 0.4 : 2.5 px"), GenUIRules::RimLayoutWidth(2.f, 0.4f), 2.5f);
+	TestEqual(TEXT("échelle inconnue : valeur demandée"), GenUIRules::RimLayoutWidth(1.f, 0.f), 1.f);
 	return true;
 }
 

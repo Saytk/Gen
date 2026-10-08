@@ -3,6 +3,7 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystemComponent.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "GameplayEffect.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
@@ -22,6 +23,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Player/GenPlayerController.h"
 #include "TimerManager.h"
+#include "UnrealClient.h"
 #include "UI/GenTextBlock.h"
 #include "UI/GenUIDataAssets.h"
 #include "UI/GenUILog.h"
@@ -68,11 +70,22 @@ void UGenAbilitySlot::NativeConstruct()
 	{
 		Input->ControlMappingsRebuiltDelegate.AddUniqueDynamic(this, &ThisClass::HandleControlMappingsRebuilt);
 	}
+
+	// L'échelle DPI suit la taille du viewport : le bord doit rester >= 1 px physique après un redimensionnement (§7.1)
+	if (!ViewportResizedHandle.IsValid())
+	{
+		ViewportResizedHandle = FViewport::ViewportResizedEvent.AddUObject(this, &ThisClass::HandleViewportResized);
+	}
 }
 
 void UGenAbilitySlot::HandleControlMappingsRebuilt()
 {
 	RefreshKeyLabel();
+}
+
+void UGenAbilitySlot::HandleViewportResized(FViewport* Viewport, uint32 Unused)
+{
+	RefreshVisuals();
 }
 
 void UGenAbilitySlot::ApplyLayout()
@@ -120,6 +133,10 @@ void UGenAbilitySlot::ApplyLayout()
 		KeyGlyphImage->SetColorAndOpacity(Palette->Text_Primary);
 	}
 	LockImage->SetColorAndOpacity(Palette->Text_Primary);
+
+	// Chiffre calé à droite dans sa boîte : le bord droit reste fixe quand la valeur change (§2.6).
+	// Déjà réglé dans WBP_AbilitySlot ; on l'impose car UpdateCooldownTextBox en dépend.
+	CooldownText->SetJustification(ETextJustify::Right);
 }
 
 void UGenAbilitySlot::NativeDestruct()
@@ -128,6 +145,8 @@ void UGenAbilitySlot::NativeDestruct()
 	{
 		Input->ControlMappingsRebuiltDelegate.RemoveDynamic(this, &ThisClass::HandleControlMappingsRebuilt);
 	}
+	FViewport::ViewportResizedEvent.Remove(ViewportResizedHandle);
+	ViewportResizedHandle.Reset();
 	Unbind();
 	Super::NativeDestruct();
 }
@@ -423,9 +442,10 @@ void UGenAbilitySlot::RefreshVisuals()
 		}
 		SweepMID->SetScalarParameterValue(TEXT("Progress"), Progress);
 		SweepMID->SetScalarParameterValue(TEXT("RimFlash"), Flash);
-		// Épaisseur du bord en rayons du disque : 1 px sur 64, anneau de 2 px sur l'ultime de 72 (§4.1)
+		// Épaisseur du bord en rayons du disque : 1 px sur 64, anneau de 2 px sur l'ultime de 72 (§4.1),
+		// jamais sous 1 px physique quand l'échelle DPI descend sous 1 (§7.1) ; relue à chaque passe et à chaque redimensionnement
 		const float SlotSize = bIsUltimate ? Metrics->UltimateSlotSize : Metrics->SlotSize;
-		const float RimPx = bIsUltimate ? Metrics->UltimateRimWidth : Metrics->SlotRimWidth;
+		const float RimPx = GenUIRules::RimLayoutWidth(bIsUltimate ? Metrics->UltimateRimWidth : Metrics->SlotRimWidth, UWidgetLayoutLibrary::GetViewportScale(this));
 		SweepMID->SetScalarParameterValue(TEXT("RimWidth"), RimPx / FMath::Max(SlotSize * 0.5f, 1.f));
 		SweepMID->SetScalarParameterValue(TEXT("Locked"), State == EGenAbilitySlotState::Locked ? 1.f : 0.f);
 		SweepMID->SetVectorParameterValue(TEXT("OverlayColour"), State == EGenAbilitySlotState::Locked ? Palette->Cooldown_Locked : Palette->Cooldown_Overlay);
@@ -528,27 +548,68 @@ void UGenAbilitySlot::UpdateCooldownTextBox()
 		return;
 	}
 
-	// Mesures prises une fois dans la police du style (TS_Cooldown) : rien n'est codé en dur
-	if (CooldownWidestDigit <= 0.f)
+	GenUIRules::FCooldownBoxLayout Layout;
+	if (!MeasureCooldownClass(FormatClass, Layout))
 	{
-		if (!FSlateApplication::IsInitialized() || !FSlateApplication::Get().GetRenderer())
-		{
-			return;
-		}
-		const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
-		const FSlateFontInfo& Font = CooldownText->GetFont();
-		for (TCHAR Digit = TEXT('0'); Digit <= TEXT('9'); ++Digit)
-		{
-			CooldownWidestDigit = FMath::Max(CooldownWidestDigit, static_cast<float>(FontMeasure->Measure(FString::Chr(Digit), Font).X));
-		}
-		CooldownDotWidth = FontMeasure->Measure(TEXT("."), Font).X;
-		// La mesure ignore le contour : on l'ajoute des deux côtés
-		CooldownOutlineSize = Font.OutlineSettings.OutlineSize;
-		UE_LOG(LogGenUI, Verbose, TEXT("%s : chiffre le plus large %.1f, point %.1f, contour %.1f"), *GetName(), CooldownWidestDigit, CooldownDotWidth, CooldownOutlineSize);
+		return;
 	}
 
 	CooldownBoxClass = FormatClass;
-	CooldownTextBox->SetWidthOverride(GenUIRules::CooldownBoxWidth(FormatClass, CooldownWidestDigit, CooldownDotWidth, CooldownOutlineSize));
+	CooldownTextBox->SetWidthOverride(Layout.Width);
+	// Boîte centrée par l'Overlay : une marge droite de 2 x d déplace son centre de d vers la gauche
+	if (UOverlaySlot* BoxSlot = Cast<UOverlaySlot>(CooldownTextBox->Slot))
+	{
+		BoxSlot->SetPadding(FMargin(FMath::Max(2.f * Layout.CentreShift, 0.f), 0.f, FMath::Max(-2.f * Layout.CentreShift, 0.f), 0.f));
+	}
+}
+
+bool UGenAbilitySlot::MeasureCooldownClass(FIntPoint FormatClass, GenUIRules::FCooldownBoxLayout& OutLayout)
+{
+	if (const GenUIRules::FCooldownBoxLayout* Cached = CooldownBoxLayouts.Find(FormatClass))
+	{
+		OutLayout = *Cached;
+		return true;
+	}
+
+	// Mesures dans la police du style (TS_Cooldown) : rien n'est codé en dur
+	if (!FSlateApplication::IsInitialized() || !FSlateApplication::Get().GetRenderer())
+	{
+		return false;
+	}
+	const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+	const FSlateFontInfo& Font = CooldownText->GetFont();
+	// La mesure ignore le contour : on l'ajoute des deux côtés
+	const float OutlineSize = Font.OutlineSettings.OutlineSize;
+
+	const TArray<FString> Samples = GenUIRules::CooldownClassSamples(FormatClass);
+	if (Samples.IsEmpty())
+	{
+		// 3 chiffres et plus : chiffre le plus large par position, boîte centrée
+		float WidestDigit = 0.f;
+		for (TCHAR Digit = TEXT('0'); Digit <= TEXT('9'); ++Digit)
+		{
+			WidestDigit = FMath::Max(WidestDigit, static_cast<float>(FontMeasure->Measure(FString::Chr(Digit), Font).X));
+		}
+		OutLayout.Width = GenUIRules::CooldownBoxWidth(FormatClass, WidestDigit, FontMeasure->Measure(TEXT("."), Font).X, OutlineSize);
+		OutLayout.CentreShift = 0.f;
+	}
+	else
+	{
+		float Narrowest = TNumericLimits<float>::Max();
+		float Widest = 0.f;
+		for (const FString& Sample : Samples)
+		{
+			const float Width = FontMeasure->Measure(Sample, Font).X;
+			Narrowest = FMath::Min(Narrowest, Width);
+			Widest = FMath::Max(Widest, Width);
+		}
+		OutLayout = GenUIRules::CooldownBoxLayout(Narrowest, Widest, OutlineSize);
+		UE_LOG(LogGenUI, Verbose, TEXT("%s : classe %d/%d, plus étroite %.1f, plus large %.1f, contour %.1f -> boîte %.1f, décalage %.2f"),
+			*GetName(), FormatClass.X, FormatClass.Y, Narrowest, Widest, OutlineSize, OutLayout.Width, OutLayout.CentreShift);
+	}
+
+	CooldownBoxLayouts.Add(FormatClass, OutLayout);
+	return true;
 }
 
 const UGenUIMetrics* UGenAbilitySlot::GetUIMetrics() const

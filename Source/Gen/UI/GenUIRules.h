@@ -61,6 +61,60 @@ namespace GenUIRules
 		return FormatClass.X * WidestDigit + FormatClass.Y * DotWidth + 2.f * OutlineSize;
 	}
 
+	/**
+	 * Toutes les valeurs que FormatCooldown affiche pour une classe : "0.1" à "0.9", puis "1" à "99".
+	 * Vide au-delà (3 chiffres et plus) : la boîte retombe alors sur CooldownBoxWidth.
+	 */
+	inline TArray<FString> CooldownClassSamples(FIntPoint FormatClass)
+	{
+		TArray<FString> Samples;
+		for (int32 Tenths = 1; Tenths <= 9; ++Tenths)
+		{
+			const FString Text = FormatCooldown(Tenths / 10.f, 100.f, 0.f);
+			if (CooldownFormatClass(Text) == FormatClass)
+			{
+				Samples.AddUnique(Text);
+			}
+		}
+		for (int32 Seconds = 1; Seconds <= 99; ++Seconds)
+		{
+			const FString Text = FormatCooldown(static_cast<float>(Seconds), 100.f, 0.f);
+			if (CooldownFormatClass(Text) == FormatClass)
+			{
+				Samples.AddUnique(Text);
+			}
+		}
+		return Samples;
+	}
+
+	/** Boîte du chiffre de recharge : largeur et décalage horizontal de son centre par rapport au disque (px de mise en page). */
+	struct FCooldownBoxLayout
+	{
+		float Width = 0.f;
+		/** Négatif = vers la gauche. */
+		float CentreShift = 0.f;
+	};
+
+	/**
+	 * Chiffre calé à droite dans une boîte à la largeur de la valeur la plus large de sa classe (§2.6) : le bord droit ne bouge
+	 * pas quand le chiffre change. Boîte centrée, la valeur la plus large serait centrée et la plus étroite décalée à droite de
+	 * (Widest - Narrowest) / 2 ; on décale la boîte à gauche de (Widest - Narrowest) / 4 pour partager l'écart :
+	 * chaque valeur de la classe est alors à au plus (Widest - Narrowest) / 4 du centre du disque (§4.1).
+	 */
+	inline FCooldownBoxLayout CooldownBoxLayout(float NarrowestText, float WidestText, float OutlineSize)
+	{
+		FCooldownBoxLayout Layout;
+		Layout.Width = WidestText + 2.f * OutlineSize;
+		Layout.CentreShift = -FMath::Max(WidestText - NarrowestText, 0.f) * 0.25f;
+		return Layout;
+	}
+
+	/** Épaisseur du bord en px de mise en page : jamais sous 1 px physique (§7.1), quelle que soit l'échelle DPI. */
+	inline float RimLayoutWidth(float RimPx, float ViewportScale)
+	{
+		return ViewportScale > KINDA_SMALL_NUMBER ? FMath::Max(RimPx, 1.f / ViewportScale) : RimPx;
+	}
+
 	/** Priorité : vide > bloqué (étourdi) > recharge > prêt. */
 	inline EGenAbilitySlotState ResolveSlotState(bool bHasAbility, bool bLocked, float CooldownRemaining)
 	{
