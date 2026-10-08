@@ -17,7 +17,9 @@ enum class EGenHitResponse : uint8
 	/** Le coup s'applique (dégâts, contrôle, repoussement). */
 	Hit,
 	/** Bloqué par un contre : le coup n'inflige rien, le contre est prévenu. */
-	Countered
+	Countered,
+	/** Cible intouchable : le coup passe à travers, rien ne s'applique, aucun contre n'est prévenu. */
+	Ignored
 };
 
 /** Règles pures des coups et des contres. Sans état, testées hors monde. */
@@ -29,8 +31,13 @@ namespace GenHitRules
 		return Kind == EGenHitKind::Projectile || Kind == EGenHitKind::Melee;
 	}
 
-	inline EGenHitResponse Resolve(bool bCountering, EGenHitKind Kind)
+	/** Intouchable d'abord (le coup traverse), puis la règle du contre. */
+	inline EGenHitResponse Resolve(bool bCountering, bool bUntouchable, EGenHitKind Kind)
 	{
+		if (bUntouchable)
+		{
+			return EGenHitResponse::Ignored;
+		}
 		return bCountering && TriggersCounter(Kind) ? EGenHitResponse::Countered : EGenHitResponse::Hit;
 	}
 

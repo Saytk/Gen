@@ -18,9 +18,9 @@ bool FGenCounterTriggerTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("la mêlée déclenche le contre"), GenHitRules::TriggersCounter(EGenHitKind::Melee));
 	TestFalse(TEXT("une zone au sol traverse le contre"), GenHitRules::TriggersCounter(EGenHitKind::Area));
 
-	TestTrue(TEXT("projectile sur un contre : bloqué"), GenHitRules::Resolve(true, EGenHitKind::Projectile) == EGenHitResponse::Countered);
-	TestTrue(TEXT("zone sur un contre : touché"), GenHitRules::Resolve(true, EGenHitKind::Area) == EGenHitResponse::Hit);
-	TestTrue(TEXT("projectile sans contre : touché"), GenHitRules::Resolve(false, EGenHitKind::Projectile) == EGenHitResponse::Hit);
+	TestTrue(TEXT("projectile sur un contre : bloqué"), GenHitRules::Resolve(true, false, EGenHitKind::Projectile) == EGenHitResponse::Countered);
+	TestTrue(TEXT("zone sur un contre : touché"), GenHitRules::Resolve(true, false, EGenHitKind::Area) == EGenHitResponse::Hit);
+	TestTrue(TEXT("projectile sans contre : touché"), GenHitRules::Resolve(false, false, EGenHitKind::Projectile) == EGenHitResponse::Hit);
 	return true;
 }
 

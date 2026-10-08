@@ -278,7 +278,7 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 	}
 
 	const bool bCountering = AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Countering);
-	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, Kind);
+	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, /*bUntouchable*/ false, Kind);
 
 	if (Response == EGenHitResponse::Countered)
 	{

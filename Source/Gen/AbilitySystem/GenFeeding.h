@@ -121,4 +121,16 @@ namespace GenFeeding
 	{
 		return bLocked && (bPredictingSide || Now < EnforcedUntil);
 	}
+
+	/**
+	 * Nourrissage rapide (State.FastFeeding, ex : Combustion) : intervalle divisé par deux.
+	 * Curffe : 0.15 s au lieu de 0.3 s (CurffeTuning::FastFeedInterval, vérifié par Gen.Feeding.FastInterval).
+	 */
+	inline constexpr float FastFeedMultiplier = 0.5f;
+
+	/** Intervalle de nourrissage, retenu au début du nourrissage (State.FastFeeding). Jamais nul. */
+	inline float GetFeedInterval(float BaseInterval, bool bFastFeeding)
+	{
+		return FMath::Max(BaseInterval * (bFastFeeding ? FastFeedMultiplier : 1.f), 0.01f);
+	}
 }
