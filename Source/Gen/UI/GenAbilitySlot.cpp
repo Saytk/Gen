@@ -5,7 +5,14 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
 #include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
+#include "Components/Spacer.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Rendering/SlateRenderer.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/Texture2D.h"
 #include "EnhancedInputSubsystems.h"
@@ -35,6 +42,12 @@ void UGenAbilitySlot::NativeConstruct()
 	{
 		IconMID = IconImage->GetDynamicMaterial();
 		UE_CLOG(!IconMID, LogGenUI, Warning, TEXT("%s : IconImage n'a pas de matériau (M_UI_AbilityIcon attendu), icône et désaturation invisibles."), *GetPathName());
+		if (IconMID)
+		{
+			UTexture* Default = nullptr;
+			IconMID->GetTextureParameterValue(FHashedMaterialParameterInfo(TEXT("Icon")), Default);
+			DefaultIconTexture = Default;
+		}
 	}
 	if (SweepImage)
 	{
@@ -77,6 +90,28 @@ void UGenAbilitySlot::ApplyLayout()
 	if (ArcImage)
 	{
 		ArcImage->SetVisibility(bIsUltimate ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		// L'arc déborde le disque de la bande de l'arc de chaque côté (image carrée centrée sur le disque)
+		if (UOverlaySlot* ArcSlot = Cast<UOverlaySlot>(ArcImage->Slot))
+		{
+			ArcSlot->SetPadding(FMargin(-Metrics->CostArcBand));
+		}
+	}
+
+	// Bandes verticales du §3.1 : libellé, écart, disque, arc
+	if (KeyLabelBox)
+	{
+		KeyLabelBox->SetHeightOverride(Metrics->KeyLabelHeight);
+	}
+	if (KeyGap)
+	{
+		KeyGap->SetSize(FVector2D(1.f, Metrics->KeyLabelGap));
+	}
+	if (DiscStack)
+	{
+		if (UVerticalBoxSlot* DiscSlot = Cast<UVerticalBoxSlot>(DiscStack->Slot))
+		{
+			DiscSlot->SetPadding(FMargin(0.f, 0.f, 0.f, Metrics->CostArcBand));
+		}
 	}
 
 	// Glyphes d'interface (souris, cadenas) : textures blanches teintées en text.primary (§2.11)
@@ -182,6 +217,11 @@ void UGenAbilitySlot::Unbind()
 	{
 		SweepMID->SetScalarParameterValue(TEXT("RimFlash"), 0.f);
 	}
+	// Pas d'icône du sort précédent sur un slot délié
+	if (IconMID)
+	{
+		IconMID->SetTextureParameterValue(TEXT("Icon"), DefaultIconTexture);
+	}
 }
 
 void UGenAbilitySlot::ResolveAbility()
@@ -224,12 +264,11 @@ void UGenAbilitySlot::ResolveAbility()
 	}
 
 	// Par le paramètre du MID et non SetBrushFromTexture, qui remplacerait le matériau (cercle, désaturation)
-	if (UTexture2D* Icon = AbilityCDO->Icon.LoadSynchronous())
+	if (IconMID)
 	{
-		if (IconMID)
-		{
-			IconMID->SetTextureParameterValue(TEXT("Icon"), Icon);
-		}
+		// Sort sans icône : texture par défaut du matériau, jamais l'icône d'un sort précédent
+		UTexture2D* Icon = AbilityCDO->Icon.LoadSynchronous();
+		IconMID->SetTextureParameterValue(TEXT("Icon"), Icon ? Icon : DefaultIconTexture.Get());
 	}
 	IconImage->SetToolTipText(AbilityCDO->DisplayName);
 
@@ -358,15 +397,13 @@ void UGenAbilitySlot::RefreshVisuals()
 	CooldownString = State == EGenAbilitySlotState::Cooldown ? GenUIRules::FormatCooldown(Remaining, CooldownDuration, Metrics->CooldownHideBelowTotal) : FString();
 
 	IconImage->SetVisibility(State == EGenAbilitySlotState::Empty ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
+	UpdateCooldownTextBox();
 	CooldownText->SetText(FText::FromString(CooldownString));
 	CooldownText->SetVisibility(CooldownString.IsEmpty() ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
 	LockImage->SetVisibility(State == EGenAbilitySlotState::Locked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 
 	// Avant le balayage : l'impulsion de l'ultime peut démarrer un flash à appliquer dès cette passe
-	if (bIsUltimate)
-	{
-		UpdateUltimateArc();
-	}
+	const bool bUltimateReady = bIsUltimate && UpdateUltimateArc();
 
 	// La désaturation de la recharge s'applique à l'icône, pas au voile du balayage (§4.1)
 	if (IconMID)
@@ -385,16 +422,19 @@ void UGenAbilitySlot::RefreshVisuals()
 			Flash = 1.f - FMath::InterpEaseOut(0.f, 1.f, Alpha, 3.f);
 		}
 		SweepMID->SetScalarParameterValue(TEXT("Progress"), Progress);
-		SweepMID->SetScalarParameterValue(TEXT("DimAmount"), State == EGenAbilitySlotState::Cooldown ? Metrics->CooldownDesaturation : 0.f);
 		SweepMID->SetScalarParameterValue(TEXT("RimFlash"), Flash);
+		// Épaisseur du bord en rayons du disque : 1 px sur 64, anneau de 2 px sur l'ultime de 72 (§4.1)
+		const float SlotSize = bIsUltimate ? Metrics->UltimateSlotSize : Metrics->SlotSize;
+		const float RimPx = bIsUltimate ? Metrics->UltimateRimWidth : Metrics->SlotRimWidth;
+		SweepMID->SetScalarParameterValue(TEXT("RimWidth"), RimPx / FMath::Max(SlotSize * 0.5f, 1.f));
 		SweepMID->SetScalarParameterValue(TEXT("Locked"), State == EGenAbilitySlotState::Locked ? 1.f : 0.f);
 		SweepMID->SetVectorParameterValue(TEXT("OverlayColour"), State == EGenAbilitySlotState::Locked ? Palette->Cooldown_Locked : Palette->Cooldown_Overlay);
-		// Bord : line.bronze ; ultime : anneau energy.full à α 0.5, α 1.0 une fois prête (§4.1)
+		// Bord : line.bronze ; ultime : anneau energy.full à α 0.5, α 1.0 seulement pleine ET lançable (§4.1)
 		FLinearColor RimColour = Palette->Line_Bronze;
 		if (bIsUltimate)
 		{
 			RimColour = Palette->Energy_Full;
-			RimColour.A = bUltimateWasReadyFull ? 1.f : 0.5f;
+			RimColour.A = bUltimateReady ? 1.f : 0.5f;
 		}
 		SweepMID->SetVectorParameterValue(TEXT("RimColour"), RimColour);
 		SweepMID->SetVectorParameterValue(TEXT("FlashColour"), Palette->Flash_White);
@@ -432,11 +472,11 @@ void UGenAbilitySlot::OnEffectAdded(UAbilitySystemComponent* Target, const FGame
 	}
 }
 
-void UGenAbilitySlot::UpdateUltimateArc()
+bool UGenAbilitySlot::UpdateUltimateArc()
 {
 	if (!ASC.IsValid())
 	{
-		return;
+		return false;
 	}
 
 	const UGenUIMetrics* Metrics = GetUIMetrics();
@@ -470,6 +510,45 @@ void UGenAbilitySlot::UpdateUltimateArc()
 		}
 		bUltimateWasReadyFull = bReadyFull;
 	}
+
+	// État courant, sans le verrou de l'impulsion : une ultime vide (Empty) ou non lançable n'a jamais l'anneau à α 1.0
+	return bFull && State == EGenAbilitySlotState::Ready;
+}
+
+void UGenAbilitySlot::UpdateCooldownTextBox()
+{
+	if (!CooldownTextBox || CooldownString.IsEmpty())
+	{
+		return;
+	}
+
+	const FIntPoint FormatClass = GenUIRules::CooldownFormatClass(CooldownString);
+	if (FormatClass == CooldownBoxClass)
+	{
+		return;
+	}
+
+	// Mesures prises une fois dans la police du style (TS_Cooldown) : rien n'est codé en dur
+	if (CooldownWidestDigit <= 0.f)
+	{
+		if (!FSlateApplication::IsInitialized() || !FSlateApplication::Get().GetRenderer())
+		{
+			return;
+		}
+		const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+		const FSlateFontInfo& Font = CooldownText->GetFont();
+		for (TCHAR Digit = TEXT('0'); Digit <= TEXT('9'); ++Digit)
+		{
+			CooldownWidestDigit = FMath::Max(CooldownWidestDigit, static_cast<float>(FontMeasure->Measure(FString::Chr(Digit), Font).X));
+		}
+		CooldownDotWidth = FontMeasure->Measure(TEXT("."), Font).X;
+		// La mesure ignore le contour : on l'ajoute des deux côtés
+		CooldownOutlineSize = Font.OutlineSettings.OutlineSize;
+		UE_LOG(LogGenUI, Verbose, TEXT("%s : chiffre le plus large %.1f, point %.1f, contour %.1f"), *GetName(), CooldownWidestDigit, CooldownDotWidth, CooldownOutlineSize);
+	}
+
+	CooldownBoxClass = FormatClass;
+	CooldownTextBox->SetWidthOverride(GenUIRules::CooldownBoxWidth(FormatClass, CooldownWidestDigit, CooldownDotWidth, CooldownOutlineSize));
 }
 
 const UGenUIMetrics* UGenAbilitySlot::GetUIMetrics() const

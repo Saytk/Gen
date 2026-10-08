@@ -37,6 +37,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float UltimateSlotSize = 72.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float SlotGap = 12.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float KeyLabelGap = 2.f;
+	/** Bande des libellés de touche au-dessus des emplacements (§3.1 : 20 px). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float KeyLabelHeight = 20.f;
+	/** Bande de l'arc de coût d'énergie sous les emplacements (§3.1 : 6 px). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float CostArcBand = 6.f;
+	/** Bord des emplacements : 1 px ; anneau de l'ultime : 2 px (§4.1, §2.9). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float SlotRimWidth = 1.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float UltimateRimWidth = 2.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Layout") float ScreenMargin = 32.f;
 	/** Chiffre de recharge caché si la durée totale est inférieure (§4.1, tunable). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar", meta = (Units = "s")) float CooldownHideBelowTotal = 2.f;
@@ -46,6 +53,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") int32 UltimateSegments = 4;
 	/** Rafraîchissement du balayage et du chiffre pendant une recharge (pas de NativeTick). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar", meta = (Units = "s")) float CooldownRefreshInterval = 0.05f;
+
+	/** Hauteur de la barre de sorts (unités UMG, hors marge d'écran) : libellé + écart + ultime + bande de l'arc. */
+	float GetAbilityBarHeight() const { return KeyLabelHeight + KeyLabelGap + UltimateSlotSize + CostArcBand; }
 };
 
 USTRUCT(BlueprintType)

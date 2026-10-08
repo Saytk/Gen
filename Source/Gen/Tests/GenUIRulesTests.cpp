@@ -26,6 +26,22 @@ bool FGenUICooldownFormatTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUICooldownBoxTest, "Gen.UI.CooldownBox",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenUICooldownBoxTest::RunTest(const FString& Parameters)
+{
+	// §2.6 : la boîte suit la classe de format, jamais la valeur
+	TestEqual(TEXT("1 chiffre"), GenUIRules::CooldownFormatClass(TEXT("6")), FIntPoint(1, 0));
+	TestEqual(TEXT("1 et 4 : même classe"), GenUIRules::CooldownFormatClass(TEXT("1")), GenUIRules::CooldownFormatClass(TEXT("4")));
+	TestEqual(TEXT("2 chiffres"), GenUIRules::CooldownFormatClass(TEXT("12")), FIntPoint(2, 0));
+	TestEqual(TEXT("0.x"), GenUIRules::CooldownFormatClass(TEXT("0.6")), FIntPoint(2, 1));
+	TestEqual(TEXT("vide"), GenUIRules::CooldownFormatClass(FString()), FIntPoint(0, 0));
+	TestEqual(TEXT("largeur 2 chiffres"), GenUIRules::CooldownBoxWidth(FIntPoint(2, 0), 17.f, 7.f, 1.f), 36.f);
+	TestEqual(TEXT("largeur 0.x"), GenUIRules::CooldownBoxWidth(FIntPoint(2, 1), 17.f, 7.f, 1.f), 43.f);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUISlotStateTest, "Gen.UI.SlotState",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 

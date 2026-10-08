@@ -34,6 +34,13 @@ protected:
 	void DrawLocalCastBar(const AGenCharacterBase* LocalCharacter, float Bottom);
 	void DrawBar(float X, float Y, float Width, float Height, float Percent, const FLinearColor& FillColor);
 
+	/** Haut de la barre de sorts UMG, en pixels Canvas (le panneau prototype se dessine au-dessus). */
+	float GetAbilityBarTop() const;
+
+	/** Écart entre le bas du panneau prototype et le haut de la barre de sorts (pixels Canvas). */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD")
+	float PanelGapAboveBar = 8.f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	float OverheadOffsetZ = 130.f;
 

@@ -40,6 +40,27 @@ namespace GenUIRules
 		return FString::Printf(TEXT("%.1f"), FMath::Max(Tenths, 0.1f));
 	}
 
+	/**
+	 * Classe de format du chiffre de recharge (§2.6) : nombre de chiffres et de points ("6" = 1/0, "12" = 2/0, "0.6" = 2/1).
+	 * Les chiffres de Barlow sont proportionnels : la boîte garde la largeur de la classe, pas celle de la valeur.
+	 */
+	inline FIntPoint CooldownFormatClass(const FString& Text)
+	{
+		FIntPoint Class(0, 0);
+		for (const TCHAR C : Text)
+		{
+			Class.X += FChar::IsDigit(C) ? 1 : 0;
+			Class.Y += C == TEXT('.') ? 1 : 0;
+		}
+		return Class;
+	}
+
+	/** Largeur de la boîte d'une classe : chiffre le plus large par chiffre, plus les points et le contour des deux côtés. */
+	inline float CooldownBoxWidth(FIntPoint FormatClass, float WidestDigit, float DotWidth, float OutlineSize)
+	{
+		return FormatClass.X * WidestDigit + FormatClass.Y * DotWidth + 2.f * OutlineSize;
+	}
+
 	/** Priorité : vide > bloqué (étourdi) > recharge > prêt. */
 	inline EGenAbilitySlotState ResolveSlotState(bool bHasAbility, bool bLocked, float CooldownRemaining)
 	{

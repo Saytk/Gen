@@ -14,7 +14,10 @@ class UGenUIMetrics;
 class UGenUIPalette;
 class UImage;
 class UMaterialInstanceDynamic;
+class UOverlay;
 class USizeBox;
+class USpacer;
+class UTexture;
 struct FActiveGameplayEffectHandle;
 struct FGameplayEffectSpec;
 struct FOnAttributeChangeData;
@@ -55,6 +58,14 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> ArcImage;
 	/** Boîte du disque : SlotSize, ou UltimateSlotSize pour l'ultime (DA_UIMetrics, §4.1). */
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> IconSizeBox;
+	/** Bande des libellés : KeyLabelHeight (DA_UIMetrics, §3.1). */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> KeyLabelBox;
+	/** Écart libellé / disque : KeyLabelGap. */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USpacer> KeyGap;
+	/** Disque + arc : la bande de l'arc (CostArcBand) est réservée sous le disque, l'arc la déborde (§3.1). */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UOverlay> DiscStack;
+	/** Boîte du chiffre de recharge, centrée sur le disque, à la largeur de la classe de format (§2.6). */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> CooldownTextBox;
 
 private:
 	void ApplyLayout();
@@ -71,7 +82,10 @@ private:
 	void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void OnEnergyChanged(const FOnAttributeChangeData& Data);
 	void OnEffectAdded(UAbilitySystemComponent* Target, const FGameplayEffectSpec& Spec, FActiveGameplayEffectHandle Handle);
-	void UpdateUltimateArc();
+	/** Met à jour l'arc et l'impulsion ; renvoie vrai si l'ultime est pleine ET lançable (anneau à α 1.0). */
+	bool UpdateUltimateArc();
+	/** Largeur de la boîte du chiffre, changée seulement quand la classe de format change. */
+	void UpdateCooldownTextBox();
 	const UGenUIMetrics* GetUIMetrics() const;
 	const UGenUIPalette* GetUIPalette() const;
 
@@ -82,6 +96,8 @@ private:
 
 	/** MID de M_UI_AbilityIcon : texture du sort (paramètre Icon) et désaturation pendant la recharge (DimAmount). */
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> IconMID;
+	/** Texture par défaut du matériau d'icône, remise quand le slot n'a plus d'icône. */
+	UPROPERTY(Transient) TObjectPtr<UTexture> DefaultIconTexture;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> SweepMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> ArcMID;
 
@@ -102,4 +118,9 @@ private:
 	/** Ultime pleine ET lançable lors du dernier rafraîchissement : l'impulsion part sur le front montant. */
 	bool bUltimateWasReadyFull = false;
 	int32 ResolveAttempts = 0;
+	/** Mesures du style du chiffre (TS_Cooldown), prises une fois : chiffre le plus large, point, contour. */
+	float CooldownWidestDigit = 0.f;
+	float CooldownDotWidth = 0.f;
+	float CooldownOutlineSize = 0.f;
+	FIntPoint CooldownBoxClass = FIntPoint(-1, -1);
 };

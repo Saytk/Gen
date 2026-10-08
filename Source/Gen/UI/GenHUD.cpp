@@ -2,6 +2,7 @@
 
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Character/GenCharacterBase.h"
 #include "CommonActivatableWidget.h"
 #include "Engine/Canvas.h"
@@ -11,6 +12,8 @@
 #include "Player/GenPlayerState.h"
 #include "UI/GenHUDLayout.h"
 #include "UI/GenPrimaryGameLayout.h"
+#include "UI/GenUIDataAssets.h"
+#include "UI/GenUISubsystem.h"
 #include "UI/GenUILog.h"
 #include "UI/GenUISettings.h"
 #include "UI/GenUITags.h"
@@ -172,7 +175,16 @@ void AGenHUD::DrawLocalPlayerPanel(const AGenCharacterBase* LocalCharacter)
 	UFont* Font = GEngine->GetMediumFont();
 	const float PanelWidth = 360.f;
 	const float X = (Canvas->ClipX - PanelWidth) * 0.5f;
-	float Y = Canvas->ClipY - 110.f;
+
+	// Rangées du panneau prototype, en pixels Canvas bruts : vie (barre 18 + 6), énergie (barre 8 + 8), ressource (texte)
+	constexpr float HealthRowHeight = 24.f;
+	constexpr float EnergyRowHeight = 16.f;
+	constexpr float ResourceRowHeight = 22.f;
+	const float MaxResource = LocalCharacter->GetMaxResource();
+	const float PanelHeight = HealthRowHeight + EnergyRowHeight + (MaxResource > 0.f ? ResourceRowHeight : 0.f);
+
+	// En attendant WBP_Vitals, le panneau se pose au-dessus de la barre de sorts UMG, jamais dessous
+	float Y = GetAbilityBarTop() - PanelGapAboveBar - PanelHeight;
 
 	if (LocalCharacter->IsDead())
 	{
@@ -190,19 +202,26 @@ void AGenHUD::DrawLocalPlayerPanel(const AGenCharacterBase* LocalCharacter)
 	const float MaxHealth = FMath::Max(LocalCharacter->GetMaxHealth(), 1.f);
 	DrawBar(X, Y, PanelWidth, 18.f, LocalCharacter->GetHealth() / MaxHealth, SelfColor);
 	DrawText(FString::Printf(TEXT("%.0f / %.0f"), LocalCharacter->GetHealth(), MaxHealth), FLinearColor::White, X + 6.f, Y, Font);
-	Y += 24.f;
+	Y += HealthRowHeight;
 
 	// Énergie
 	const float MaxEnergy = FMath::Max(LocalCharacter->GetMaxEnergy(), 1.f);
 	DrawBar(X, Y, PanelWidth, 8.f, LocalCharacter->GetEnergy() / MaxEnergy, EnergyColor);
-	Y += 16.f;
+	Y += EnergyRowHeight;
 
 	// Ressource du champion (Curffe : flammes du Foyer)
-	const float MaxResource = LocalCharacter->GetMaxResource();
 	if (MaxResource > 0.f)
 	{
 		const FString ResourceText = FString::Printf(TEXT("Flammes : %.0f / %.0f"), LocalCharacter->GetResource(), MaxResource);
 		DrawText(ResourceText, FLinearColor(1.f, 0.6f, 0.2f), X, Y, Font);
-		Y += 22.f;
 	}
+}
+
+float AGenHUD::GetAbilityBarTop() const
+{
+	// Haut de la barre UMG en pixels Canvas : marge d'écran + hauteur de la barre (DA_UIMetrics), à l'échelle DPI du viewport
+	const UGenUISubsystem* UI = UGenUISubsystem::Get(GetOwningPlayerController());
+	const UGenUIMetrics* Metrics = UI && UI->GetMetrics() ? UI->GetMetrics() : GetDefault<UGenUIMetrics>();
+	const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+	return Canvas->ClipY - (Metrics->ScreenMargin + Metrics->GetAbilityBarHeight()) * Scale;
 }
