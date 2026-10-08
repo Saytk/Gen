@@ -7,8 +7,7 @@
 /**
  * Sorts de test (règles génériques de UGenGA_Cast) des Gen.Net.* (module éditeur GenTests, jamais dans le jeu) : classes C++ réglées
  * dans leur constructeur, sans asset ni tag d'annulation (CancelAbilitiesWithTag vide). Accordés par le serveur
- * pendant le test (UGenAbilitySystemComponent::GrantAbilities). Les tags (touche, recharge) sont posés sur le CDO
- * par le test (BEFORE_EACH) : pas de RequestGameplayTag pendant le chargement du module.
+ * pendant le test (UGenAbilitySystemComponent::GrantAbilities) et activés par leur handle (pas de touche ni de recharge).
  * Cachés des listes de classes de l'éditeur (HideDropdown).
  */
 

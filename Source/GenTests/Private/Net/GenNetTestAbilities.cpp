@@ -1,4 +1,5 @@
 #include "Net/GenNetTestAbilities.h"
+#include "Net/GenNetCurffeTestAbilities.h"
 
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 
@@ -9,3 +10,5 @@ void UGenNetTestGA_Lingering::OnCastLaunched(const FGenCastRelease& Release)
 	LingerTask->OnFinish.AddDynamic(this, &ThisClass::OnLingerFinished);
 	LingerTask->ReadyForActivation();
 }
+
+FGameplayTagContainer UGenNetTestGA_MeteorLeap::TestCooldownTags;
