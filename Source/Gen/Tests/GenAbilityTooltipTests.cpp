@@ -12,6 +12,7 @@
 #include "Champions/Curffe/CurffeGA_LivingFlame.h"
 #include "Champions/Curffe/CurffeGA_MeteorLeap.h"
 #include "Champions/Curffe/CurffeTuning.h"
+#include "UObject/Package.h"
 
 /**
  * Gen.UI.AbilityTooltip : l'infobulle de chaque sort de Curffe, générée depuis son CDO (assets GA_* du dépôt, ou classe

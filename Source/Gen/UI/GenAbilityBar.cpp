@@ -2,6 +2,7 @@
 
 #include "Components/PanelWidget.h"
 #include "Components/Spacer.h"
+#include "Components/WrapBox.h"
 #include "GenGameplayTags.h"
 #include "Player/GenPlayerController.h"
 #include "UI/GenAbilityTooltip.h"
@@ -58,6 +59,17 @@ void UGenAbilityBar::NativeConstruct()
 	if (DetailsPanel)
 	{
 		DetailsPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	// Revue PIE finale, C-2 : cartes compactes à largeur fixe, DetailsColumns par rangée (2 rangées pour 7 sorts, sous
+	// ~45 % d'un écran 1080p) ; la largeur du retour à la ligne vient des jetons, pas du WBP
+	if (UWrapBox* DetailsWrap = Cast<UWrapBox>(DetailsPanel))
+	{
+		const int32 Columns = FMath::Max(Metrics->DetailsColumns, 1);
+		DetailsWrap->SetExplicitWrapSize(true);
+		// Carte : largeur fixe, plus la marge et la bordure du panneau si la boîte de taille est dedans (rangée de Columns
+		// cartes dans tous les cas, jamais Columns + 1)
+		const float CardWidth = Metrics->TooltipCompactWidth + 2.f * (Metrics->HudPanelPadding + Metrics->PanelOutlineWidth);
+		DetailsWrap->SetWrapSize(Columns * CardWidth + (Columns - 1) * DetailsWrap->GetInnerSlotPadding().X + 1.f);
 	}
 }
 
@@ -118,6 +130,8 @@ void UGenAbilityBar::SetAbilityDetailsShown(bool bShown)
 		{
 			if (UGenAbilityTooltip* Tooltip = SlotWidget->CreateFilledTooltip())
 			{
+				// Revue PIE finale, C-2 : carte compacte (le survol garde la carte complète)
+				Tooltip->SetCompact(true);
 				DetailsPanel->AddChild(Tooltip);
 				Tooltip->Show(0.f);
 			}
