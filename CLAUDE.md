@@ -66,6 +66,12 @@ tout le reste avance sans cérémonie.
 - **Revue unique et ciblée.** Une seule revue par fonctionnalité, en fin de lot, et seulement pour le
   réseau, l'autorité serveur et la prédiction. Le relecteur ne rapporte que le Critique et l'Important ;
   les mineurs vont dans une liste de nettoyage traitée plus tard, en un seul lot.
+- **Tester à la bonne échelle, pas à chaque petit changement.**
+  - Un nouveau test seulement pour une règle de gameplay ou réseau (coûts, autorité, prédiction, réplication).
+    Pas de test pour un correctif cosmétique, un renommage, un commentaire, une valeur d'asset ou une UI.
+  - Pendant l'itération : compiler et lancer seulement les tests du domaine touché
+    (`RunTestsByFilter` avec `StartsWith:Gen.Net.CastRules` par exemple), dans l'éditeur ouvert.
+  - La suite complète une seule fois, en fin de lot ; le test headless seulement avant de pousser.
 - **Tests réseau automatiques comme barrière.** Les tests CQTest `Gen.Net.*` remplacent les matrices PIE
   à chaque tâche. Un seul passage PIE court (2 clients) par fonctionnalité pour l'œil ; la matrice complète
   (3 clients, latence) seulement avant la fusion dans `main`.
