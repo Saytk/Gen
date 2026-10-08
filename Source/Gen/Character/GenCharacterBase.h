@@ -73,6 +73,43 @@ struct FGenCastInfo
 };
 
 /**
+ * Point d'atterrissage d'un bond en vol, vu par TOUS les joueurs (décision du 2026-10-08 : les ennemis voient le cercle
+ * d'atterrissage pendant le vol). Posé au départ du bond (serveur et client propriétaire), effacé à l'atterrissage.
+ * Les indicateurs (cercle, amorces de l'anneau) le lisent chaque image ; le propriétaire a aussi sa propre visée.
+ */
+USTRUCT(BlueprintType)
+struct FGenLeapTarget
+{
+	GENERATED_BODY()
+
+	/** Classe du sort de bond (nullptr = pas de bond en vol). */
+	UPROPERTY(BlueprintReadOnly, Category = "Leap")
+	TObjectPtr<UClass> Ability;
+
+	/** Point visé, ramené à la portée (l'atterrissage réel peut être plus court : marche, rebord). */
+	UPROPERTY(BlueprintReadOnly, Category = "Leap")
+	FVector_NetQuantize10 Location = FVector::ZeroVector;
+
+	/** Direction horizontale du bond : première direction de l'anneau (GenAreaRules::GetRingDirections). */
+	UPROPERTY(BlueprintReadOnly, Category = "Leap")
+	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
+
+	/** Rayon de la zone d'atterrissage (cm) : le cercle = la hitbox. */
+	UPROPERTY(BlueprintReadOnly, Category = "Leap")
+	float Radius = 0.f;
+
+	/** Unités nourries (une boule de l'anneau chacune). */
+	UPROPERTY(BlueprintReadOnly, Category = "Leap")
+	uint8 Fed = 0;
+
+	/** Départ du bond, en temps serveur (GameState::GetServerWorldTimeSeconds). */
+	UPROPERTY(BlueprintReadOnly, Category = "Leap")
+	float StartTime = 0.f;
+
+	bool IsActive() const { return Ability != nullptr; }
+};
+
+/**
  * Classe de base de tout ce qui a des PV et des sorts (champions, mannequins...).
  *
  * L'ASC n'appartient pas forcément au personnage : pour les joueurs il vit sur le
@@ -195,6 +232,12 @@ public:
 
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 
+	/** Bond en vol : point d'atterrissage vu par tous (serveur et client propriétaire ; StartTime est fixé ici). */
+	void SetLeapTarget(const FGenLeapTarget& Target);
+	/** Fin du bond d'Ability (sans effet si un autre bond a pris la place). */
+	void ClearLeapTarget(UClass* Ability);
+	const FGenLeapTarget& GetLeapTarget() const { return LeapTarget; }
+
 	/** 0..1, ou -1 si aucune incantation. */
 	UFUNCTION(BlueprintPure, Category = "Gen|Cast")
 	float GetCastProgress() const;
@@ -253,6 +296,10 @@ protected:
 	/** Non répliqué au propriétaire : il le prédit lui-même. */
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Resource")
 	uint8 FedResource = 0;
+
+	/** Non répliqué au propriétaire : il le prédit lui-même. */
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Leap")
+	FGenLeapTarget LeapTarget;
 
 	/** Propriétaire de l'affichage des unités nourries (serveur et client propriétaire, non répliqué). */
 	GenFeeding::FFedDisplay FedDisplay;

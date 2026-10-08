@@ -2,6 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenKnockback.h"
 #include "Champions/Curffe/CurffeTuning.h"
@@ -195,6 +196,25 @@ bool FGenKnockbackVelocityTest::RunTest(const FString& Parameters)
 
 	const FVector Diagonal = GenKnockback::ComputeLaunchVelocity(FVector(1.f, 1.f, 5.f), 400.f, GravityZ);
 	TestEqual(TEXT("direction aplatie et normalisée"), static_cast<float>(FVector(Diagonal.X, Diagonal.Y, 0.f).Size() * AirTime), 400.f, 1.f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCastDefaultsTest, "Gen.Feeding.CastDefaults",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenCastDefaultsTest::RunTest(const FString& Parameters)
+{
+	// Revue de la Task 5 (I-4) : les valeurs par défaut des sorts à incantation viennent de CurffeTuning (jamais de littéraux).
+	// Lues par réflexion (propriétés protégées de UGenGA_Cast) sur le CDO d'une classe concrète.
+	const UGenGA_Projectile* CDO = GetDefault<UGenGA_Projectile>();
+	const FIntProperty* MaxFeedProperty = FindFProperty<FIntProperty>(UGenGA_Cast::StaticClass(), TEXT("MaxFeed"));
+	const FFloatProperty* FeedIntervalProperty = FindFProperty<FFloatProperty>(UGenGA_Cast::StaticClass(), TEXT("FeedInterval"));
+	if (!TestNotNull(TEXT("propriété MaxFeed"), MaxFeedProperty) || !TestNotNull(TEXT("propriété FeedInterval"), FeedIntervalProperty))
+	{
+		return false;
+	}
+	TestEqual(TEXT("MaxFeed = CurffeTuning::MaxFeedPerSpell"), MaxFeedProperty->GetPropertyValue_InContainer(CDO), CurffeTuning::MaxFeedPerSpell);
+	TestEqual(TEXT("FeedInterval = CurffeTuning::FeedInterval"), FeedIntervalProperty->GetPropertyValue_InContainer(CDO), CurffeTuning::FeedInterval, KINDA_SMALL_NUMBER);
 	return true;
 }
 

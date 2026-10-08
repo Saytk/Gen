@@ -79,6 +79,18 @@ namespace GenNetTest
 
 	/** Spec du sort de classe AbilityClass dans l'ASC, sinon nullptr. */
 	FGameplayAbilitySpec* FindAbilitySpec(UAbilitySystemComponent* ASC, TSubclassOf<UGameplayAbility> AbilityClass);
+
+	/**
+	 * Serveur : sol plat de test répliqué (AGenNetTestFloor, surface à Z = 0) ; la carte vide n'en a pas. Attendre ensuite
+	 * que chaque client l'ait reçu (HasTestFloor) avant de poser les pions dessus.
+	 */
+	AActor* SpawnTestFloor(UWorld* ServerWorld);
+
+	/** Le sol de test est présent dans ce monde (client : reçu du serveur). */
+	bool HasTestFloor(const UWorld* World);
+
+	/** Hauteur où poser un pion de Curffe debout sur le sol de test (centre de sa capsule, un peu au-dessus). */
+	inline constexpr float StandingHeight = 100.f;
 }
 
 #endif // ENABLE_PIE_NETWORK_TEST
