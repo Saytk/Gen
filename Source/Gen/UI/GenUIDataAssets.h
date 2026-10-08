@@ -26,7 +26,7 @@ public:
 	 * cooldown.noEnergy #2E4A78 α 0.45 (§2.5) : voile « pas assez d'énergie ». Valeur posée dans DA_UIPalette via HexToLinear ;
 	 * le défaut est le jeton lui-même (depuis le hex), pour qu'une palette pas encore mise à jour ne voile pas le disque en noir opaque.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_NoEnergy = GenUIRules::HexToLinear(TEXT("#2E4A78"), 0.45f);
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_NoEnergy = GenUIRules::HexToLinear(GenUITokens::CooldownNoEnergyHex, GenUITokens::CooldownNoEnergyAlpha);
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Energy") FLinearColor Energy_Charging = FLinearColor::Yellow;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Energy") FLinearColor Energy_Full = FLinearColor::Yellow;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Flash") FLinearColor Flash_White = FLinearColor::White;

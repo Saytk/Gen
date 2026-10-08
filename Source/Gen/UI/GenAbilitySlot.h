@@ -41,6 +41,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|UI") EGenAbilitySlotState GetState() const { return State; }
 	UFUNCTION(BlueprintPure, Category = "Gen|UI") FString GetCooldownText() const { return CooldownString; }
 
+	/** Arc de coût affiché (tests, PIE) : segments du sort, emplacements de l'arc, segments financés (0 sans arc). */
+	int32 GetArcSegments() const { return ArcSegments; }
+	int32 GetArcSegmentSlots() const { return ArcSegmentSlots; }
+	int32 GetArcFunded() const { return ArcFunded; }
+
+	/** Flash du bord en cours (prêt ou impulsion de l'ultime). */
+	bool IsFlashing() const;
+
 	/** Tag d'entrée du sort affiché (InputTag.Ability.*). Posé par UGenAbilityBar, donc non éditable dans le WBP. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|UI", meta = (Categories = "InputTag")) FGameplayTag InputTag;
 
@@ -133,6 +141,9 @@ private:
 	FDelegateHandle ViewportResizedHandle;
 
 	EGenAbilitySlotState State = EGenAbilitySlotState::Empty;
+	int32 ArcSegments = 0;
+	int32 ArcSegmentSlots = 0;
+	int32 ArcFunded = 0;
 	FString CooldownString;
 	float CooldownEndTime = 0.f;
 	float CooldownDuration = 0.f;
