@@ -73,7 +73,7 @@ public:
 
 	/**
 	 * Serveur : clé de prédiction portée par la dernière visée (target data) reçue du client pour ce sort et cette
-	 * activation, sinon une clé invalide. Sert à reporter son acquittement (UGenGA_Projectile, visée en avance).
+	 * activation, sinon une clé invalide. Sert à reporter son acquittement (UGenGA_Cast, visée en avance).
 	 */
 	FPredictionKey GetReplicatedTargetDataKey(FGameplayAbilitySpecHandle Handle, FPredictionKey ActivationKey) const;
 

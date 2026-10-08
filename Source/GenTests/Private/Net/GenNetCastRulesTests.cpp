@@ -338,6 +338,26 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 		});
 	}
 
+	/** Tout contrôle dur interrompt l'incantation (GenGameplayTags::GetHardCCTags), pas seulement l'étourdissement. */
+	TEST_METHOD(GreatFireball_SilencedDuringCast_NoCost)
+	{
+		QueueSetup();
+		Network.ThenClient(TEXT("Client 0 : appuie sur la grande boule de feu"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, true); });
+		QueueClientWait(TEXT("Client 0 : 1 flamme nourrie"), 0.4f);
+		Network.ThenClient(TEXT("Client 0 : relâche (incantation)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); });
+		QueueClientWait(TEXT("Client 0 : en pleine incantation"), 0.15f);
+		Network.ThenServer(TEXT("Serveur : réduit le lanceur au silence"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsTrue(IsAbilityActive(ServerCasterASC.Get(), GreatFireballClass), TEXT("Le serveur doit être en pleine incantation")));
+			ServerCasterASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Silenced")), 1, EGameplayTagReplicationState::TagOnly);
+		});
+		QueueAssertNoCost();
+		Network.ThenServer(TEXT("Serveur : fin du silence"), [this](FBasePIENetworkComponentState&)
+		{
+			ServerCasterASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Silenced")), 1, EGameplayTagReplicationState::TagOnly);
+		});
+	}
+
 	// --- Visée en avance -------------------------------------------------------------------------------
 
 	/** Lance la grande boule de feu sans tenir la touche (0 flamme) et envoie aussitôt deux visées (client modifié). */

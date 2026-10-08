@@ -174,7 +174,7 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 				const float AttackerEnergyBefore = GetAttribute(AttackerASC, UGenAttributeSet::GetEnergyAttribute());
 				ASSERT_THAT(IsTrue(AttackerEnergyBefore + EnergyOnHit <= GetAttribute(AttackerASC, UGenAttributeSet::GetMaxEnergyAttribute()), TEXT("Le gain ne doit pas être borné par le max")));
 
-				// Tir comme UGenGA_Projectile::LaunchShot : spec de dégâts et gains du lanceur fixés avant FinishSpawning
+				// Tir comme UGenGA_Cast::SpawnProjectileShot : spec de dégâts et gains du lanceur fixés avant FinishSpawning
 				const FTransform SpawnTransform(FRotator::ZeroRotator, Center);
 				AGenProjectile* Projectile = Server.World->SpawnActorDeferred<AGenProjectile>(AGenProjectile::StaticClass(), SpawnTransform,
 					Attacker, Attacker, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);

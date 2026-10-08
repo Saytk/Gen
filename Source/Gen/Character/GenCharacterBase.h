@@ -10,6 +10,7 @@
 #include "Character/GenStatusVisualsComponent.h"
 #include "GenCharacterBase.generated.h"
 
+class UAnimMontage;
 class UGameplayEffect;
 class UNiagaraComponent;
 class UNiagaraSystem;
@@ -147,7 +148,7 @@ public:
 	 * Client propriétaire -> serveur : nombre exact d'unités nourries par Ability à la fin du nourrissage.
 	 * Purement visuel (les autres joueurs voient les flammes quitter l'orbite) : sans cela le serveur
 	 * n'affiche que sa propre estimation, qui peut avoir un tick de retard. Transmis au sort actif, qui
-	 * l'accepte à ±1 de son estimation (UGenGA_Projectile::ApplyReportedFedCount). Le nombre qui compte
+	 * l'accepte à ±1 de son estimation (UGenGA_Cast::ApplyReportedFedCount). Le nombre qui compte
 	 * pour le tir arrive avec la visée et y est validé.
 	 */
 	UFUNCTION(Server, Reliable)
@@ -258,6 +259,16 @@ protected:
 
 	UFUNCTION(Client, Reliable)
 	void ClientApplyKnockback(FVector_NetQuantize10 LaunchVelocity);
+
+public:
+	/**
+	 * Serveur -> client propriétaire : le serveur a refusé le lancer (visée invalide, CommitAbility refusé) alors que
+	 * le client joue déjà son geste. Coupe Montage s'il joue encore (Art Bible §8.4, mauvaise prédiction).
+	 */
+	UFUNCTION(Client, Reliable)
+	void ClientStopCastMontage(UAnimMontage* Montage);
+
+protected:
 
 	UFUNCTION()
 	void OnRep_CastInfo();

@@ -1,11 +1,13 @@
 #include "Character/GenCharacterBase.h"
 
 #include "Abilities/GameplayAbilityTypes.h"
-#include "AbilitySystem/Abilities/GenGA_Projectile.h"
+#include "AbilitySystem/Abilities/GenGA_Cast.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenCastBarRules.h"
 #include "AbilitySystem/GenKnockback.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
@@ -129,9 +131,9 @@ void AGenCharacterBase::ServerReportFedResource_Implementation(UClass* Ability, 
 	{
 		if (Spec.IsActive() && Spec.Ability && Spec.Ability->GetClass() == Ability)
 		{
-			if (UGenGA_Projectile* Projectile = Cast<UGenGA_Projectile>(Spec.GetPrimaryInstance()))
+			if (UGenGA_Cast* CastAbility = Cast<UGenGA_Cast>(Spec.GetPrimaryInstance()))
 			{
-				Projectile->ApplyReportedFedCount(Count);
+				CastAbility->ApplyReportedFedCount(Count);
 			}
 			return;
 		}
@@ -348,6 +350,15 @@ void AGenCharacterBase::ApplyKnockback(const FVector& Direction, float Distance)
 void AGenCharacterBase::ClientApplyKnockback_Implementation(FVector_NetQuantize10 LaunchVelocity)
 {
 	LaunchCharacter(LaunchVelocity, true, true);
+}
+
+void AGenCharacterBase::ClientStopCastMontage_Implementation(UAnimMontage* Montage)
+{
+	UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (Montage && AnimInstance && AnimInstance->Montage_IsPlaying(Montage))
+	{
+		AnimInstance->Montage_Stop(0.25f, Montage);
+	}
 }
 
 void AGenCharacterBase::OnAbilitySystemInitialized()

@@ -85,7 +85,7 @@ bool FGenCastBarCurffeHearthTest::RunTest(const FString& Parameters)
 {
 	using namespace GenCastBarTests;
 
-	// Crans posés à l'appui comme le fait UGenGA_Projectile : min(MaxFeed, flammes du Foyer)
+	// Crans posés à l'appui comme le fait UGenGA_Cast : min(MaxFeed, flammes du Foyer)
 	auto SlotsFor = [](float Flames) { return GenFeeding::GetFeedLimit(CurffeTuning::MaxFeedPerSpell, Flames); };
 
 	// Foyer plein (5 flammes) : 3 crans, jamais 5
