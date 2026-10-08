@@ -60,7 +60,12 @@ namespace GenPowerSpellTest
 	float Energy(const UAbilitySystemComponent* ASC) { return GetAttribute(ASC, UGenAttributeSet::GetEnergyAttribute()); }
 	float Health(const UAbilitySystemComponent* ASC) { return GetAttribute(ASC, UGenAttributeSet::GetHealthAttribute()); }
 	float Flames(const UAbilitySystemComponent* ASC) { return GetAttribute(ASC, UGenAttributeSet::GetResourceAttribute()); }
-	float Speed(const UAbilitySystemComponent* ASC) { return GetAttribute(ASC, UGenAttributeSet::GetMoveSpeedAttribute()); }
+	/** Vitesse de marche réelle de cette machine : attribut × multiplicateurs locaux (hâte de la flamme vivante). */
+	float Speed(const UAbilitySystemComponent* ASC)
+	{
+		const ACharacter* Character = ASC ? Cast<ACharacter>(ASC->GetAvatarActor()) : nullptr;
+		return Character && Character->GetCharacterMovement() ? Character->GetCharacterMovement()->MaxWalkSpeed : -1.f;
+	}
 
 	void PlaceOnFloor(ACharacter* Character, float X, float Y)
 	{
@@ -379,6 +384,7 @@ NETWORK_TEST_CLASS(PowerSpells, "Gen.Net")
 				ASSERT_THAT(IsNear(CasterHealthBefore, Health(CasterASC.Get()), 0.01f, TEXT("Lanceur épargné")));
 				ASSERT_THAT(IsNear(5.f, Flames(CasterASC.Get()), 0.01f, TEXT("Foyer rempli à 5")));
 				ASSERT_THAT(IsNear(BaseSpeed * 1.3f, Speed(CasterASC.Get()), 0.5f, TEXT("Hâte +30 %")));
+				ASSERT_THAT(IsNear(1.3f, ServerCaster->GetLocalMoveSpeedMultiplier(), 0.001f, TEXT("Hâte : multiplicateur local du serveur (grâce de mouvement)")));
 				ASSERT_THAT(IsFalse(HasTag(CasterASC.Get(), TEXT("State.Untouchable"))));
 				ASSERT_THAT(IsFalse(HasTag(CasterASC.Get(), TEXT("State.CastLocked")), TEXT("Il peut de nouveau lancer")));
 			});
@@ -390,7 +396,7 @@ NETWORK_TEST_CLASS(PowerSpells, "Gen.Net")
 				ASSERT_THAT(IsTrue(FVector::Dist2D(ServerAlly->GetActorLocation(), AllyStart) < 20.f, TEXT("Allié immobile")));
 				ASSERT_THAT(IsTrue(FVector::Dist2D(ServerCaster->GetActorLocation(), FVector::ZeroVector) < 20.f, TEXT("Lanceur immobile")));
 			})
-			.UntilClient(TEXT("Client 0 : Foyer plein, hâte, énergie 35, recharge (répliqués)"), 0, [this](FBasePIENetworkComponentState& Client)
+			.UntilClient(TEXT("Client 0 : Foyer plein, hâte (posée par le client), énergie 35, recharge (répliqués)"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
 				UAbilitySystemComponent* ASC = LocalASC(Client);
 				return FMath::IsNearlyEqual(Flames(ASC), 5.f, 0.01f) && FMath::IsNearlyEqual(Speed(ASC), BaseSpeed * 1.3f, 0.5f)

@@ -8,7 +8,9 @@
 #include "Champions/Curffe/CurffeEffects.h"
 #include "Champions/Curffe/CurffeGameplayTags.h"
 #include "Character/GenCharacterBase.h"
+#include "Engine/World.h"
 #include "GenGameplayTags.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCurffeLivingFlame, Log, All);
 
@@ -83,6 +85,23 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 	// Plan Visuals V3 : geste de l'anneau, à vitesse 1, jusqu'au bout même après la fin du sort
 	PlayPhaseMontage(FinishMontage, 1.f, /*bStopWhenAbilityEnds*/ false);
 
+	// Hâte (revue P3 T8-10, M3) : multiplicateur local posé par CETTE machine (serveur, client propriétaire) à SA fin de
+	// forme, retiré HasteDuration plus tard. Prédite chez le client sans le RTT d'un GE du serveur ; le serveur ouvre sa
+	// grâce de mouvement aux deux bornes (NoteLocalSpeedChange). Clé : la classe du sort (une flamme vivante par personnage)
+	AGenCharacterBase* HasteCharacter = GetGenCharacterFromActorInfo();
+	if (HasteCharacter && HasteMultiplier > 1.f && HasteDuration > 0.f && GetWorld())
+	{
+		static const FName HasteReason(TEXT("LivingFlameHaste"));
+		const UClass* HasteSource = GetClass();
+		HasteCharacter->SetLocalMoveSpeedMultiplier(HasteSource, HasteReason, HasteMultiplier);
+		GetWorld()->GetTimerManager().SetTimer(HasteTimer, FTimerDelegate::CreateWeakLambda(HasteCharacter, [HasteCharacter, HasteSource]()
+		{
+			HasteCharacter->ClearLocalMoveSpeedMultiplier(HasteSource, HasteReason);
+		}), HasteDuration, false);
+		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[%s] %s : hâte x%.2f %.1fs"), HasteCharacter->HasAuthority() ? TEXT("SERVEUR") : TEXT("CLIENT"),
+			*GetName(), HasteMultiplier, HasteDuration);
+	}
+
 	const AActor* Avatar = GetAvatarActorFromActorInfo();
 	if (Avatar && Avatar->HasAuthority())
 	{
@@ -92,17 +111,7 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 		Params.KnockbackDistance = BurstKnockback;
 		SpawnGroundArea(BurstAreaClass, Avatar->GetActorLocation(), Params, UGenGE_Damage::StaticClass(), BurstDamage, 0.f);
 
-		// Hâte : appliquée par le serveur (hors fenêtre de prédiction), répliquée au propriétaire. Revue P3 T8-10, M3 :
-		// ~1 RTT de décalage chez le client (petites corrections du mouvement au début et à la fin). Point ouvert : la
-		// version par machine passerait par AGenCharacterBase::SetLocalMoveSpeedMultiplier (grâce de mouvement du serveur)
-		FGameplayEffectSpecHandle HasteSpec = MakeOutgoingGameplayEffectSpec(UGenGE_TimedMoveSpeed::StaticClass(), GetAbilityLevel());
-		if (HasteSpec.IsValid())
-		{
-			UGenGE_TimedMoveSpeed::SetMagnitudes(*HasteSpec.Data, HasteDuration, HasteMultiplier, FGameplayTagContainer());
-			ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, HasteSpec);
-		}
-
-		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[SERVEUR] %s : anneau (%.0f cm), hâte x%.2f %.1fs"), *GetName(), BurstRadius, HasteMultiplier, HasteDuration);
+		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[SERVEUR] %s : anneau (%.0f cm)"), *GetName(), BurstRadius);
 	}
 
 	FinishAbility();

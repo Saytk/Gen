@@ -153,10 +153,14 @@ bool FGenLivingFlameTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("anneau : la cible est repoussée (vers +X)"), IsPushedAlongX(F.Target));
 	TestTrue(TEXT("anneau : le lanceur n'est pas repoussé"), FMath::Abs(F.Caster->GetVelocity().X) < 1.f && F.Caster->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero());
 	TestEqual(TEXT("Foyer rempli à 5"), F.Attr(F.ASC, UGenAttributeSet::GetResourceAttribute()), 5.f);
-	TestEqual(TEXT("hâte +30 %"), F.Attr(F.ASC, UGenAttributeSet::GetMoveSpeedAttribute()), BaseSpeed * 1.3f, 0.5f);
+	// Hâte : multiplicateur local de cette machine (pas d'attribut répliqué), vitesse de marche +30 %
+	TestEqual(TEXT("hâte : multiplicateur local x1.3"), F.Caster->GetLocalMoveSpeedMultiplier(), 1.3f, 0.001f);
+	TestEqual(TEXT("hâte : l'attribut ne bouge pas"), F.Attr(F.ASC, UGenAttributeSet::GetMoveSpeedAttribute()), BaseSpeed, 0.5f);
+	TestEqual(TEXT("hâte +30 %"), F.Caster->GetCharacterMovement()->MaxWalkSpeed, BaseSpeed * 1.3f, 0.5f);
 
 	F.TestWorld.Advance(2.1f);
-	TestEqual(TEXT("hâte finie après 2 s"), F.Attr(F.ASC, UGenAttributeSet::GetMoveSpeedAttribute()), BaseSpeed, 0.5f);
+	TestEqual(TEXT("hâte finie après 2 s"), F.Caster->GetCharacterMovement()->MaxWalkSpeed, BaseSpeed, 0.5f);
+	TestEqual(TEXT("hâte finie : plus de multiplicateur local"), F.Caster->GetLocalMoveSpeedMultiplier(), 1.f, 0.001f);
 	TestTrue(TEXT("recharge encore là (16 s)"), F.ASC->HasMatchingGameplayTag(CurffeGameplayTags::Cooldown_Ability_LivingFlame));
 	TestFalse(TEXT("recharge : relance refusée"), F.ASC->TryActivateAbility(Handle));
 
