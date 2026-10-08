@@ -139,6 +139,9 @@ def spawn_wall(x, y, scale=(0.2, 2.0, 2.0), label=""):
         smc = actor.static_mesh_component
         smc.set_mobility(unreal.ComponentMobility.MOVABLE)
         smc.set_static_mesh(unreal.load_object(None, "/Engine/BasicShapes/Cube.Cube"))
+        # Sans réplication du composant, le client reçoit un acteur sans maillage ni collision : sa prédiction
+        # (repoussement) traverse le mur puis le serveur le corrige
+        smc.set_is_replicated(True)
         actor.set_replicates(True)
     return res
 
@@ -212,3 +215,264 @@ def time_dilation(value):
     server, clients = worlds()
     for w in [server] + clients:
         unreal.GameplayStatics.set_global_time_dilation(w, value)
+
+
+# --- Ordonnanceur d'actions minutées ------------------------------------------------------------
+# Un appel Python bloque le jeu : une séquence minutée passe par un rappel de tick. Temps réel.
+# Attendre la fin (schedule_running() faux) avant un reload du module ou un StopPIE.
+
+_sched = {"handle": None, "t0": 0.0, "steps": [], "trigger": None}
+
+
+def _sched_tick(delta_seconds):
+    import time
+    try:
+        if _sched["trigger"] is not None:
+            cond, steps = _sched["trigger"]
+            if not cond():
+                return
+            _sched["trigger"] = None
+            _sched["t0"] = time.monotonic()
+            _sched["steps"] = sorted(steps, key=lambda s: s[0])
+        now = time.monotonic() - _sched["t0"]
+        while _sched["steps"] and now >= _sched["steps"][0][0]:
+            _sched["steps"].pop(0)[1]()
+        if not _sched["steps"]:
+            schedule_stop()
+    except Exception as e:
+        unreal.log_warning("GENSCHED arrêté : %s" % e)
+        schedule_stop()
+
+
+def run_schedule(steps, when=None):
+    """steps : [(secondes réelles, fonction sans argument)]. when : condition sans argument ;
+    si fournie, le temps 0 est la première image où elle est vraie."""
+    import time
+    schedule_stop()
+    _sched["t0"] = time.monotonic()
+    _sched["steps"] = sorted(steps, key=lambda s: s[0])
+    _sched["trigger"] = (when, steps) if when else None
+    _sched["handle"] = unreal.register_slate_post_tick_callback(_sched_tick)
+
+
+def schedule_stop():
+    if _sched["handle"] is not None:
+        unreal.unregister_slate_post_tick_callback(_sched["handle"])
+        _sched["handle"] = None
+    _sched["steps"] = []
+    _sched["trigger"] = None
+
+
+def schedule_running():
+    return _sched["handle"] is not None
+
+
+def mark(text):
+    return lambda: unreal.log("GENMARK %s" % text)
+
+
+def net_emulation(lag_ms, variance_ms=0, loss_pct=0, client_indices=None, server=True):
+    """NetEmulation sur les net drivers des mondes choisis (tous les clients par défaut)."""
+    srv, clients = worlds()
+    targets = ([srv] if server else []) + [clients[i - 1] for i in (client_indices or range(1, len(clients) + 1))]
+    for w in targets:
+        for c in ("NetEmulation.PktLag %d" % lag_ms, "NetEmulation.PktLagVariance %d" % variance_ms,
+                  "NetEmulation.PktLoss %d" % loss_pct):
+            unreal.SystemLibrary.execute_console_command(w, c)
+
+
+def ping_ms(client_index):
+    return server_pawn_for(client_index).get_editor_property("player_state").get_ping_in_milliseconds()
+
+
+# --- Barre de sorts (UMG, monde client) ---------------------------------------------------------
+
+SLOT_NAMES = ("SlotPrimary", "SlotSecondary", "SlotMobility", "Slot1", "Slot2", "Slot3", "SlotUltimate")
+
+
+def client_slots(client_index):
+    """{nom : UGenAbilitySlot} du WBP_AbilityBar local du client client_index."""
+    pc = client_controller(client_index)
+    found = unreal.WidgetLibrary.get_all_widgets_of_class(pc, unreal.GenAbilitySlot, False)
+    return {s.get_name(): s for s in found}
+
+
+def world_slot_count(world):
+    return len(unreal.WidgetLibrary.get_all_widgets_of_class(world, unreal.GenAbilitySlot, False))
+
+
+def _sub_widget(slot, name):
+    for tree in ("WidgetTree_0", "WidgetTree"):
+        w = unreal.find_object(None, "%s.%s.%s" % (slot.get_path_name(), tree, name))
+        if w is not None:
+            return w
+    return None
+
+
+def _brush_object(image):
+    return image.get_editor_property("brush").get_editor_property("resource_object") if image else None
+
+
+def _scalar(image, param):
+    mid = _brush_object(image)
+    return mid.get_scalar_parameter_value(param) if isinstance(mid, unreal.MaterialInstanceDynamic) else None
+
+
+def _shown(widget):
+    vis = unreal.SlateVisibility
+    return widget is not None and widget.get_visibility() in (vis.VISIBLE, vis.HIT_TEST_INVISIBLE, vis.SELF_HIT_TEST_INVISIBLE)
+
+
+def slot_info(slot):
+    """État lisible d'un emplacement : état, chiffre, libellé, glyphe, icône, paramètres des matériaux."""
+    icon_mid = _brush_object(_sub_widget(slot, "IconImage"))
+    icon = icon_mid.get_texture_parameter_value("Icon") if isinstance(icon_mid, unreal.MaterialInstanceDynamic) else None
+    key_text = _sub_widget(slot, "KeyText")
+    glyph = _sub_widget(slot, "KeyGlyphImage")
+    sweep = _sub_widget(slot, "SweepImage")
+    arc = _sub_widget(slot, "ArcImage")
+    glyph_tex = _brush_object(glyph) if _shown(glyph) else None
+    return {
+        "state": slot.get_state().name,
+        "cd": slot.get_cooldown_text(),
+        "key": str(key_text.get_text()) if _shown(key_text) else "",
+        "glyph": glyph_tex.get_name() if glyph_tex else "",
+        "icon": (icon.get_name() if icon else "") if _shown(_sub_widget(slot, "IconImage")) else "(hidden)",
+        "lock": _shown(_sub_widget(slot, "LockImage")),
+        "progress": _scalar(sweep, "Progress"),
+        "rim_flash": _scalar(sweep, "RimFlash"),
+        "funded": _scalar(arc, "Funded") if slot.get_name() == "SlotUltimate" else None,
+    }
+
+
+def layout_report(client_index):
+    """Barre de sorts du client : viewport, échelle DPI et rectangles en pixels, contrôles §3.3 (marge de 32 px,
+    zone centrale x/y 20-80 %, emplacements sans chevauchement ni débordement).
+    FGeometry ne passe pas en Python (champs non UPROPERTY) : les rectangles sont déduits de la structure de
+    WBP_HUDLayout (SafeZone plein écran, barre centrée en bas, marge = Padding.Bottom de la barre) et des tailles
+    souhaitées des widgets, mesurées dans l'image."""
+    pc = client_controller(client_index)
+    vp = unreal.WidgetLayoutLibrary.get_viewport_size(pc)
+    s = unreal.WidgetLayoutLibrary.get_viewport_scale(pc)
+    bar = unreal.WidgetLibrary.get_all_widgets_of_class(pc, unreal.GenAbilityBar, False)[0]
+    size = bar.get_desired_size()
+    margin = bar.get_editor_property("padding").get_editor_property("bottom")
+    vw, vh = vp.x / s, vp.y / s
+    x0, y0 = (vw - size.x) / 2, vh - size.y
+    px = lambda r: tuple(round(v * s, 1) for v in r)
+    slots = client_slots(client_index)
+    rects, x = {}, x0
+    gap = 12.0
+    for i, n in enumerate(SLOT_NAMES):
+        d = slots[n].get_desired_size()
+        rects[n] = px((x, y0, x + d.x, y0 + d.y))
+        x += d.x + (gap if i < len(SLOT_NAMES) - 1 else 0)
+    bar_px = px((x0, y0, x0 + size.x, vh - margin))
+    order = [rects[n] for n in SLOT_NAMES]
+    return {
+        "viewport": (vp.x, vp.y), "dpi_scale": round(s, 3), "bar_desired": (size.x, size.y), "bottom_margin_layout": margin,
+        "bar_px": bar_px, "row_width_layout": round(x - x0, 1),
+        "inside_margin": bar_px[0] >= 32 * s and bar_px[2] <= vp.x - 32 * s and bar_px[3] <= vp.y - 32 * s + 0.5,
+        "clear_zone_bottom_px": round(0.8 * vp.y, 1), "outside_clear_zone": bar_px[1] >= 0.8 * vp.y,
+        "slots_overlap": any(order[i][2] > order[i + 1][0] for i in range(len(order) - 1)),
+        "slots_clipped": any(r[0] < 0 or r[1] < 0 or r[2] > vp.x or r[3] > vp.y for r in order),
+        "slots_px": rects,
+    }
+
+
+def bar_info(client_index):
+    slots = client_slots(client_index)
+    return {n: slot_info(slots[n]) for n in SLOT_NAMES if n in slots}
+
+
+# --- Surveillance de la barre et des barres de cast, image par image --------------------------
+# Lignes "GENSLOT" (changements d'un emplacement), "GENSRVCD" (tag de recharge sur le serveur) et
+# "GENCAST" (barre de cast vue par un monde), en temps réel rt. Chemins seulement, aucune référence
+# PIE gardée. Toujours appeler stop_all_watches() avant StopPIE.
+
+_ui = {"handle": None, "slots": [], "casts": [], "server_cd": [], "last": {}}
+
+
+def _cast_snapshot(p):
+    fill = p.get_cast_progress()
+    if fill < 0:
+        return ("none",)
+    ci = p.get_editor_property("cast_info")
+    slots_n = ci.get_editor_property("feed_slots")
+    ended = ci.get_editor_property("feed_end_time") > 0
+    live = ci.get_editor_property("fed_count") if ended else p.get_fed_resource()
+    counter = max(0, min(live, slots_n)) if slots_n else 0
+    ticks = (ci.get_editor_property("fed_count") if ended else slots_n) if slots_n else 0
+    ab = ci.get_editor_property("ability")
+    return (ab.get_name() if ab else "?", round(ci.get_editor_property("start_time"), 3), slots_n,
+            ended, counter, ticks, round(fill, 3), round(p.get_resource(), 1))
+
+
+def _ui_tick(delta_seconds):
+    import time
+    try:
+        rt = time.monotonic()
+        for label, path in _ui["slots"]:
+            s = unreal.find_object(None, path)
+            if s is None:
+                continue
+            i = slot_info(s)
+            prog = None if i["progress"] is None else round(i["progress"], 1)
+            flash = None if i["rim_flash"] is None else round(i["rim_flash"], 2)
+            snap = (i["state"], i["cd"], i["key"], i["glyph"], i["icon"], i["lock"], prog, flash, i["funded"])
+            if _ui["last"].get(label) != snap:
+                _ui["last"][label] = snap
+                wt = unreal.GameplayStatics.get_time_seconds(s)
+                unreal.log("GENSLOT rt=%.3f wt=%.3f %s state=%s cd='%s' key='%s' glyph=%s icon=%s lock=%s prog=%s flash=%s funded=%s" % ((rt, wt, label) + snap))
+        for label, path, tag_name in _ui["server_cd"]:
+            a = unreal.find_object(None, path)
+            if a is None:
+                continue
+            asc = unreal.AbilitySystemLibrary.get_ability_system_component(a)
+            has = asc.has_matching_gameplay_tag(unreal.GameplayTagService.request_tag(tag_name))
+            if _ui["last"].get(label) != has:
+                _ui["last"][label] = has
+                unreal.log("GENSRVCD rt=%.3f %s %s=%s" % (rt, label, tag_name, has))
+        for label, path in _ui["casts"]:
+            p = unreal.find_object(None, path)
+            if p is None:
+                continue
+            snap = _cast_snapshot(p)
+            if _ui["last"].get(label) != snap:
+                _ui["last"][label] = snap
+                if snap[0] == "none":
+                    unreal.log("GENCAST rt=%.3f %s none" % (rt, label))
+                else:
+                    unreal.log("GENCAST rt=%.3f %s ab=%s start=%s slots=%s ended=%s counter=%s ticks=%s fill=%s fl=%s" % ((rt, label) + snap))
+    except Exception as e:
+        unreal.log_warning("GENSLOT arrêté : %s" % e)
+        ui_watch_stop()
+
+
+def ui_watch_start(slot_clients=(1,), slot_names=SLOT_NAMES, casts=(), server_cd=()):
+    """slot_clients : clients dont on suit la barre. casts : [(label, pion)] dont on suit la barre de cast.
+    server_cd : [(label, pion serveur, "Cooldown.Ability.X")] présence du tag de recharge sur le serveur."""
+    ui_watch_stop()
+    _ui["slots"] = []
+    for c in slot_clients:
+        slots = client_slots(c)
+        _ui["slots"] += [("cl%d.%s" % (c, n), slots[n].get_path_name()) for n in slot_names if n in slots]
+    _ui["casts"] = [(label, p.get_path_name()) for label, p in casts]
+    _ui["server_cd"] = [(label, p.get_path_name(), tag) for label, p, tag in server_cd]
+    _ui["last"] = {}
+    _ui["handle"] = unreal.register_slate_post_tick_callback(_ui_tick)
+    return [l for l, _ in _ui["slots"]] + [l for l, _ in _ui["casts"]] + [l for l, _, _ in _ui["server_cd"]]
+
+
+def ui_watch_stop():
+    if _ui["handle"] is not None:
+        unreal.unregister_slate_post_tick_callback(_ui["handle"])
+        _ui["handle"] = None
+    _ui["last"] = {}
+
+
+def stop_all_watches():
+    """À appeler avant StopPIE ou un reload du module."""
+    schedule_stop()
+    ui_watch_stop()
+    watch_stop()
