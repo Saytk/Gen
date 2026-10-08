@@ -310,12 +310,24 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	bHiddenForDeath = false;
 
 	const double Now = GetNow();
-	const int32 FlamesNow = GetFlamesNow();
+	int32 FlamesNow = GetFlamesNow();
 	const int32 Fed = Character->GetFedResource();
 	// Un compte reçu sans seuil (personnage devenu pertinent en plein nourrissage) : ses flammes ne volent pas
 	FlownCount = Fed;
 	// Flammes illimitées (Combustion, Curffe-Visuals.md §5) : une flamme nourrie part et son emplacement se rallume aussitôt
 	const int32 ShownFed = IsUnlimited() ? 0 : Fed;
+
+	// Revue P3 T8-10, I2 : la flamme vivante remplit le Foyer dès son départ (prédit), mais les flammes ne reviennent
+	// qu'à la fin de la forme (Curffe-Visuals §3.6, convergence) : pendant State.Curffe.LivingFlame, pas de hausse.
+	// Le propriétaire garde le tag ~1 RTT après SA fin de forme (revue P3 T8-10, M1) : chez lui, la forme finit avec
+	// son verrou de lancement local (State.CastLocked), pour que les flammes reviennent quand il peut les nourrir
+	const UAbilitySystemComponent* FormASC = Character->GetAbilitySystemComponent();
+	const bool bFormShown = LivingFlameTag.IsValid() && FormASC && FormASC->HasMatchingGameplayTag(LivingFlameTag)
+		&& (!Character->IsLocallyControlled() || FormASC->HasMatchingGameplayTag(GenGameplayTags::State_CastLocked));
+	if (bFormShown)
+	{
+		FlamesNow = FMath::Min(FlamesNow, VisibleFlames + ShownFed);
+	}
 
 	// Vols : fin, et emplacements tenus éteints jusqu'à l'arrivée d'une flamme qui revient
 	uint8 HeldDim = 0;

@@ -85,6 +85,17 @@ public:
 	 */
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
+	/**
+	 * Revue P3 T8-10, I1 : serveur, activation d'un client distant. Un tag requis (ActivationRequiredTags) absent mais
+	 * retiré il y a moins de GenFeeding::ServerTagGrace compte comme présent : le client garde un état accordé par le
+	 * serveur ~1 RTT de plus que lui (ex : dernier Pyroblast de l'embrasement). Rien d'autre n'est assoupli (tags
+	 * bloquants, tags de source et de cible). Les tags requis sont suivis par l'ASC (RegisterGraceTags, à l'octroi).
+	 */
+	virtual bool DoesAbilitySatisfyTagRequirements(const UAbilitySystemComponent& AbilitySystemComponent, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
+	/** Tags requis pour l'activation (lus par l'ASC pour en suivre les retraits, RegisterGraceTags). */
+	const FGameplayTagContainer& GetActivationRequiredTagsForGrace() const { return ActivationRequiredTags; }
+
 	/** Refuse aussi sous EnergyCost (GenEnergy::CanAfford, même règle que la barre de sorts). */
 	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	/** Dépense EnergyCost (UGenGE_Gain négatif), dans la fenêtre de prédiction du commit. */

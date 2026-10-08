@@ -256,7 +256,7 @@ Contrast notes:
 | `status.danger` | `#FF8FB0` | (1.000, 0.275, 0.434) | 1.0 | Self low-HP outline and HP number, interrupt flash, damage-taken numbers, errors. Rose, OKLCH hue 2°: 46° from the enemy vermillion, 62° from poison/silence, 1.81:1 lighter than enemy. 5.2:1 on `bg.panel` at α 0.70 over `ref.floorMax`, 8.6:1 on track, 9.8:1 on black (so it also serves High contrast). Never shown without a form cue (pulse, glyph, "−" prefix or the interrupt snap) |
 | `status.success` | = `heal` | — | 1.0 | Confirmations |
 | `cooldown.overlay` | `#110C09` | (0.006, 0.004, 0.003) | **0.75** | Radial cooldown sweep. The swept region's luminance is ≤ 35% of the unswept region (7–16% measured) |
-| `cooldown.noEnergy` | `#2E4A78` | (0.027, 0.068, 0.188) | 0.45 | "Not enough energy" wash |
+| `cooldown.noEnergy` | `#2E4A78` | (0.027, 0.068, 0.188) | 0.45 | "Not enough energy" wash. The C++ default and `DA_UIPalette` read it from `GenUITokens::CooldownNoEnergyHex` / `CooldownNoEnergyAlpha` (`GenUIRules.h`); `Gen.UI.EnergySlot` checks both. Change the token there too |
 | `cooldown.locked` | `#110C09` with a 45° hatch | (0.006, 0.004, 0.003) | 0.70 | Silenced or stunned slot |
 | `world.boundary` | = `text.primary` `#F3DEC9` | (0.896, 0.730, 0.584) | 0.90 | Sudden-death or shrinking-zone edge line, drawn **dashed** (8 px dash, 8 px gap) so a long near-white line never reads as the off-white self ring. Neutral, never "mine". Round-flow visuals are still open (Art Bible §12 Q19) |
 | `pickup.centreOrb` | = `energy.charging` `#FFC233`, with a bolt-and-plus glyph | — | — | Centre orb UI marks (spawn timer ring, icon): +20 energy and a small heal for the team that lands the last hit (CharacterGuidelines §4.2). Gen has no health orb |
@@ -534,7 +534,9 @@ x=0                                                                   x=1920
 | **Ultimate ready** | Ring goes from α 0.5 to `energy.full` at α 1.0. The cost arc is complete. **No glow** | Ring opacity and the complete arc | One 300 ms pulse on becoming ready, plus a sound. **No idle loop** |
 
 **Ready flash:**
-- When a cooldown ends, the rim brightens to `flash.white` and eases out over **200 ms**, paired with a soft UI tick.
+- When a slot becomes castable, the rim brightens to `flash.white` and eases out over **200 ms**, paired with a soft UI tick.
+  - It fires on the change **into Ready** from Cooldown or Not enough energy: a cooldown that ends with enough energy, or energy that reaches the cost.
+  - It never fires when a cooldown ends into Not enough energy, or when a lock (CC) lifts. A late cooldown event on a slot that is already Ready doesn't fire it again.
 - No scale pop: drive it with a material parameter, not a render transform.
 - The flash may lead the real ready time by 0–100 ms (default **0 ms**, tunable). The ASC remains the authority.
 
@@ -1601,3 +1603,10 @@ Copy this into the PR description and tick each item.
 - https://answers.unrealengine.com/questions/881739/view.html
 - https://answers.unrealengine.com/questions/748978/view.html
 - https://forums.unrealengine.com/t/dedicated-server-trying-to-read-property-hud/422319
+
+## 11. Change log
+
+| Date | Section | Change |
+|---|---|---|
+| 2026-10-08 | §4.1 Ready flash | Clarified: the flash fires on the change into Ready from Cooldown or Not enough energy, never from Cooldown into Not enough energy (review of Plan 3 Tasks 8–10, M4) |
+| 2026-10-08 | §2.5 `cooldown.noEnergy` | Noted the shared C++ constant and the test that keeps the C++ default and `DA_UIPalette` on the token (review of Plan 3 Tasks 8–10, M9) |

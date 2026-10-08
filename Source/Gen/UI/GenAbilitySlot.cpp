@@ -391,10 +391,7 @@ void UGenAbilitySlot::RefreshCooldown()
 		Remaining = GenUIRules::ClampCooldownRemaining(Remaining, Duration);
 	}
 
-	// CooldownEndTime n'est remis à zéro qu'à la fin d'une recharge et dans Unbind : un événement de tag
-	// arrivant après la fin locale, ou un rebind, ne peut donc pas déclencher un second flash
 	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-	const bool bWasCooling = CooldownEndTime > 0.f;
 	CooldownEndTime = Remaining > 0.f ? Now + Remaining : 0.f;
 	CooldownDuration = Duration;
 
@@ -402,12 +399,9 @@ void UGenAbilitySlot::RefreshCooldown()
 	{
 		StartRefreshTimer();
 	}
-	else if (bWasCooling)
-	{
-		// Fin de recharge : flash du bord (§4.1 Ready flash)
-		StartFlash(GetUIMetrics()->ReadyFlashDuration);
-	}
 
+	// Fin de recharge : le flash « prêt » part dans RefreshVisuals, au passage à l'état prêt seulement (§4.1, revue P3
+	// T8-10, M4) : un événement de tag en retard (prêt -> prêt) ou une recharge qui finit sans assez d'énergie n'en fait pas
 	RefreshVisuals();
 }
 
@@ -445,6 +439,12 @@ void UGenAbilitySlot::TickRefresh()
 	RefreshVisuals();
 }
 
+bool UGenAbilitySlot::IsFlashing() const
+{
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+	return FlashStartTime >= 0.f && Now - FlashStartTime < FlashDuration;
+}
+
 void UGenAbilitySlot::StartFlash(float Duration)
 {
 	FlashStartTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
@@ -459,7 +459,13 @@ void UGenAbilitySlot::RefreshVisuals()
 	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 	const float Remaining = FMath::Max(CooldownEndTime - Now, 0.f);
 
+	const EGenAbilitySlotState OldState = State;
 	State = GenUIRules::ResolveSlotState(AbilityCDO.IsValid(), bLocked, Remaining, CanAffordAbility());
+	if (GenUIRules::IsReadyFlash(OldState, State))
+	{
+		// Flash « prêt » (§4.1) : l'emplacement devient lançable (fin de recharge, ou assez d'énergie)
+		StartFlash(Metrics->ReadyFlashDuration);
+	}
 	CooldownString = State == EGenAbilitySlotState::Cooldown ? GenUIRules::FormatCooldown(Remaining, CooldownDuration, Metrics->CooldownHideBelowTotal) : FString();
 
 	IconImage->SetVisibility(State == EGenAbilitySlotState::Empty ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
@@ -568,12 +574,23 @@ bool UGenAbilitySlot::UpdateCostArc()
 	{
 		ArcImage->SetVisibility(Segments > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
+	ArcSegments = 0;
+	ArcSegmentSlots = 0;
+	ArcFunded = 0;
 	if (!ASC.IsValid() || Segments == 0)
 	{
 		return false;
 	}
 
-	const int32 Funded = FMath::Min(GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), MaxEnergy, Metrics->UltimateSegments), Segments);
+	// Revue P3 T8-10, M5 : un sort à coût suit la règle de CheckCost (GenEnergy::CanAfford sur son vrai coût) ; une
+	// ultime gratuite garde les tranches de MaxEnergy
+	const float Energy = ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute());
+	const int32 Funded = Cost > 0.f
+		? GenUIRules::CostFundedSegments(Energy, Cost, Segments)
+		: FMath::Min(GenUIRules::FundedSegments(Energy, MaxEnergy, Metrics->UltimateSegments), Segments);
+	ArcSegments = Segments;
+	ArcSegmentSlots = Metrics->UltimateSegments;
+	ArcFunded = Funded;
 	const bool bFull = Funded == Segments;
 	// energy.full et son contour : seulement l'arc complet de l'ultime (§4.1)
 	const bool bUltimateFull = bIsUltimate && bFull;

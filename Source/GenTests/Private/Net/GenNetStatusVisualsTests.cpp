@@ -5,10 +5,13 @@
 
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "Character/GenStatusVisualsComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "Materials/MaterialInterface.h"
 #include "Net/GenNetTestHelpers.h"
 #include "Player/GenPlayerState.h"
 
@@ -53,6 +56,34 @@ NETWORK_TEST_CLASS(StatusVisuals, "Gen.Net")
 		FGenStatusVisual Stunned;
 		Stunned.Tag = StunnedTag();
 		return { Stunned };
+	}
+
+	/** Matériau du corps imposé par l'état (n'importe lequel : seule la substitution compte ici). */
+	static UMaterialInterface* LoadSwapMaterial()
+	{
+		return LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial"));
+	}
+
+	static TArray<FGenStatusVisual> MakeSwapConfig()
+	{
+		FGenStatusVisual Stunned;
+		Stunned.Tag = StunnedTag();
+		Stunned.OwnerMeshMaterial = LoadSwapMaterial();
+		return { Stunned };
+	}
+
+	static USkeletalMeshComponent* FindBody(const AGenPlayerState* PlayerState)
+	{
+		const ACharacter* Character = PlayerState ? PlayerState->GetPawn<ACharacter>() : nullptr;
+		return Character ? Character->GetMesh() : nullptr;
+	}
+
+	/** Relation écrite dans la Custom Primitive Data du corps (-1 si absente). */
+	static float GetBodyRelation(const AGenPlayerState* PlayerState)
+	{
+		const USkeletalMeshComponent* Body = FindBody(PlayerState);
+		const TArray<float>& Data = Body ? Body->GetCustomPrimitiveData().Data : TArray<float>();
+		return Data.IsValidIndex(GenOwnerMeshRelationDataIndex) ? Data[GenOwnerMeshRelationDataIndex] : -1.f;
 	}
 
 	static UGenStatusVisualsComponent* FindVisuals(const AGenPlayerState* PlayerState)
@@ -122,6 +153,69 @@ NETWORK_TEST_CLASS(StatusVisuals, "Gen.Net")
 				return Visuals && Visuals->IsValid() && !(*Visuals)->IsStatusShown(StunnedTag());
 			}, DefaultWait());
 	}
+
+	/**
+	 * Corps fantôme (M_VFX_GhostDither) : la relation au joueur local part dans la Custom Primitive Data 0 du corps
+	 * quand le matériau est imposé. Le joueur ciblé (client 0, équipe 0) se voit « soi » (1), le client 1 (équipe 1)
+	 * le voit « ennemi » (3). Le serveur dédié n'écrit rien ; à la fin de l'état le corps retrouve son matériau.
+	 */
+	TEST_METHOD(OwnerMeshSwap_WritesViewerRelation_SelfOnOwner_EnemyOnOtherClient)
+	{
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : cible = joueur du client 0"), [this](FBasePIENetworkComponentState& Server)
+			{
+				ASSERT_THAT(IsNotNull(LoadSwapMaterial(), TEXT("Matériau de substitution")));
+				const AGenPlayerState* PS = GetServerController(Server, 0)->GetPlayerState<AGenPlayerState>();
+				ASSERT_THAT(IsNotNull(PS));
+				TargetPlayerId = PS->GetPlayerId();
+			})
+			.UntilClients(TEXT("Clients : formes d'état (avec substitution du corps) branchées sur le joueur ciblé"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenPlayerState* PS = FindPlayerStateById(Client.World, TargetPlayerId);
+				UAbilitySystemComponent* ASC = GetASC(PS);
+				UGenStatusVisualsComponent* Visuals = FindVisuals(PS);
+				if (!ASC || !Visuals || ASC->GetAvatarActor() != Visuals->GetOwner())
+				{
+					return false;
+				}
+				Visuals->Bind(ASC, MakeSwapConfig());
+				ClientVisuals.Add(Client.ClientIndex, Visuals);
+				return true;
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : étourdit le joueur ciblé"), [this](FBasePIENetworkComponentState& Server)
+			{
+				const AGenPlayerState* PS = FindPlayerStateById(Server.World, TargetPlayerId);
+				UGenAbilitySystemComponent* ASC = Cast<UGenAbilitySystemComponent>(GetASC(PS));
+				ASSERT_THAT(IsNotNull(ASC, TEXT("ASC Gen attendu")));
+				ASSERT_THAT(IsTrue(ASC->ApplyHardCC(StunnedTag(), StunDuration, nullptr).IsValid()));
+
+				UGenStatusVisualsComponent* Visuals = FindVisuals(PS);
+				ASSERT_THAT(IsNotNull(Visuals));
+				Visuals->Bind(ASC, MakeSwapConfig());
+				Visuals->RefreshViewerRelation();
+				ASSERT_THAT(IsNear(-1.f, GetBodyRelation(PS), 0.001f, TEXT("Serveur dédié : rien d'écrit sur le corps")));
+				const USkeletalMeshComponent* Body = FindBody(PS);
+				ASSERT_THAT(IsTrue(Body && Body->GetNumMaterials() > 0 && Body->GetMaterial(0) != LoadSwapMaterial(), TEXT("Serveur dédié : corps inchangé")));
+			})
+			.UntilClients(TEXT("Clients : corps substitué avec le tag répliqué"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const USkeletalMeshComponent* Body = FindBody(FindPlayerStateById(Client.World, TargetPlayerId));
+				return Body && Body->GetNumMaterials() > 0 && Body->GetMaterial(0) == LoadSwapMaterial();
+			}, DefaultWait())
+			.ThenClients(TEXT("Clients : relation au joueur local dans la Custom Primitive Data 0"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const float Expected = Client.ClientIndex == 0 ? 1.f : 3.f;
+				ASSERT_THAT(IsNear(Expected, GetBodyRelation(FindPlayerStateById(Client.World, TargetPlayerId)), 0.001f, TEXT("Soi chez le joueur ciblé, ennemi chez l'autre client")));
+			})
+			.UntilClients(TEXT("Clients : le corps retrouve son matériau à la fin de l'état"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const USkeletalMeshComponent* Body = FindBody(FindPlayerStateById(Client.World, TargetPlayerId));
+				return Body && Body->GetNumMaterials() > 0 && Body->GetMaterial(0) != LoadSwapMaterial();
+			}, DefaultWait());
+	}
 };
+
 
 #endif // ENABLE_PIE_NETWORK_TEST

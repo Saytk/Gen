@@ -89,6 +89,53 @@ bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Ha
 	return true;
 }
 
+bool UGenGameplayAbility::DoesAbilitySatisfyTagRequirements(const UAbilitySystemComponent& AbilitySystemComponent, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	FGameplayTagContainer Relevant;
+	if (Super::DoesAbilitySatisfyTagRequirements(AbilitySystemComponent, SourceTags, TargetTags, &Relevant))
+	{
+		return true;
+	}
+
+	// Grâce seulement sur le serveur, pour un client distant, quand SEULS des tags requis de l'activation manquent
+	const UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(&AbilitySystemComponent);
+	const FGameplayAbilityActorInfo* Info = AbilitySystemComponent.AbilityActorInfo.Get();
+	const bool bRemoteOnServer = GenASC && Info && AbilitySystemComponent.IsOwnerActorAuthoritative() && !Info->IsLocallyControlled();
+	// Blocages recalculés ici (le tag d'échec global ActivateFailTagsBlockedTag peut ne pas être configuré) : un sort
+	// bloqué n'a jamais de grâce
+	const FGameplayTagContainer& Owned = AbilitySystemComponent.GetOwnedGameplayTags();
+	const bool bBlocked = AbilitySystemComponent.AreAbilityTagsBlocked(GetAssetTags())
+		|| GetAssetTags().HasAny(AbilitySystemComponent.GetBlockedAbilityTags())
+		|| Owned.HasAny(ActivationBlockedTags)
+		|| (SourceTags && SourceTags->HasAny(SourceBlockedTags))
+		|| (TargetTags && TargetTags->HasAny(TargetBlockedTags));
+	const bool bOtherRequirementMissing = (SourceTags && !SourceRequiredTags.IsEmpty() && !SourceTags->HasAll(SourceRequiredTags))
+		|| (TargetTags && !TargetRequiredTags.IsEmpty() && !TargetTags->HasAll(TargetRequiredTags));
+	if (bRemoteOnServer && !bBlocked && !bOtherRequirementMissing && GenASC->GetWorld())
+	{
+		const double Now = GenASC->GetWorld()->GetTimeSeconds();
+		bool bAllInGrace = true;
+		for (const FGameplayTag& Required : ActivationRequiredTags)
+		{
+			if (!Owned.HasTag(Required) && !GenASC->WasGraceTagChangedNear(Required, /*bAdded*/ false, Now))
+			{
+				bAllInGrace = false;
+				break;
+			}
+		}
+		if (bAllInGrace)
+		{
+			return true;
+		}
+	}
+
+	if (OptionalRelevantTags)
+	{
+		OptionalRelevantTags->AppendTags(Relevant);
+	}
+	return false;
+}
+
 bool UGenGameplayAbility::CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags) const
 {
 	if (!Super::CheckCost(Handle, ActorInfo, OptionalRelevantTags))

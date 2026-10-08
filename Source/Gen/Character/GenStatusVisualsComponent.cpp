@@ -1,9 +1,13 @@
 #include "Character/GenStatusVisualsComponent.h"
 
+#include "AbilitySystem/GenAreaRules.h"
+#include "AbilitySystem/GenWorldQueries.h"
 #include "AbilitySystemComponent.h"
+#include "Character/GenCharacterBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
@@ -312,8 +316,14 @@ void UGenStatusVisualsComponent::RefreshOwnerMesh()
 
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
-	if (!Mesh || Override == AppliedOwnerMaterial)
+	if (!Mesh)
 	{
+		return;
+	}
+	if (Override == AppliedOwnerMaterial)
+	{
+		// Même matériau (ex : Bind rappelé à l'arrivée du PlayerState) : la relation, elle, a pu changer
+		RefreshViewerRelation();
 		return;
 	}
 
@@ -337,5 +347,41 @@ void UGenStatusVisualsComponent::RefreshOwnerMesh()
 	if (!Override)
 	{
 		OriginalOwnerMaterials.Reset();
+	}
+	RefreshViewerRelation();
+}
+
+void UGenStatusVisualsComponent::RefreshViewerRelation()
+{
+	// Le matériau imposé (M_VFX_GhostDither) lit la relation ; les matériaux d'origine ne la lisent pas
+	if (!AppliedOwnerMaterial || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetOwner());
+	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+	if (!Mesh)
+	{
+		return;
+	}
+
+	const EGenViewerRelation Relation = GenWorldQueries::GetLocalViewerRelation(GetWorld(), Character, Character->GetTeamId());
+	Mesh->SetCustomPrimitiveDataFloat(GenOwnerMeshRelationDataIndex, static_cast<float>(Relation));
+}
+
+void UGenStatusVisualsComponent::RefreshAllViewerRelations(const UWorld* World)
+{
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	for (TActorIterator<AGenCharacterBase> It(World); It; ++It)
+	{
+		if (UGenStatusVisualsComponent* Visuals = It->FindComponentByClass<UGenStatusVisualsComponent>())
+		{
+			Visuals->RefreshViewerRelation();
+		}
 	}
 }

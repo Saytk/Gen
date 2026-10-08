@@ -158,14 +158,8 @@ EGenViewerRelation AGenGroundArea::GetLocalViewerRelation() const
 		return EGenViewerRelation::Self;
 	}
 
-	// Équipe du joueur local lue sur son PlayerState : elle reste juste quand il est mort (pas de pion)
-	// ou entre deux possessions. Même chose pour la source : comparée par PlayerState, pas par pion.
-	const APlayerController* LocalController = GetWorld()->GetFirstPlayerController();
-	const AGenPlayerState* ViewerState = LocalController ? LocalController->GetPlayerState<AGenPlayerState>() : nullptr;
-	const APawn* SourcePawn = GetInstigator();
-	const bool bViewerIsSource = ViewerState && SourcePawn && SourcePawn->GetPlayerState() == ViewerState;
-	const uint8 ViewerTeam = ViewerState ? ViewerState->GetTeamId() : GenNoTeam;
-	return GenAreaRules::GetViewerRelation(bViewerIsSource, ViewerTeam, SourceTeam, GenNoTeam);
+	// Comparé par PlayerState : juste quand le joueur local est mort ou entre deux possessions
+	return GenWorldQueries::GetLocalViewerRelation(GetWorld(), GetInstigator(), SourceTeam);
 }
 
 void AGenGroundArea::SetTelegraphRadius(float InRadius)

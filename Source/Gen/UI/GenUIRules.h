@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "InputCoreTypes.h"
+#include "AbilitySystem/GenEnergy.h"
 #include "GenUIRules.generated.h"
 
 /** État visuel d'un emplacement de sort (UI_Guidelines §4.1). */
@@ -15,6 +16,17 @@ enum class EGenAbilitySlotState : uint8
 	/** Pas assez d'énergie pour le coût du sort (R, F) : voile cooldown.noEnergy, icône à 55 % (§4.1). */
 	NoEnergy
 };
+
+/**
+ * Jetons de UI_Guidelines §2 recopiés en C++ (valeurs par défaut des data assets) : UNE constante par jeton, que le
+ * défaut C++ et les tests lisent. DA_UIPalette reste la valeur en jeu.
+ */
+namespace GenUITokens
+{
+	/** cooldown.noEnergy (§2.5) : voile « pas assez d'énergie ». */
+	inline const TCHAR* const CooldownNoEnergyHex = TEXT("#2E4A78");
+	inline constexpr float CooldownNoEnergyAlpha = 0.45f;
+}
 
 /** Règles pures de l'interface, testées hors monde. */
 namespace GenUIRules
@@ -198,6 +210,33 @@ namespace GenUIRules
 			return 0;
 		}
 		return FMath::Clamp(FMath::FloorToInt32(Energy / (MaxEnergy / Segments) + KINDA_SMALL_NUMBER), 0, Segments);
+	}
+
+	/**
+	 * Revue P3 T8-10, M5 : segments financés de l'arc d'un sort qui coûte Cost en Segments segments. Même règle que
+	 * CheckCost : tous financés si et seulement si GenEnergy::CanAfford ; sinon un segment par Cost/Segments d'énergie,
+	 * au plus Segments - 1 (jamais un arc plein sur un sort qu'on ne peut pas lancer). Sans coût : FundedSegments.
+	 */
+	inline int32 CostFundedSegments(float Energy, float Cost, int32 Segments)
+	{
+		if (Segments <= 0 || Cost <= 0.f)
+		{
+			return 0;
+		}
+		if (GenEnergy::CanAfford(Energy, Cost))
+		{
+			return Segments;
+		}
+		return FMath::Clamp(FMath::FloorToInt32(Energy / (Cost / Segments)), 0, Segments - 1);
+	}
+
+	/**
+	 * Revue P3 T8-10, M4 (UI_Guidelines §4.1) : le flash « prêt » part quand l'emplacement DEVIENT lançable depuis une
+	 * recharge ou un manque d'énergie, jamais d'une recharge vers « pas assez d'énergie », ni à la levée d'un contrôle.
+	 */
+	inline bool IsReadyFlash(EGenAbilitySlotState Old, EGenAbilitySlotState New)
+	{
+		return New == EGenAbilitySlotState::Ready && (Old == EGenAbilitySlotState::Cooldown || Old == EGenAbilitySlotState::NoEnergy);
 	}
 
 	/** Segments d'arc d'un coût (§4.1, un segment par tranche de Max/Segments) : R (25) = 1, F (100) = 4, sort gratuit = 0. */

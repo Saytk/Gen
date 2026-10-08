@@ -2,6 +2,7 @@
 
 #include "AbilitySystem/Abilities/GenGA_Leap.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
+#include "AbilitySystem/GenWorldQueries.h"
 #include "Character/GenCharacterBase.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -434,11 +435,6 @@ float UGenSpellIndicatorComponent::GetFloorZ(const AGenCharacterBase& Caster, fl
 
 EGenViewerRelation UGenSpellIndicatorComponent::GetLocalRelation(const AGenCharacterBase& Caster) const
 {
-	// Le joueur local de cette machine (un seul par client ; le premier en écran partagé)
-	const APlayerController* Viewer = GEngine ? GEngine->GetFirstLocalPlayerController(GetWorld()) : nullptr;
-	const bool bViewerIsSource = Viewer && Viewer->GetPawn() == &Caster;
-	// Équipe lue sur le PlayerState : reste connue quand le pion du joueur est mort
-	const AGenPlayerState* ViewerState = Viewer ? Viewer->GetPlayerState<AGenPlayerState>() : nullptr;
-	const uint8 ViewerTeam = ViewerState ? ViewerState->GetTeamId() : GenNoTeam;
-	return GenAreaRules::GetViewerRelation(bViewerIsSource, ViewerTeam, Caster.GetTeamId(), GenNoTeam);
+	// Le joueur local de cette machine (un seul par client ; le premier en écran partagé), règle commune des visuels
+	return GenWorldQueries::GetLocalViewerRelation(GetWorld(), &Caster, Caster.GetTeamId());
 }

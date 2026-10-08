@@ -28,7 +28,10 @@ UCurffeGA_LivingFlame::UCurffeGA_LivingFlame()
 
 void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 {
-	// Forme de feu prédite chez le client : intouchable, vue par tous (État + tag propre à Curffe pour son visuel)
+	// Forme de feu prédite chez le client : intouchable, vue par tous (État + tag propre à Curffe pour son visuel).
+	// Revue P3 T8-10, M1 : le GE prédit est remplacé par celui du serveur (commencé ~½ RTT plus tard, retrait reçu ~½ RTT
+	// après sa fin) : le propriétaire garde les tags de la forme ~1 RTT après SA fin de forme, alors qu'il peut déjà agir
+	// (verrou local levé) et être touché (tout est décidé par le serveur). Affichage seulement ; son Foyer suit son verrou
 	FGameplayEffectSpecHandle FormSpec = MakeOutgoingGameplayEffectSpec(UGenGE_TimedState::StaticClass(), GetAbilityLevel());
 	if (FormSpec.IsValid())
 	{
@@ -37,6 +40,15 @@ void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 		FormTags.AddTag(CurffeGameplayTags::State_LivingFlame);
 		UGenGE_TimedState::SetDuration(*FormSpec.Data, FormDuration, FormTags);
 		FormEffectHandle = ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, FormSpec);
+	}
+
+	// Revue P3 T8-10, I2 : Foyer plein dès le départ, prédit chez le client (fenêtre de la visée) et annulé si le serveur
+	// refuse le lancer. Rien ne peut le dépenser pendant la forme (verrou de lancement) : même résultat qu'à la fin de la
+	// forme, sans le trou d'un RTT où « flamme vivante -> grande boule de feu à 3 flammes » partait sans flamme. Le Foyer
+	// n'affiche les flammes qu'à la fin de la forme (UCurffeHearthComponent).
+	if (RefillEffect)
+	{
+		ApplyGameplayEffectToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, RefillEffect->GetDefaultObject<UGameplayEffect>(), GetAbilityLevel());
 	}
 
 	// Sans sort pendant la forme : verrou de lancement, seul point d'entrée du tag (State.CastLocked local + fenêtre
@@ -79,13 +91,9 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 		Params.KnockbackDistance = BurstKnockback;
 		SpawnGroundArea(BurstAreaClass, Avatar->GetActorLocation(), Params, UGenGE_Damage::StaticClass(), BurstDamage, 0.f);
 
-		// Foyer plein
-		if (RefillEffect)
-		{
-			ApplyGameplayEffectToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, RefillEffect->GetDefaultObject<UGameplayEffect>(), GetAbilityLevel());
-		}
-
-		// Hâte : appliquée par le serveur (hors fenêtre de prédiction), répliquée au propriétaire
+		// Hâte : appliquée par le serveur (hors fenêtre de prédiction), répliquée au propriétaire. Revue P3 T8-10, M3 :
+		// ~1 RTT de décalage chez le client (petites corrections du mouvement au début et à la fin). Point ouvert : la
+		// version par machine passerait par AGenCharacterBase::SetLocalMoveSpeedMultiplier (grâce de mouvement du serveur)
 		FGameplayEffectSpecHandle HasteSpec = MakeOutgoingGameplayEffectSpec(UGenGE_TimedMoveSpeed::StaticClass(), GetAbilityLevel());
 		if (HasteSpec.IsValid())
 		{
@@ -93,7 +101,7 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 			ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, HasteSpec);
 		}
 
-		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[SERVEUR] %s : anneau (%.0f cm), Foyer rempli, hâte x%.2f %.1fs"), *GetName(), BurstRadius, HasteMultiplier, HasteDuration);
+		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[SERVEUR] %s : anneau (%.0f cm), hâte x%.2f %.1fs"), *GetName(), BurstRadius, HasteMultiplier, HasteDuration);
 	}
 
 	FinishAbility();

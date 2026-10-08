@@ -1,21 +1,41 @@
 #include "Actors/GenProjectile.h"
 
+#include "AbilitySystem/GenAreaRules.h"
+#include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenWorldQueries.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Character/GenCharacterBase.h"
 #include "CollisionQueryParams.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGenProjectile, Log, All);
+
+namespace
+{
+	/** Le plan /Engine/BasicShapes/Plane mesure 100 cm : échelle = rayon / 50. */
+	constexpr float MarkerPlaneHalfSize = 50.f;
+	/** Le marqueur flotte juste au-dessus du sol (pas de scintillement). */
+	constexpr float MarkerFloorOffset = 2.f;
+	const FName MarkerParamRelationIndex(TEXT("RelationIndex"));
+	const FName MarkerParamEnemyPattern(TEXT("EnemyPattern"));
+	const FName MarkerParamFill(TEXT("Fill"));
+}
 
 AGenProjectile::AGenProjectile()
 {
@@ -43,6 +63,14 @@ AGenProjectile::AGenProjectile()
 	ProjectileMovement->MaxSpeed = Speed;
 	ProjectileMovement->ProjectileGravityScale = 0.f;
 	ProjectileMovement->bRotationFollowsVelocity = true;
+
+	// Le composant du marqueur n'est créé que sur les clients (SetupGroundMarker) ; seul le maillage est référencé ici
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMesh(TEXT("/Engine/BasicShapes/Plane.Plane"));
+	GroundMarkerMesh = PlaneMesh.Object;
+
+	// Art Bible §7.1 règle 6 : TOUT projectile a un marqueur. Défaut commun, remplaçable dans le Blueprint
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MarkerMaterial(TEXT("/Game/Gen/Rendering/Telegraphs/MI_Telegraph_Marker.MI_Telegraph_Marker"));
+	GroundMarkerMaterial = MarkerMaterial.Object;
 }
 
 void AGenProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -55,6 +83,12 @@ void AGenProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME_CONDITION(AGenProjectile, ShotScale, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AGenProjectile, ExplosionRadius, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AGenProjectile, KnockbackDistance, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AGenProjectile, SourceTeam, COND_InitialOnly);
+}
+
+float AGenProjectile::GetGroundMarkerRadius() const
+{
+	return GetCollisionRadius() * ShotScale * GroundMarkerRadiusScale;
 }
 
 void AGenProjectile::InitializeShot(const FGenProjectileShotParams& Params)
@@ -88,6 +122,8 @@ void AGenProjectile::BeginPlay()
 
 	CollisionSphere->OnComponentBeginOverlap.AddDynamic(this, &ThisClass::OnSphereOverlap);
 
+	SetupGroundMarker();
+
 	if (HasAuthority())
 	{
 		// En bout de portée, le projectile explose dans le vide (FX d'impact, sans dégâts)
@@ -117,6 +153,76 @@ void AGenProjectile::BeginPlay()
 			}
 		}
 	}
+}
+
+void AGenProjectile::SetupGroundMarker()
+{
+	// Cosmétique pur : rien sur le serveur dédié (pas même le composant), rien après l'impact
+	if (GetNetMode() == NM_DedicatedServer || GroundMarker || !GroundMarkerMaterial || !GroundMarkerMesh || bExploded)
+	{
+		return;
+	}
+
+	// Un plan par projectile, sans collision ni ombre ni tick ; échelle absolue (celle du tir est déjà comptée)
+	GroundMarker = NewObject<UStaticMeshComponent>(this, TEXT("GroundMarker"));
+	GroundMarker->SetStaticMesh(GroundMarkerMesh);
+	GroundMarker->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GroundMarker->SetGenerateOverlapEvents(false);
+	GroundMarker->SetCastShadow(false);
+	GroundMarker->bReceivesDecals = false;
+	GroundMarker->SetComponentTickEnabled(false);
+	GroundMarker->SetUsingAbsoluteScale(true);
+	GroundMarker->SetTranslucentSortPriority(GenIndicatorRules::GroundMarkerSortPriority);
+	GroundMarker->SetupAttachment(CollisionSphere);
+	GroundMarker->RegisterComponent();
+
+	const float Scale = FMath::Max(GetGroundMarkerRadius(), 1.f) / MarkerPlaneHalfSize;
+	GroundMarker->SetWorldScale3D(FVector(Scale, Scale, 1.f));
+
+	GroundMarkerMID = GroundMarker->CreateDynamicMaterialInstance(0, GroundMarkerMaterial);
+	if (GroundMarkerMID)
+	{
+		// Disque plein (pas de minuteur)
+		GroundMarkerMID->SetScalarParameterValue(MarkerParamFill, 1.f);
+	}
+
+	UpdateGroundMarkerRelation();
+}
+
+void AGenProjectile::OnRep_Instigator()
+{
+	Super::OnRep_Instigator();
+
+	// Le pion du lanceur peut arriver après le projectile : couleur et hauteur recalculées
+	UpdateGroundMarkerRelation();
+}
+
+void AGenProjectile::UpdateGroundMarkerRelation()
+{
+	if (!GroundMarker)
+	{
+		return;
+	}
+
+	// Au sol : le tir part du centre de la capsule du lanceur. La position relative est multipliée par
+	// l'échelle du tir (celle de la racine) : on la divise d'autant
+	const ACharacter* InstigatorCharacter = Cast<ACharacter>(GetInstigator());
+	const float HalfHeight = InstigatorCharacter && InstigatorCharacter->GetCapsuleComponent()
+		? InstigatorCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+		: GroundMarkerFallbackHeight;
+	GroundMarker->SetRelativeLocation(FVector(0.f, 0.f, -(HalfHeight - MarkerFloorOffset) / FMath::Max(ShotScale, 0.1f)));
+
+	if (!GroundMarkerMID)
+	{
+		return;
+	}
+
+	// Point de vue du joueur local, comparé par PlayerState (comme AGenGroundArea)
+	const EGenViewerRelation Relation = GenWorldQueries::GetLocalViewerRelation(GetWorld(), GetInstigator(), GetSourceTeam());
+
+	// Ennemi : chevrons (motif ennemi) ; soi et allié : disque plein
+	GroundMarkerMID->SetScalarParameterValue(MarkerParamRelationIndex, static_cast<float>(Relation));
+	GroundMarkerMID->SetScalarParameterValue(MarkerParamEnemyPattern, Relation == EGenViewerRelation::Enemy ? 1.f : 0.f);
 }
 
 void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -179,12 +285,12 @@ bool AGenProjectile::IsValidTarget(const AGenCharacterBase* Character) const
 void AGenProjectile::SetSourceTeam(uint8 InSourceTeam)
 {
 	SourceTeam = InSourceTeam;
-	bHasSourceTeam = true;
 }
 
 uint8 AGenProjectile::GetSourceTeam() const
 {
-	if (bHasSourceTeam)
+	// Retenue au tir (répliquée à l'apparition : le marqueur des clients la lit aussi), sinon celle du pion instigateur
+	if (SourceTeam != GenNoTeam)
 	{
 		return SourceTeam;
 	}
@@ -345,10 +451,12 @@ void AGenProjectile::PlayImpactEffects()
 
 	const FVector Location = ImpactLocation;
 
+	// Toutes les apparitions de ce fichier passent par le pool Niagara (Art Bible §7.8)
 	if (ImpactFX)
 	{
 		// Suit l'échelle du projectile (grosse boule de feu => grosse explosion)
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ImpactFX, Location, GetActorRotation(), GetActorScale3D());
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ImpactFX, Location, GetActorRotation(), GetActorScale3D(),
+			true, true, ENCPoolMethod::AutoRelease);
 	}
 	if (ImpactSound)
 	{

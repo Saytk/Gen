@@ -2,11 +2,15 @@
 
 #include "AbilitySystem/GenAreaRules.h"
 #include "Actors/GenProjectile.h"
+#include "Character/GenCharacterBase.h"
 #include "CollisionQueryParams.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/Engine.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerController.h"
+#include "Player/GenPlayerState.h"
 
 namespace GenWorldQueries
 {
@@ -103,5 +107,15 @@ namespace GenWorldQueries
 			return true;
 		}
 		return false;
+	}
+
+	EGenViewerRelation GetLocalViewerRelation(const UWorld* World, const APawn* SourcePawn, uint8 SourceTeam)
+	{
+		const APlayerController* Viewer = (World && GEngine) ? GEngine->GetFirstLocalPlayerController(World) : nullptr;
+		const AGenPlayerState* ViewerState = Viewer ? Viewer->GetPlayerState<AGenPlayerState>() : nullptr;
+		const bool bViewerIsSource = SourcePawn
+			&& ((ViewerState && SourcePawn->GetPlayerState() == ViewerState) || (Viewer && Viewer->GetPawn() == SourcePawn));
+		const uint8 ViewerTeam = ViewerState ? ViewerState->GetTeamId() : GenNoTeam;
+		return GenAreaRules::GetViewerRelation(bViewerIsSource, ViewerTeam, SourceTeam, GenNoTeam);
 	}
 }
