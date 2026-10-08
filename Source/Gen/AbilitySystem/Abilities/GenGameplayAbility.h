@@ -63,6 +63,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldowns", meta = (Categories = "Cooldown"))
 	FGameplayTagContainer CooldownTags;
 
+	/**
+	 * Énergie dépensée au lancer (R : 25, F : 100), lue aussi par la barre de sorts. 0 = gratuit.
+	 * Vérifiée à l'activation (CheckCost), payée par CommitAbility (ApplyCost) : au lancer pour UGenGA_Cast,
+	 * donc une incantation annulée ou interrompue ne coûte rien (guidelines §3.1). Python : energy_cost.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Cost", meta = (ClampMin = "0.0"))
+	float EnergyCost = 0.f;
+
 	//~ UGameplayAbility
 	virtual const FGameplayTagContainer* GetCooldownTags() const override;
 	virtual void ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
@@ -73,6 +81,11 @@ public:
 	 * l'applique à un client distant que dans sa fenêtre (UGenAbilitySystemComponent::GetCastLockEnforcedUntil).
 	 */
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
+	/** Refuse aussi sous EnergyCost (GenEnergy::CanAfford, même règle que la barre de sorts). */
+	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+	/** Dépense EnergyCost (UGenGE_Gain négatif), dans la fenêtre de prédiction du commit. */
+	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
