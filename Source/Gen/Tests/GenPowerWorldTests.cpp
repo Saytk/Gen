@@ -58,9 +58,13 @@ bool FGenEnergyCostTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("25 d'énergie : accepté (pile le coût)"), Ability->CheckCost(Handle, ActorInfo));
 	TestTrue(TEXT("25 d'énergie : activation possible"), Ability->CanActivateAbility(Handle, ActorInfo));
 
-	// CommitAbility (au lancer pour UGenGA_Cast) passe par ApplyCost
+	// CommitAbility (au lancer pour UGenGA_Cast) passe par ApplyCost. Revue P3 T3-7, I4 : depuis 60 et non 25 (l'énergie
+	// est bornée à 0, une double dépense passerait inaperçue à 25 -> 0)
+	SetEnergy(ASC, 60.f);
 	Ability->ApplyCost(Handle, ActorInfo, FGameplayAbilityActivationInfo());
-	TestEqual(TEXT("payé : 25 -> 0"), Get(ASC, UGenAttributeSet::GetEnergyAttribute()), 0.f);
+	TestEqual(TEXT("payé une fois : 60 -> 35"), Get(ASC, UGenAttributeSet::GetEnergyAttribute()), 35.f);
+	SetEnergy(ASC, 25.f);
+	Ability->ApplyCost(Handle, ActorInfo, FGameplayAbilityActivationInfo());
 	TestFalse(TEXT("plus assez pour un second"), Ability->CheckCost(Handle, ActorInfo));
 
 	// Sort gratuit : jamais refusé, rien de dépensé
@@ -183,6 +187,21 @@ bool FGenResilienceTest::RunTest(const FString& Parameters)
 	ASC->RemoveTimedStates();
 	TestEqual(TEXT("mort : plus d'immunité"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 0);
 	TestEqual(TEXT("mort : plus d'étourdissement"), ASC->GetTagCount(GenGameplayTags::State_Stunned), 0);
+
+	// Revue P3 T3-7, M9 : un contrôle refusé (intouchable) n'est pas compté. Trois étourdissements de 1 s refusés
+	// pendant la forme, puis un de 1 s après : 1 s seulement, pas d'immunité
+	const FGameplayEffectSpecHandle Form = ASC->MakeOutgoingSpec(UGenGE_TimedState::StaticClass(), 1.f, ASC->MakeEffectContext());
+	UGenGE_TimedState::SetDuration(*Form.Data, 1.f, FGameplayTagContainer(GenGameplayTags::State_Untouchable));
+	ASC->ApplyGameplayEffectSpecToSelf(*Form.Data);
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		TestFalse(TEXT("intouchable : étourdissement refusé"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
+		TestWorld.Advance(0.3f);
+	}
+	TestWorld.Advance(0.2f);
+	TestEqual(TEXT("forme finie"), ASC->GetTagCount(GenGameplayTags::State_Untouchable), 0);
+	TestTrue(TEXT("étourdissement après la forme"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
+	TestEqual(TEXT("les refusés ne comptent pas : pas d'immunité"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 0);
 	return true;
 }
 

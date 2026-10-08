@@ -62,7 +62,8 @@ public:
 	 * Touche d'annulation (Plan 3 Task 6, guidelines §3.1) : annule les sorts encore en nourrissage ou en incantation
 	 * (UGenGA_Cast::IsCastPending), annulation prédite et répliquée au serveur. Un sort déjà parti (fenêtre de contre,
 	 * bond en vol, forme de feu) n'est jamais annulé. Serveur, visée du client déjà reçue : CanBeCanceled est faux, le
-	 * sort part et ses coûts restent payés. Renvoie le nombre de sorts annulés.
+	 * sort part et ses coûts restent payés. Un sort annulé dont la touche reste enfoncée ne se relance pas (répétition
+	 * automatique) avant un nouvel appui. Renvoie le nombre de sorts annulés.
 	 */
 	int32 CancelPendingCasts();
 

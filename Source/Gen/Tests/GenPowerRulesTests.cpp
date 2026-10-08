@@ -77,10 +77,31 @@ bool FGenResilienceHistoryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("2.5 s d'un coup"), History.Record(0.f, 2.5f), 4.f, 0.001f);
 	}
 	{
-		// Contrôle à cheval sur le début de la fenêtre : seule la partie dans la fenêtre compte
+		// Revue P3 T3-7, I3, lecture stricte : la fenêtre est les 5 s qui finissent à la fin du dernier contrôle.
+		// [0, 2] + [5.5, 6.5] : fenêtre [1.5, 6.5] => 0.5 + 1 = 1.5 s, pas d'immunité
 		GenResilience::FHardCCHistory History;
 		History.Record(0.f, 2.f);
-		TestEqual(TEXT("1.5 s (0.5 à 2) + 1 s"), History.Record(5.5f, 1.f), 2.5f, 0.001f);
+		TestEqual(TEXT("à cheval : 0.5 s (1.5 à 2) + 1 s, pas d'immunité"), History.Record(5.5f, 1.f), 0.f);
+	}
+	{
+		// Exemple de la revue : 1.5 s à 0 et 1.5 s à 4.9 => aucune fenêtre de 5 s ne contient 2.5 s
+		GenResilience::FHardCCHistory History;
+		History.Record(0.f, 1.5f);
+		TestEqual(TEXT("[0, 1.5] + [4.9, 6.4] : 1.6 s dans [1.4, 6.4]"), History.Record(4.9f, 1.5f), 0.f);
+	}
+	{
+		// À cheval mais assez dans la fenêtre : [0, 2] + [4, 5] => fenêtre [0, 5], 3 s
+		GenResilience::FHardCCHistory History;
+		History.Record(0.f, 2.f);
+		TestEqual(TEXT("[0, 2] + [4, 5] : immunité (1 s restante + 1.5 s)"), History.Record(4.f, 1.f), 2.5f, 0.001f);
+	}
+	{
+		// Temps du monde élevé (serveur ouvert depuis longtemps) : précision du double
+		GenResilience::FHardCCHistory History;
+		const double Base = 1.0e7;
+		History.Record(Base, 1.f);
+		History.Record(Base + 1.2, 1.f);
+		TestEqual(TEXT("temps élevé : même résultat"), History.Record(Base + 2.4, 1.f), 2.5f, 0.001f);
 	}
 	{
 		GenResilience::FHardCCHistory History;
@@ -116,6 +137,7 @@ bool FGenShotExplosionTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("grosse boule de feu, 2 flammes, avec une base"), GenFeeding::GetShotExplosionRadius(2, 3, 150.f, 120.f), 120.f);
 	TestEqual(TEXT("boule de feu"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, 0.f), 0.f);
 	TestEqual(TEXT("base négative ignorée"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, -10.f), 0.f);
+	TestEqual(TEXT("nourri sous la base : jamais plus petit que la base (revue P3 T3-7, M7)"), GenFeeding::GetShotExplosionRadius(3, 3, 100.f, 120.f), 120.f);
 	return true;
 }
 

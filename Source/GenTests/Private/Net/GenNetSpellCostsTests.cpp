@@ -37,6 +37,11 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 	FPIENetworkComponent<FBasePIENetworkComponentState> Network{ TestRunner, TestCommandBuilder, bInitializing };
 
 	static constexpr float Cost = 25.f;
+	/**
+	 * Revue P3 T3-7, I4 : énergie de départ des tests « payé (une fois) ». L'énergie est bornée à 0 : partir de Cost
+	 * cacherait une double dépense (25 - 50 = 0 = 25 - 25). 60 - 25 = 35, une double dépense donnerait 10.
+	 */
+	static constexpr float PaidTestEnergy = 60.f;
 
 	TSubclassOf<UGameplayAbility> GreatFireballClass;
 
@@ -54,6 +59,8 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 
 	float ClientMark = 0.f;
 	float ServerMark = 0.f;
+	/** Énergie la plus basse vue par le client 0 après son lancer (double dépense transitoire prédite + base). */
+	float ClientMinEnergy = TNumericLimits<float>::Max();
 
 	BEFORE_EACH()
 	{
@@ -285,14 +292,32 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 
 	// --- Énergie -----------------------------------------------------------------------------------------
 
-	/** Pile le coût (25 pour 25) : accepté, payé au lancer (énergie à 0 quand le projectile apparaît), une seule fois. */
-	TEST_METHOD(Energy_ExactCost_PaidOnRelease)
+	/** Pile le coût (25 pour 25) : activation acceptée (GenEnergy::CanAfford, sans dérive). Annulée ensuite : rien de payé. */
+	TEST_METHOD(Energy_ExactCost_ActivationAccepted)
 	{
 		QueueSetup(Cost);
 		Network.ThenClient(TEXT("Client 0 : appuie"), 0, [this](FBasePIENetworkComponentState& Client)
 		{
 			SendInput(Client, true);
 			ASSERT_THAT(IsTrue(IsCastActive(GetLocalGenASC(Client)), TEXT("25 d'énergie pour 25 : activation acceptée")));
+			ASSERT_THAT(IsNear(StartEnergy, GetEnergy(GetLocalGenASC(Client)), 0.001f, TEXT("Rien de payé à l'activation")));
+		});
+		Network.UntilServer(TEXT("Serveur : activation acceptée"), [this](FBasePIENetworkComponentState&) { return IsCastActive(ServerCasterASC.Get()); }, DefaultWait());
+		QueueCancelKey();
+		QueueAssertNoCost();
+	}
+
+	/**
+	 * 60 d'énergie, coût 25 : payé au lancer (35 quand le projectile apparaît), une seule fois (serveur et client), et le
+	 * client ne descend jamais sous 35, même un instant (dépense prédite + valeur du serveur).
+	 */
+	TEST_METHOD(Energy_PaidOnceOnRelease)
+	{
+		QueueSetup(PaidTestEnergy);
+		Network.ThenClient(TEXT("Client 0 : appuie"), 0, [this](FBasePIENetworkComponentState& Client)
+		{
+			SendInput(Client, true);
+			ASSERT_THAT(IsTrue(IsCastActive(GetLocalGenASC(Client))));
 			ASSERT_THAT(IsNear(StartEnergy, GetEnergy(GetLocalGenASC(Client)), 0.001f, TEXT("Rien de payé à l'activation")));
 		});
 		QueueClientWait(TEXT("Client 0 : touche tenue 0.4 s"), 0.4f);
@@ -302,7 +327,16 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 				ASSERT_THAT(IsTrue(IsCastActive(ServerCasterASC.Get())));
 				ASSERT_THAT(IsNear(StartEnergy, GetEnergy(ServerCasterASC.Get()), 0.001f));
 			})
-			.ThenClient(TEXT("Client 0 : relâche"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, false); })
+			.ThenClient(TEXT("Client 0 : suit chaque changement d'énergie, relâche"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				ClientMinEnergy = GetEnergy(ASC);
+				ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
+				{
+					ClientMinEnergy = FMath::Min(ClientMinEnergy, Data.NewValue);
+				});
+				SendInput(Client, false);
+			})
 			.UntilServer(TEXT("Serveur : projectile apparu"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
 			.ThenServer(TEXT("Serveur : énergie payée au lancer avec le cooldown"), [this](FBasePIENetworkComponentState&)
 			{
@@ -315,13 +349,20 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 			.ThenServer(TEXT("Serveur : payé une seule fois"), [this](FBasePIENetworkComponentState&)
 			{
 				ASSERT_THAT(AreEqual(1, ProjectileCount));
-				ASSERT_THAT(IsNear(StartEnergy - Cost, GetEnergy(ServerCasterASC.Get()), 0.001f));
+				ASSERT_THAT(IsNear(StartEnergy - Cost, GetEnergy(ServerCasterASC.Get()), 0.001f, TEXT("60 - 25 = 35 (une double dépense donnerait 10)")));
 			})
 			.UntilClient(TEXT("Client 0 : énergie du serveur (prédiction confirmée)"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
 				UAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				ClientMinEnergy = FMath::Min(ClientMinEnergy, GetEnergy(ASC));
 				return !IsCastActive(ASC) && FMath::IsNearlyEqual(GetEnergy(ASC), StartEnergy - Cost, 0.001f);
 			}, DefaultWait());
+		QueueClientWait(TEXT("Client 0 : encore 0.3 s"), 0.3f);
+		Network.ThenClient(TEXT("Client 0 : jamais sous 35"), 0, [this](FBasePIENetworkComponentState& Client)
+		{
+			ClientMinEnergy = FMath::Min(ClientMinEnergy, GetEnergy(GetLocalGenASC(Client)));
+			ASSERT_THAT(IsTrue(ClientMinEnergy >= StartEnergy - Cost - 0.001f, *FString::Printf(TEXT("Énergie la plus basse vue : %.2f"), ClientMinEnergy)));
+		});
 	}
 
 	/** 24.99 pour 25 : le client refuse l'activation (CheckCost), le serveur ne voit rien partir. */
@@ -374,7 +415,7 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 	/** Visée en avance : l'énergie est payée au départ différé du serveur, pas à la réception de la visée. */
 	TEST_METHOD(Energy_EarlyAim_PaidAtDeferredLaunch)
 	{
-		QueueSetup(Cost);
+		QueueSetup(PaidTestEnergy);
 		QueueEarlyAim();
 		Network
 			.UntilServer(TEXT("Serveur : projectile différé parti"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
@@ -443,19 +484,27 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 	}
 
 	/**
-	 * Serveur, visée du client déjà reçue (départ différé) : CancelPendingCasts n'annule rien (CanBeCanceled faux),
-	 * le sort part à la fin de l'incantation du serveur et l'énergie est payée.
+	 * Serveur, visée du client déjà reçue (départ différé) : l'annulation du client (touche d'annulation, chemin réel :
+	 * ServerCancelAbility -> ForceCancelAbilityDueToReplication, qui force SetCanBeCanceled(true)) est refusée par le
+	 * serveur (CanBeCanceled faux), comme un appel direct de CancelPendingCasts sur le serveur. Le sort part à la fin de
+	 * l'incantation du serveur et le coût est payé une fois (60 -> 35).
 	 */
 	TEST_METHOD(CancelKey_ServerAfterAimArrived_NotCancelled_CostPaid)
 	{
-		QueueSetup(Cost);
+		QueueSetup(PaidTestEnergy);
 		QueueEarlyAim();
 		Network
-			.ThenServer(TEXT("Serveur : annulation demandée après la visée"), [this](FBasePIENetworkComponentState&)
+			.ThenClient(TEXT("Client 0 : touche d'annulation après sa visée (client modifié)"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
-				ASSERT_THAT(AreEqual(0, ServerCasterASC->CancelPendingCasts(), TEXT("Visée reçue : plus annulable")));
+				ASSERT_THAT(AreEqual(1, GetLocalGenASC(Client)->CancelPendingCasts(), TEXT("Le client annule sa copie (encore en incantation chez lui)")));
+			});
+		QueueServerWait(TEXT("Serveur : l'annulation du client est arrivée"), 0.1f);
+		Network
+			.ThenServer(TEXT("Serveur : annulation refusée, départ différé maintenu"), [this](FBasePIENetworkComponentState&)
+			{
 				const UGenGA_Projectile* Instance = GetInstance(ServerCasterASC.Get());
-				ASSERT_THAT(IsTrue(Instance && Instance->IsWaitingForDeferredLaunch(), TEXT("Le départ différé continue")));
+				ASSERT_THAT(IsTrue(ProjectileCount > 0 || (Instance && Instance->IsWaitingForDeferredLaunch()), TEXT("Le départ différé continue malgré l'annulation du client")));
+				ASSERT_THAT(AreEqual(0, ServerCasterASC->CancelPendingCasts(), TEXT("Visée reçue : plus annulable")));
 			})
 			.UntilServer(TEXT("Serveur : projectile parti"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
 			.ThenServer(TEXT("Serveur : coûts payés"), [this](FBasePIENetworkComponentState&)
@@ -464,6 +513,48 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 				ASSERT_THAT(IsNear(StartEnergy - Cost, EnergyAtSpawn, 0.001f));
 				ASSERT_THAT(IsTrue(bCooldownAtSpawn));
 			});
+		QueueServerWait(TEXT("Serveur : 0.5 s après"), 0.5f);
+		Network.ThenServer(TEXT("Serveur : payé une seule fois"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(AreEqual(1, ProjectileCount));
+			ASSERT_THAT(IsNear(StartEnergy - Cost, GetEnergy(ServerCasterASC.Get()), 0.001f));
+		});
+	}
+
+	/**
+	 * Revue P3 T3-7, M9 : seul le serveur est sous le coût (coût 0 sur l'instance du client, 25 sur celle du serveur,
+	 * 20 d'énergie). Le client active (prédit) ; le serveur refuse l'activation (CheckCost) : rien ne part, rien n'est
+	 * dépensé, le client retire sa prédiction.
+	 */
+	TEST_METHOD(Energy_OnlyServerBelowCost_ActivationRejected)
+	{
+		QueueSetup(Cost - 5.f);
+		Network.ThenClient(TEXT("Client 0 : coût 0 sur son instance, appuie"), 0, [this](FBasePIENetworkComponentState& Client)
+		{
+			GetInstance(GetLocalGenASC(Client))->EnergyCost = 0.f;
+			SendInput(Client, true);
+			ASSERT_THAT(IsTrue(IsCastActive(GetLocalGenASC(Client)), TEXT("Le client se croit assez riche : activation prédite")));
+		});
+		Network
+			.UntilClient(TEXT("Client 0 : activation rejetée par le serveur"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				return !IsCastActive(GetLocalGenASC(Client));
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : relâche"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, false); });
+		QueueServerWait(TEXT("Serveur : 1 s"), 1.f);
+		Network
+			.ThenServer(TEXT("Serveur : rien n'est parti, rien de payé"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsFalse(IsCastActive(ServerCasterASC.Get())));
+				ASSERT_THAT(AreEqual(0, ProjectileCount));
+				ASSERT_THAT(IsNear(StartEnergy, GetEnergy(ServerCasterASC.Get()), 0.001f));
+				ASSERT_THAT(IsFalse(HasCooldown(ServerCasterASC.Get())));
+			})
+			.UntilClient(TEXT("Client 0 : énergie intacte, pas de cooldown"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				return !IsCastActive(ASC) && !HasCooldown(ASC) && FMath::IsNearlyEqual(GetEnergy(ASC), StartEnergy, 0.001f);
+			}, DefaultWait());
 	}
 };
 

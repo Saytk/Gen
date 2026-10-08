@@ -379,8 +379,9 @@ protected:
 	float FedRepCastStartTime = -1.f;
 
 	/**
-	 * Autres clients (revue V2-V4, M2) : image de la dernière réception de CastInfo. Un compte reçu dans la même image
-	 * (personnage devenu pertinent en plein nourrissage, arrivée en cours de partie) ne fait pas de pop.
+	 * Autres clients (revue V2-V4, M2) : image de la dernière réception d'une NOUVELLE incantation (StartTime changé).
+	 * Un compte reçu dans la même image (personnage devenu pertinent en plein nourrissage, arrivée en cours de partie)
+	 * ne fait pas de pop ; la fin du nourrissage (revue P3 T3-7, I1) ne compte pas.
 	 */
 	uint64 CastInfoRepFrame = 0;
 
@@ -401,7 +402,7 @@ public:
 protected:
 
 	UFUNCTION()
-	void OnRep_CastInfo();
+	void OnRep_CastInfo(const FGenCastInfo& OldCastInfo);
 
 	/** Lance ou arrête l'effet d'incantation selon CastInfo (rien sur un serveur dédié). */
 	void UpdateCastFX();

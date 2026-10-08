@@ -176,10 +176,17 @@ void AGenCharacterBase::ServerReportFedResource_Implementation(UClass* Ability, 
 	}
 }
 
-void AGenCharacterBase::OnRep_CastInfo()
+void AGenCharacterBase::OnRep_CastInfo(const FGenCastInfo& OldCastInfo)
 {
+	// Revue P3 T3-7, I1 : seulement pour une NOUVELLE incantation (ou la première réception). La fin du nourrissage
+	// (MarkFeedEnded : FeedEndTime, FedCount) change aussi CastInfo, souvent dans la même image que le dernier seuil :
+	// la marquer supprimerait le pop du 3e seuil chez les autres joueurs.
+	if (OldCastInfo.StartTime != CastInfo.StartTime)
+	{
+		CastInfoRepFrame = GFrameCounter;
+	}
+
 	// Autres clients : la rotation arrive déjà par le mouvement répliqué, seul l'effet est à gérer
-	CastInfoRepFrame = GFrameCounter;
 	UpdateCastFX();
 }
 
