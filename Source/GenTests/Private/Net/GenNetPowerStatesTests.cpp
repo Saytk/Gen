@@ -25,6 +25,7 @@ namespace GenNetPowerStates
 	// GenGameplayTags::* n'est pas exporté par le module Gen
 	inline FGameplayTag UntouchableTag() { return FGameplayTag::RequestGameplayTag(TEXT("State.Untouchable")); }
 	inline FGameplayTag StunnedTag() { return FGameplayTag::RequestGameplayTag(TEXT("State.Stunned")); }
+	inline FGameplayTag CCImmuneTag() { return FGameplayTag::RequestGameplayTag(TEXT("State.CCImmune")); }
 
 	inline bool HasTag(const AGenPlayerState* PlayerState, const FGameplayTag& Tag)
 	{
@@ -186,6 +187,95 @@ NETWORK_TEST_CLASS(Untouchable, "Gen.Net")
 				const UAbilitySystemComponent* ASC = GetASC(PS);
 				return ASC && !ASC->HasMatchingGameplayTag(UntouchableTag())
 					&& FMath::IsNearlyEqual(GetAttribute(ASC, UGenAttributeSet::GetHealthAttribute()), HealthBefore - Damage, 0.01f);
+			}, DefaultWait());
+	}
+};
+
+/**
+ * Gen.Net.Resilience : immunité aux contrôles durs (Plan 3 Task 5, guidelines §3.3), serveur dédié + 2 clients.
+ * Le serveur étourdit le client 1 trois fois 1 s (à 0, 1.2 et 2.4 s de son horloge) : le 3e s'applique en entier et
+ * pose State.CCImmune (1 s restante + 1.5 s). Le tag est vu par le propriétaire et l'observateur (effet visible) ; un
+ * 4e contrôle est refusé pendant l'immunité ; à sa fin, le tag disparaît partout et les contrôles reprennent.
+ */
+NETWORK_TEST_CLASS(Resilience, "Gen.Net")
+{
+	FPIENetworkComponent<FBasePIENetworkComponentState> Network{ TestRunner, TestCommandBuilder, bInitializing };
+
+	TWeakObjectPtr<UGenAbilitySystemComponent> ServerTargetASC;
+	int32 TargetPlayerId = INDEX_NONE;
+	float ServerMark = 0.f;
+	float ImmuneSince = -1.f;
+
+	BEFORE_EACH()
+	{
+		IgnoreUntitledMapNetWarnings(*TestRunner);
+		FNetworkComponentBuilder<FBasePIENetworkComponentState>()
+			.WithClients(2)
+			.AsDedicatedServer()
+			.WithGameMode(LoadGameModeClass())
+			.Build(Network);
+	}
+
+	void QueueServerWait(const TCHAR* Description, float Seconds)
+	{
+		Network
+			.ThenServer(TEXT("Serveur : départ de l'attente"), [this](FBasePIENetworkComponentState& Server) { ServerMark = Server.World->GetTimeSeconds(); })
+			.UntilServer(Description, [this, Seconds](FBasePIENetworkComponentState& Server) { return Server.World->GetTimeSeconds() >= ServerMark + Seconds; }, DefaultWait());
+	}
+
+	void QueueStun(const TCHAR* Description)
+	{
+		Network.ThenServer(Description, [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsTrue(ServerTargetASC->ApplyHardCC(StunnedTag(), 1.f, nullptr).IsValid(), TEXT("Étourdissement appliqué")));
+		});
+	}
+
+	TEST_METHOD(ThreeStunsInFiveSeconds_GrantImmunity_VisibleToClients)
+	{
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : cible = client 1"), [this](FBasePIENetworkComponentState& Server)
+			{
+				AGenPlayerCharacter* Target = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Target));
+				ServerTargetASC = Cast<UGenAbilitySystemComponent>(Target->GetAbilitySystemComponent());
+				ASSERT_THAT(IsNotNull(ServerTargetASC.Get()));
+				TargetPlayerId = Target->GetPlayerState()->GetPlayerId();
+			});
+		QueueStun(TEXT("Serveur : 1er étourdissement (1 s)"));
+		QueueServerWait(TEXT("Serveur : 1.2 s"), 1.2f);
+		QueueStun(TEXT("Serveur : 2e étourdissement"));
+		Network.ThenServer(TEXT("Serveur : 2 s cumulées, pas encore immunisé"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsFalse(ServerTargetASC->HasMatchingGameplayTag(CCImmuneTag())));
+		});
+		QueueServerWait(TEXT("Serveur : 1.2 s"), 1.2f);
+		QueueStun(TEXT("Serveur : 3e étourdissement (atteint 2.5 s)"));
+		Network
+			.ThenServer(TEXT("Serveur : immunisé, 4e refusé"), [this](FBasePIENetworkComponentState& Server)
+			{
+				ASSERT_THAT(IsTrue(ServerTargetASC->HasMatchingGameplayTag(CCImmuneTag()), TEXT("Résilience : immunité")));
+				ASSERT_THAT(IsTrue(ServerTargetASC->HasMatchingGameplayTag(StunnedTag()), TEXT("Le 3e étourdit quand même")));
+				ASSERT_THAT(IsFalse(ServerTargetASC->ApplyHardCC(StunnedTag(), 1.f, nullptr).IsValid(), TEXT("4e refusé")));
+				ImmuneSince = Server.World->GetTimeSeconds();
+			})
+			.UntilClients(TEXT("Clients : immunité de la cible visible"), [this](FBasePIENetworkComponentState& Client)
+			{
+				return HasTag(FindPlayerStateById(Client.World, TargetPlayerId), CCImmuneTag());
+			}, DefaultWait())
+			.UntilServer(TEXT("Serveur : fin de l'immunité"), [this](FBasePIENetworkComponentState&) { return !ServerTargetASC->HasMatchingGameplayTag(CCImmuneTag()); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : immunité de 2.5 s, contrôlable de nouveau"), [this](FBasePIENetworkComponentState& Server)
+			{
+				const float Lasted = Server.World->GetTimeSeconds() - ImmuneSince;
+				ASSERT_THAT(IsTrue(Lasted >= 2.4f && Lasted <= 2.7f, *FString::Printf(TEXT("Immunité de 1 s + 1.5 s (mesuré : %.2f s)"), Lasted)));
+				ASSERT_THAT(IsTrue(ServerTargetASC->ApplyHardCC(StunnedTag(), 0.5f, nullptr).IsValid(), TEXT("De nouveau contrôlable")));
+			})
+			.UntilClients(TEXT("Clients : immunité finie"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenPlayerState* PS = FindPlayerStateById(Client.World, TargetPlayerId);
+				return GetASC(PS) && !HasTag(PS, CCImmuneTag());
 			}, DefaultWait());
 	}
 };

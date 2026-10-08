@@ -137,4 +137,53 @@ bool FGenUntouchableTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenResilienceTest, "Gen.Combat.Resilience",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenResilienceTest::RunTest(const FString& Parameters)
+{
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Target = TestWorld.SpawnDummy();
+	UGenAbilitySystemComponent* ASC = Target ? Target->GetGenAbilitySystemComponent() : nullptr;
+	if (!TestNotNull(TEXT("ASC de la cible"), ASC))
+	{
+		return false;
+	}
+
+	// Trois étourdissements de 1 s à 0, 1.2 et 2.4 s
+	TestTrue(TEXT("1er étourdissement"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
+	TestWorld.Advance(1.2f);
+	TestTrue(TEXT("2e"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
+	TestEqual(TEXT("pas encore immunisé (2 s)"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 0);
+	TestWorld.Advance(1.2f);
+	TestTrue(TEXT("3e (appliqué en entier)"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
+	TestEqual(TEXT("immunisé"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 1);
+	TestEqual(TEXT("le 3e étourdit quand même"), ASC->GetTagCount(GenGameplayTags::State_Stunned), 1);
+
+	TestFalse(TEXT("4e ignoré pendant l'immunité"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
+	TestFalse(TEXT("tout contrôle dur ignoré (silence)"), ASC->ApplyHardCC(GenGameplayTags::State_Silenced, 1.f, nullptr).IsValid());
+	TestWorld.Advance(2.3f);
+	TestEqual(TEXT("encore immunisé à 2.3 s (1 s + 1.5 s)"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 1);
+	TestWorld.Advance(0.3f);
+	TestEqual(TEXT("immunité finie"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 0);
+	TestTrue(TEXT("de nouveau contrôlable"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
+
+	// Mort : immunité et historique effacés
+	ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr);
+	ASC->RemoveTimedStates();
+	TestTrue(TEXT("historique remis à zéro (2 s de plus ne suffisent pas)"), ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 2.f, nullptr).IsValid());
+	TestEqual(TEXT("pas d'immunité"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 0);
+
+	// Mort pendant l'immunité : elle disparaît avec les autres états. Un contrôle qui chevauche le précédent ne compte
+	// qu'une fois (union) : 1 s par-dessus les 2 s ne suffirait pas, 3 s d'un coup oui
+	ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr);
+	TestEqual(TEXT("chevauchement : 2 s seulement, pas d'immunité"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 0);
+	ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 3.f, nullptr);
+	TestEqual(TEXT("immunisé (3 s)"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 1);
+	ASC->RemoveTimedStates();
+	TestEqual(TEXT("mort : plus d'immunité"), ASC->GetTagCount(GenGameplayTags::State_CCImmune), 0);
+	TestEqual(TEXT("mort : plus d'étourdissement"), ASC->GetTagCount(GenGameplayTags::State_Stunned), 0);
+	return true;
+}
+
 #endif

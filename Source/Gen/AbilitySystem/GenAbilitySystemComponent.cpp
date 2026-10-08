@@ -256,8 +256,9 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 		return FActiveGameplayEffectHandle();
 	}
 
-	// Plan 3 Task 4 : intouchable (forme de feu...), aucun contrôle dur ne prend
-	if (HasMatchingGameplayTag(GenGameplayTags::State_Untouchable))
+	// Plan 3 Task 4 : intouchable (forme de feu...), aucun contrôle dur ne prend.
+	// Plan 3 Task 5 : immunisé par la résilience non plus.
+	if (HasMatchingGameplayTag(GenGameplayTags::State_Untouchable) || HasMatchingGameplayTag(GenGameplayTags::State_CCImmune))
 	{
 		return FActiveGameplayEffectHandle();
 	}
@@ -282,7 +283,25 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 	// Étourdi ou neutralisé : ne bouge plus. Silence et peur laissent bouger (la fuite de la peur viendra avec son sort).
 	const bool bImmobile = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) || StateTag.MatchesTagExact(GenGameplayTags::State_Incapacitated);
 	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, bImmobile ? 0.f : 1.f, FGameplayTagContainer(StateTag));
-	return ApplyGameplayEffectSpecToSelf(*Spec.Data);
+	const FActiveGameplayEffectHandle Handle = ApplyGameplayEffectSpecToSelf(*Spec.Data);
+
+	// Plan 3 Task 5, résilience (guidelines §3.3) : 2.5 s de contrôle dur sur 5 s (union des intervalles) => immunité
+	// jusqu'à 1.5 s après la fin de celui-ci. Seul ce qui s'est vraiment appliqué compte.
+	if (Handle.IsValid() && GetWorld())
+	{
+		const float Immunity = HardCCHistory.Record(GetWorld()->GetTimeSeconds(), Duration);
+		if (Immunity > 0.f)
+		{
+			// UGenGE_TimedState : retiré avec les autres états à la mort (RemoveTimedStates)
+			const FGameplayEffectSpecHandle ImmunitySpec = MakeOutgoingSpec(UGenGE_TimedState::StaticClass(), 1.f, MakeEffectContext());
+			if (ImmunitySpec.IsValid())
+			{
+				UGenGE_TimedState::SetDuration(*ImmunitySpec.Data, Immunity, FGameplayTagContainer(GenGameplayTags::State_CCImmune));
+				ApplyGameplayEffectSpecToSelf(*ImmunitySpec.Data);
+			}
+		}
+	}
+	return Handle;
 }
 
 void UGenAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec)
@@ -314,6 +333,9 @@ void UGenAbilitySystemComponent::RemoveTimedStates()
 		return Effect.Spec.Def && Effect.Spec.Def->IsA<UGenGE_TimedState>();
 	});
 	RemoveActiveEffects(Query);
+
+	// Mort : la résilience repart de zéro (Plan 3 Task 5)
+	HardCCHistory.Reset();
 }
 
 void UGenAbilitySystemComponent::NoteCastLock(float MinLockDuration)

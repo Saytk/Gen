@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystem/GenResilience.h"
 #include "GenAbilitySystemComponent.generated.h"
 
 class UGenGameplayAbility;
@@ -47,12 +48,14 @@ public:
 	 * Serveur : applique un contrôle dur (StateTag = un tag de GenGameplayTags::GetHardCCTags()) pendant Duration secondes.
 	 * Étourdi ou neutralisé : vitesse à 0. Tous : sorts bloqués (UGenGameplayAbility::CanActivateAbility) et incantation
 	 * interrompue. Point d'entrée unique de tous les contrôles durs (immunités et résilience s'y branchent).
-	 * Ignoré sous State.Untouchable. Handle invalide si rien n'est appliqué.
+	 * Ignoré sous State.Untouchable et State.CCImmune. Résilience (guidelines §3.3) : 2.5 s de contrôle dur sur 5 s
+	 * => State.CCImmune jusqu'à 1.5 s après la fin du contrôle qui atteint le seuil (lui s'applique en entier).
+	 * Handle invalide si rien n'est appliqué.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Gen|CrowdControl")
 	FActiveGameplayEffectHandle ApplyHardCC(FGameplayTag StateTag, float Duration, AActor* Source);
 
-	/** Serveur : retire les états temporaires (UGenGE_TimedState et dérivés), ex. à la mort. */
+	/** Serveur : retire les états temporaires (UGenGE_TimedState et dérivés) et oublie l'historique de résilience, ex. à la mort. */
 	void RemoveTimedStates();
 
 	/**
@@ -97,4 +100,7 @@ protected:
 
 	/** Serveur : fin de la fenêtre où State.CastLocked refuse les activations d'un client distant. */
 	double CastLockEnforcedUntil = -1.0;
+
+	/** Serveur : contrôles durs reçus récemment (résilience, Plan 3 Task 5). */
+	GenResilience::FHardCCHistory HardCCHistory;
 };
