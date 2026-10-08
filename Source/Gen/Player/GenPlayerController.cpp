@@ -64,6 +64,11 @@ void AGenPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(InputConfig->MoveAction, ETriggerEvent::Triggered, this, &ThisClass::Move);
 	}
 
+	if (InputConfig->CancelAction)
+	{
+		EnhancedInput->BindAction(InputConfig->CancelAction, ETriggerEvent::Started, this, &ThisClass::CancelCast);
+	}
+
 	for (const FGenAbilityInputAction& Binding : InputConfig->AbilityInputActions)
 	{
 		if (Binding.InputAction && Binding.InputTag.IsValid())
@@ -110,6 +115,14 @@ void AGenPlayerController::AbilityInputReleased(FGameplayTag InputTag)
 	if (UGenAbilitySystemComponent* ASC = GetGenAbilitySystemComponent())
 	{
 		ASC->AbilityInputTagReleased(InputTag);
+	}
+}
+
+void AGenPlayerController::CancelCast()
+{
+	if (UGenAbilitySystemComponent* ASC = GetGenAbilitySystemComponent())
+	{
+		ASC->CancelPendingCasts();
 	}
 }
 

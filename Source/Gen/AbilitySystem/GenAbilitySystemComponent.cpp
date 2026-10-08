@@ -1,5 +1,6 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 
+#include "AbilitySystem/Abilities/GenGA_Cast.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "AbilitySystem/GenFeeding.h"
@@ -350,4 +351,27 @@ void UGenAbilitySystemComponent::ClearCastLock()
 {
 	SetLooseGameplayTagCount(GenGameplayTags::State_CastLocked, 0);
 	CastLockEnforcedUntil = -1.0;
+}
+
+int32 UGenAbilitySystemComponent::CancelPendingCasts()
+{
+	// Plan 3 Task 6. Liste d'abord : annuler un sort modifie les specs actifs
+	TArray<UGenGA_Cast*, TInlineAllocator<4>> Pending;
+	for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		UGenGA_Cast* CastAbility = Spec.IsActive() ? Cast<UGenGA_Cast>(Spec.GetPrimaryInstance()) : nullptr;
+		// CanBeCanceled : serveur, visée du client reçue (départ différé compris) => le sort part quand même
+		if (CastAbility && CastAbility->IsCastPending() && CastAbility->CanBeCanceled())
+		{
+			Pending.Add(CastAbility);
+		}
+	}
+
+	// Annulation prédite (rien n'a été payé : coûts au lancer), répliquée au serveur qui la refuse si la visée est
+	// déjà arrivée (ordre des RPC du joueur : une visée envoyée avant l'annulation arrive avant elle)
+	for (UGenGA_Cast* CastAbility : Pending)
+	{
+		CastAbility->CancelAbility(CastAbility->GetCurrentAbilitySpecHandle(), CastAbility->GetCurrentActorInfo(), CastAbility->GetCurrentActivationInfo(), true);
+	}
+	return Pending.Num();
 }

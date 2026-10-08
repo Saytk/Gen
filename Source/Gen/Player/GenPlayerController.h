@@ -55,6 +55,8 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void AbilityInputPressed(FGameplayTag InputTag);
 	void AbilityInputReleased(FGameplayTag InputTag);
+	/** Touche d'annulation : annule l'incantation en cours (UGenAbilitySystemComponent::CancelPendingCasts). */
+	void CancelCast();
 
 	UGenAbilitySystemComponent* GetGenAbilitySystemComponent() const;
 

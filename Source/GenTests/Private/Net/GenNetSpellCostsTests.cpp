@@ -26,6 +26,9 @@ using namespace GenNetTest;
  * - Payé au lancer : le serveur a dépensé le coût quand le projectile apparaît, le client converge.
  * - Énergie insuffisante (24.99 pour 25) : activation refusée par le client, rien côté serveur.
  * - Étourdi pendant l'incantation, visée en avance puis étourdi : rien de payé (serveur et client).
+ * Touche d'annulation (Plan 3 Task 6, UGenAbilitySystemComponent::CancelPendingCasts) :
+ * - sans sort en cours : rien ; pendant le nourrissage ou l'incantation : annulé sur le client et le serveur, sans coût ;
+ * - serveur, visée du client déjà reçue (départ différé) : pas annulé, le sort part et ses coûts restent payés.
  * Le coût est réglé sur les INSTANCES du sort (serveur et client 0), jamais sur le CDO du Blueprint : la grande
  * boule de feu sert de sort de test (nourrissable, incantation de 0.5 s), Living Flame et Combustion arrivent plus tard.
  */
@@ -392,6 +395,75 @@ NETWORK_TEST_CLASS(SpellCosts, "Gen.Net")
 				UAbilitySystemComponent* ASC = GetLocalGenASC(Client);
 				return !IsCastActive(ASC) && FMath::IsNearlyEqual(GetEnergy(ASC), StartEnergy - Cost, 0.001f);
 			}, DefaultWait());
+	}
+
+	// --- Touche d'annulation (Plan 3 Task 6) ------------------------------------------------------------------
+
+	/** Annulation par la touche sur le client 0, qui relâche ensuite la touche du sort. */
+	void QueueCancelKey()
+	{
+		Network.ThenClient(TEXT("Client 0 : touche d'annulation"), 0, [this](FBasePIENetworkComponentState& Client)
+		{
+			UGenAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+			ASSERT_THAT(IsTrue(IsCastActive(ASC), TEXT("Le sort doit être en cours")));
+			ASSERT_THAT(AreEqual(1, ASC->CancelPendingCasts(), TEXT("Un sort annulé")));
+			ASSERT_THAT(IsFalse(IsCastActive(ASC), TEXT("Annulé tout de suite côté client")));
+			SendInput(Client, false);
+		});
+	}
+
+	/** Rien en cours : la touche ne fait rien. Pendant le nourrissage : annulé partout, rien de payé. */
+	TEST_METHOD(CancelKey_DuringFeed_NoCost)
+	{
+		QueueSetup(Cost);
+		Network.ThenClient(TEXT("Client 0 : touche d'annulation sans sort en cours"), 0, [this](FBasePIENetworkComponentState& Client)
+		{
+			ASSERT_THAT(AreEqual(0, GetLocalGenASC(Client)->CancelPendingCasts(), TEXT("Rien à annuler")));
+			SendInput(Client, true);
+		});
+		QueueClientWait(TEXT("Client 0 : 1 flamme nourrie"), 0.4f);
+		Network.ThenServer(TEXT("Serveur : en nourrissage"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsTrue(IsCastActive(ServerCasterASC.Get())));
+		});
+		QueueCancelKey();
+		QueueAssertNoCost();
+	}
+
+	/** Pendant l'incantation (après le nourrissage) : annulé partout, rien de payé. */
+	TEST_METHOD(CancelKey_DuringCast_NoCost)
+	{
+		QueueSetup(Cost);
+		Network.ThenClient(TEXT("Client 0 : appuie"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, true); });
+		QueueClientWait(TEXT("Client 0 : 1 flamme nourrie"), 0.4f);
+		Network.ThenClient(TEXT("Client 0 : relâche (incantation)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, false); });
+		QueueClientWait(TEXT("Client 0 : en pleine incantation"), 0.15f);
+		QueueCancelKey();
+		QueueAssertNoCost();
+	}
+
+	/**
+	 * Serveur, visée du client déjà reçue (départ différé) : CancelPendingCasts n'annule rien (CanBeCanceled faux),
+	 * le sort part à la fin de l'incantation du serveur et l'énergie est payée.
+	 */
+	TEST_METHOD(CancelKey_ServerAfterAimArrived_NotCancelled_CostPaid)
+	{
+		QueueSetup(Cost);
+		QueueEarlyAim();
+		Network
+			.ThenServer(TEXT("Serveur : annulation demandée après la visée"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(0, ServerCasterASC->CancelPendingCasts(), TEXT("Visée reçue : plus annulable")));
+				const UGenGA_Projectile* Instance = GetInstance(ServerCasterASC.Get());
+				ASSERT_THAT(IsTrue(Instance && Instance->IsWaitingForDeferredLaunch(), TEXT("Le départ différé continue")));
+			})
+			.UntilServer(TEXT("Serveur : projectile parti"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : coûts payés"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				ASSERT_THAT(IsNear(StartEnergy - Cost, EnergyAtSpawn, 0.001f));
+				ASSERT_THAT(IsTrue(bCooldownAtSpawn));
+			});
 	}
 };
 

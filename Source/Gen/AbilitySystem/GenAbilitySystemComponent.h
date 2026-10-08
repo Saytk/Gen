@@ -59,6 +59,14 @@ public:
 	void RemoveTimedStates();
 
 	/**
+	 * Touche d'annulation (Plan 3 Task 6, guidelines §3.1) : annule les sorts encore en nourrissage ou en incantation
+	 * (UGenGA_Cast::IsCastPending), annulation prédite et répliquée au serveur. Un sort déjà parti (fenêtre de contre,
+	 * bond en vol, forme de feu) n'est jamais annulé. Serveur, visée du client déjà reçue : CanBeCanceled est faux, le
+	 * sort part et ses coûts restent payés. Renvoie le nombre de sorts annulés.
+	 */
+	int32 CancelPendingCasts();
+
+	/**
 	 * Serveur : un verrou de lancement (State.CastLocked) vient d'être posé (ex : bond en vol). MinLockDuration =
 	 * sa durée la PLUS COURTE possible (bond : son atterrissage le plus précoce, pas sa durée nominale).
 	 * Les activations d'un client distant ne sont refusées que pendant MinLockDuration - CastTimeTolerance
