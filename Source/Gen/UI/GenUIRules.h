@@ -18,6 +18,16 @@ enum class EGenAbilitySlotState : uint8
 namespace GenUIRules
 {
 	/**
+	 * Temps restant d'une recharge, borné à sa durée. Côté client, le GE de recharge répliqué du serveur part de
+	 * l'heure serveur estimée par le GameState, en retard de la latence et de la période de réplication de
+	 * cette heure : pendant quelques images il reste plus que la durée ("7" sur une recharge de 6 s).
+	 */
+	inline float ClampCooldownRemaining(float Remaining, float TotalDuration)
+	{
+		return TotalDuration > 0.f ? FMath::Min(Remaining, TotalDuration) : Remaining;
+	}
+
+	/**
 	 * Texte du chiffre de recharge (§4.1) : secondes entières arrondies au-dessus dès 1 s,
 	 * une décimale sous 1 s, rien si la recharge est finie ou si sa durée totale est < HideBelowTotal.
 	 */

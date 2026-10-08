@@ -23,6 +23,13 @@ bool FGenUICooldownFormatTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("terminé -> vide"), GenUIRules::FormatCooldown(0.f, 6.f, 2.f), FString());
 	TestEqual(TEXT("durée totale 1 s -> caché"), GenUIRules::FormatCooldown(0.8f, 1.f, 2.f), FString());
 	TestEqual(TEXT("durée totale exactement 2 s -> affiché"), GenUIRules::FormatCooldown(1.5f, 2.f, 2.f), FString(TEXT("2")));
+
+	// GE du serveur lu avec une heure serveur estimée en retard : jamais plus que la durée, donc jamais "7" sur 6 s
+	TestEqual(TEXT("6.03 s restantes sur 6 s -> 6"), GenUIRules::ClampCooldownRemaining(6.03f, 6.f), 6.f);
+	TestEqual(TEXT("borné puis formaté -> 6"), GenUIRules::FormatCooldown(GenUIRules::ClampCooldownRemaining(6.03f, 6.f), 6.f, 2.f), FString(TEXT("6")));
+	TestEqual(TEXT("sous la durée : inchangé"), GenUIRules::ClampCooldownRemaining(4.2f, 6.f), 4.2f);
+	TestEqual(TEXT("durée inconnue : inchangé"), GenUIRules::ClampCooldownRemaining(0.5f, 0.f), 0.5f);
+	TestEqual(TEXT("négatif : inchangé"), GenUIRules::ClampCooldownRemaining(-0.1f, 6.f), -0.1f);
 	return true;
 }
 

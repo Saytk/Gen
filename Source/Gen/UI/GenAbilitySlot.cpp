@@ -342,6 +342,8 @@ void UGenAbilitySlot::RefreshCooldown()
 	if (ASC.IsValid() && AbilityCDO.IsValid() && SpecHandle.IsValid())
 	{
 		AbilityCDO->GetCooldownTimeRemainingAndDuration(SpecHandle, ASC->AbilityActorInfo.Get(), Remaining, Duration);
+		// Le GE répliqué du serveur peut annoncer un peu plus que la durée (heure serveur estimée en retard)
+		Remaining = GenUIRules::ClampCooldownRemaining(Remaining, Duration);
 	}
 
 	// CooldownEndTime n'est remis à zéro qu'à la fin d'une recharge et dans Unbind : un événement de tag
