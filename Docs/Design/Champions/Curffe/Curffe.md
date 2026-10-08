@@ -87,7 +87,7 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 - Cast **0.1 s**, cooldown **16 s**.
 - The mage becomes living fire: **untouchable for 0.5 s**, can't cast (guidelines §3.5 allows ≤ 0.5 s
   on R).
-- At the end: a **2.5 m** ring (A) deals **8** damage and **knocks back 3 m**; flames **refill to 5**;
+- At the end: a **2.5 m** ring (A) deals **8** damage and **knocks back 3 m**; flames **refill to 5** (the refill is applied at launch, so a spell cast on the first frame after the form is fully fed; he can't cast during the form, and the Hearth shows the refill at the end; decision 2026-10-08);
   then **+30 % move speed for 2 s**, during which he can cast.
 - Selfish and offensive: dodge the burst, come out with a full Hearth for a 5-flame Great Fireball.
 - Overlap with Q is intentional and bounded: Backfire is a timing parry against projectiles/melee
