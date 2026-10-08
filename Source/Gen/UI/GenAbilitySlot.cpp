@@ -5,6 +5,7 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "GenGameplayTags.h"
@@ -42,9 +43,34 @@ void UGenAbilitySlot::NativeConstruct()
 	{
 		ArcMID = ArcImage->GetDynamicMaterial();
 		UE_CLOG(!ArcMID, LogGenUI, Warning, TEXT("%s : ArcImage n'a pas de matériau (M_UI_SegmentArc attendu), arc d'énergie invisible."), *GetPathName());
+	}
+	ApplyLayout();
+	RefreshVisuals();
+}
+
+void UGenAbilitySlot::ApplyLayout()
+{
+	const UGenUIMetrics* Metrics = GetUIMetrics();
+	const UGenUIPalette* Palette = GetUIPalette();
+
+	// Disque de 64 px, 72 px pour l'ultime (§4.1)
+	if (IconSizeBox)
+	{
+		const float Size = bIsUltimate ? Metrics->UltimateSlotSize : Metrics->SlotSize;
+		IconSizeBox->SetWidthOverride(Size);
+		IconSizeBox->SetHeightOverride(Size);
+	}
+	if (ArcImage)
+	{
 		ArcImage->SetVisibility(bIsUltimate ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
-	RefreshVisuals();
+
+	// Glyphes d'interface (souris, cadenas) : textures blanches teintées en text.primary (§2.11)
+	if (KeyGlyphImage)
+	{
+		KeyGlyphImage->SetColorAndOpacity(Palette->Text_Primary);
+	}
+	LockImage->SetColorAndOpacity(Palette->Text_Primary);
 }
 
 void UGenAbilitySlot::NativeDestruct()
@@ -55,11 +81,9 @@ void UGenAbilitySlot::NativeDestruct()
 
 void UGenAbilitySlot::Bind(UAbilitySystemComponent* InASC)
 {
-	// bIsUltimate est posé par la barre après notre NativeConstruct : on réapplique la visibilité de l'arc
-	if (ArcImage)
-	{
-		ArcImage->SetVisibility(bIsUltimate ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	}
+	// bIsUltimate est posé par la barre après notre NativeConstruct, et la palette n'est sûre qu'avec le joueur local :
+	// on réapplique taille, arc et teintes
+	ApplyLayout();
 
 	Unbind();
 	ASC = InASC;

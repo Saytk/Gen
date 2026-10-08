@@ -14,6 +14,7 @@ class UGenUIMetrics;
 class UGenUIPalette;
 class UImage;
 class UMaterialInstanceDynamic;
+class USizeBox;
 struct FActiveGameplayEffectHandle;
 struct FGameplayEffectSpec;
 struct FOnAttributeChangeData;
@@ -52,8 +53,11 @@ protected:
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UImage> LockImage;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> KeyGlyphImage;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> ArcImage;
+	/** Boîte du disque : SlotSize, ou UltimateSlotSize pour l'ultime (DA_UIMetrics, §4.1). */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> IconSizeBox;
 
 private:
+	void ApplyLayout();
 	void ResolveAbility();
 	void RefreshKeyLabel();
 	void RefreshCooldown();
