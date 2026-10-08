@@ -28,4 +28,23 @@ namespace CurffeHearthRules
 			Out.Add(Index < Lit ? ESocket::Lit : (Index < Lit + InSpell ? ESocket::InSpell : ESocket::Empty));
 		}
 	}
+
+	/**
+	 * Emplacement que quitte (ou retrouve) l'unité nourrie n° FedIndex (0 = la première) : la plus haute flamme encore
+	 * allumée avant elle, Flames − 1 − FedIndex (GetSocketStates éteint les emplacements par le haut). INDEX_NONE hors bornes.
+	 */
+	inline int32 GetFedSocketIndex(int32 Flames, int32 FedIndex, int32 Sockets)
+	{
+		const int32 Index = FMath::Min(Flames, Sockets) - 1 - FedIndex;
+		return Index >= 0 && Index < Sockets ? Index : INDEX_NONE;
+	}
+
+	/**
+	 * Le compte nourri baisse de FedDrop : flammes dépensées (lancer : la ressource a baissé d'autant depuis le
+	 * nourrissage, rien ne vole) ou rendues (annulation, interruption, flammes illimitées : elles reviennent au Foyer).
+	 */
+	inline bool IsFedSpent(int32 FlamesWhileFeeding, int32 FlamesNow, int32 FedDrop)
+	{
+		return FedDrop > 0 && FlamesWhileFeeding - FlamesNow >= FedDrop;
+	}
 }

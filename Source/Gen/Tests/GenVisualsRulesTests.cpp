@@ -165,6 +165,64 @@ bool FGenLeapAimTest::RunTest(const FString& Parameters)
 	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector(300.f, 400.f, 0.f), P, 0, G);
 	TestEqual(TEXT("curseur dans la portée : atterrissage au curseur"), G.TargetCenter.Y, 400.0, 0.01);
 	TestEqual(TEXT("0 flamme : aucune amorce"), G.StubDirections.Num(), 0);
+
+	// Vol (vu par tous) : même cercle et mêmes amorces que la visée, au point verrouillé, sans arc de portée
+	FGenAimGeometry Aim;
+	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector(0.f, 500.f, 0.f), P, 2, Aim);
+	FGenAimGeometry Flight;
+	GenIndicatorRules::ComputeLeapFlight(Aim.TargetCenter, FVector(0.f, 1.f, 0.f), P, 2, Flight);
+	TestTrue(TEXT("vol : même centre"), Flight.TargetCenter.Equals(Aim.TargetCenter, 0.01));
+	TestEqual(TEXT("vol : même rayon"), Flight.TargetRadius, Aim.TargetRadius, 0.01f);
+	TestEqual(TEXT("vol : pas d'arc de portée"), Flight.RangeArcRadius, 0.f);
+	TestEqual(TEXT("vol : 2 amorces"), Flight.StubDirections.Num(), 2);
+	for (int32 Index = 0; Index < 2 && Index < Flight.StubDirections.Num() && Index < Aim.StubDirections.Num(); ++Index)
+	{
+		TestTrue(*FString::Printf(TEXT("vol : amorce %d = visée"), Index), Flight.StubDirections[Index].Equals(Aim.StubDirections[Index], 0.001f));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenHearthFlightsTest, "Gen.Curffe.HearthFlights",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenHearthFlightsTest::RunTest(const FString& Parameters)
+{
+	using namespace CurffeHearthRules;
+	// 5 flammes, nourrissage de 3 : les emplacements 4, 3 puis 2 s'éteignent (les flammes restantes gardent 0..1)
+	TestEqual(TEXT("1re flamme nourrie : emplacement 4"), GetFedSocketIndex(5, 0, 5), 4);
+	TestEqual(TEXT("3e flamme nourrie : emplacement 2"), GetFedSocketIndex(5, 2, 5), 2);
+	TestEqual(TEXT("3 flammes, 1re nourrie : emplacement 2"), GetFedSocketIndex(3, 0, 5), 2);
+	TestEqual(TEXT("hors bornes"), GetFedSocketIndex(1, 1, 5), INDEX_NONE);
+
+	// Cohérent avec GetSocketStates : l'emplacement quitté est dans le sort
+	TArray<ESocket, TInlineAllocator<8>> States;
+	GetSocketStates(5, 2, 5, States);
+	TestTrue(TEXT("emplacement de la 2e flamme : dans le sort"), States[GetFedSocketIndex(5, 1, 5)] == ESocket::InSpell);
+	TestTrue(TEXT("emplacement suivant : encore allumé"), States[GetFedSocketIndex(5, 2, 5)] == ESocket::Lit);
+
+	TestTrue(TEXT("lancer : 3 nourries, 3 dépensées"), IsFedSpent(5, 2, 3));
+	TestFalse(TEXT("annulation : rien dépensé"), IsFedSpent(5, 5, 3));
+	TestFalse(TEXT("flammes illimitées : rien dépensé"), IsFedSpent(4, 4, 2));
+	TestFalse(TEXT("aucune baisse"), IsFedSpent(5, 2, 0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenBaseExplosionAimTest, "Gen.Visuals.BaseExplosionAim",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenBaseExplosionAimTest::RunTest(const FString& Parameters)
+{
+	// Pyroblast : non nourrissable, éclat de 120 cm sans nourrissage (même règle que le tir : GetShotExplosionRadius)
+	GenIndicatorRules::FProjectileAimParams P;
+	P.SpawnForwardOffset = 70.f;
+	P.Range = 1300.f;
+	P.CollisionRadius = 30.f;
+	P.BaseExplosionRadius = 120.f;
+	FGenAimGeometry G;
+	GenIndicatorRules::ComputeProjectileAim(FVector::ZeroVector, FVector::ForwardVector, P, 0, -1.f, G);
+	TestEqual(TEXT("éclat de base"), G.CapRadius, GenFeeding::GetShotExplosionRadius(0, P.ExplosionMinFeed, P.ExplosionRadius, P.BaseExplosionRadius), 0.01f);
+	TestEqual(TEXT("120 cm"), G.CapRadius, 120.f, 0.01f);
+	TestEqual(TEXT("largeur sans échelle"), G.LineWidth, 60.f, 0.01f);
 	return true;
 }
 
