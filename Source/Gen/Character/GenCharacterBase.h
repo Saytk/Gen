@@ -17,6 +17,7 @@ class UNiagaraSystem;
 class UGenAbilitySystemComponent;
 class UGenAttributeSet;
 class UGenGameplayAbility;
+class UGenSpellIndicatorComponent;
 struct FOnAttributeChangeData;
 
 namespace GenCastBar
@@ -189,8 +190,13 @@ public:
 	/**
 	 * Appelé par le sort qui nourrit (Source), sur le serveur et le client propriétaire (prédiction).
 	 * Un seul sort possède l'affichage : Count = 0 n'efface que l'affichage posé par Source.
+	 * bSpent (revue V6-V8, I-3) : la baisse est un lancer (unités parties dans le sort), pas une annulation ; répliqué
+	 * avec le compte (FedSpentCount) pour que les autres clients le sachent sans deviner par la ressource.
 	 */
-	void SetFedResource(const UObject* Source, uint8 Count);
+	void SetFedResource(const UObject* Source, uint8 Count, bool bSpent = false);
+
+	/** La dernière baisse du compte nourri était-elle un lancer (unités dépensées) ? Faux pour une annulation. */
+	bool WasLastFedDropSpent() const { return bLastFedDropSpent; }
 
 	/** Le sort Source disparaît (retiré, ramassé) : s'il possède l'affichage, il est effacé (sinon rien ne l'effacerait). */
 	void ClearFedResourceFrom(const UObject* Source);
@@ -219,6 +225,27 @@ public:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerReportFedResource(UClass* Ability, uint8 Count);
+
+	/**
+	 * Multiplicateur de vitesse posé par un sort (Source, Reason), local à cette machine et jamais répliqué : le serveur et
+	 * le client propriétaire le posent chacun au début de LEUR phase et le retirent à LEUR fin (ralenti d'incantation,
+	 * posture de contre). La vitesse de marche = attribut MoveSpeed × produit de ces multiplicateurs. Revue Plan 2
+	 * Tasks 7-8, I-4 : un GE prédit restait ~1 RTT de trop chez le client (le retrait du serveur) => correction du
+	 * mouvement à chaque fin de phase. Les autres clients n'en ont pas besoin (mouvement répliqué).
+	 */
+	void SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier);
+	void ClearLocalMoveSpeedMultiplier(const UObject* Source, FName Reason);
+
+	/**
+	 * Revue V6-V8, I-2 : client propriétaire, envoie tout de suite le mouvement en attente au serveur. Appelé juste avant
+	 * une RPC de sort (activation, visée) qui change un ralenti local, pour que les mouvements d'avant la borne arrivent
+	 * avant elle. Sans effet ailleurs.
+	 */
+	void FlushMovesToServer();
+
+	/** Produit des multiplicateurs locaux (1 = aucun). */
+	UFUNCTION(BlueprintPure, Category = "Gen|Movement")
+	float GetLocalMoveSpeedMultiplier() const;
 
 	/**
 	 * Serveur : repousse le personnage de Distance (cm) dans Direction (aplatie à l'horizontale).
@@ -277,6 +304,12 @@ public:
 
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 
+	/** Horloge des incantations et des bonds : temps serveur (GameState), sinon temps du monde. */
+	float GetCastClockSeconds() const;
+
+	/** Plan Visuals V6 : indicateurs au sol (visée du lanceur, télégraphes centrés, bond en vol). */
+	UGenSpellIndicatorComponent* GetSpellIndicator() const { return SpellIndicator; }
+
 	/** Bond en vol : point d'atterrissage vu par tous (serveur et client propriétaire ; StartTime est fixé ici). */
 	void SetLeapTarget(const FGenLeapTarget& Target);
 	/** Fin du bond d'Ability (sans effet si un autre bond a pris la place). */
@@ -331,6 +364,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|Status")
 	TObjectPtr<UGenStatusVisualsComponent> StatusVisuals;
 
+	/** Indicateurs au sol (matériaux MI_Telegraph_* assignés dans BP_Champion). Rien sur un serveur dédié. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|Indicator")
+	TObjectPtr<UGenSpellIndicatorComponent> SpellIndicator;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Health")
 	bool bRagdollOnDeath = true;
 
@@ -346,11 +383,25 @@ protected:
 	uint8 FedResource = 0;
 
 	/**
+	 * Revue V6-V8, I-3 : lancers avec unités nourries (compteur qui tourne), changé dans la même image que FedResource,
+	 * donc reçu avec lui. Les autres clients savent qu'une baisse est un lancer quand il a changé (OnRep_FedResource).
+	 */
+	UPROPERTY(Replicated)
+	uint8 FedSpentCount = 0;
+
+	/** Autres clients : FedSpentCount à la réception précédente. */
+	uint8 LastSeenFedSpentCount = 0;
+
+	/** Dernière baisse du compte nourri : lancer (vrai) ou annulation (faux). */
+	bool bLastFedDropSpent = false;
+
+	/**
 	 * Échelle de l'effet d'incantation par unité nourrie (Curffe : la charge de la main grandit d'un cran par flamme,
-	 * Curffe-Visuals.md §3.2). 0 = taille fixe. Python : cast_fx_scale_per_fed.
+	 * Curffe-Visuals.md §3.2). 0 = taille fixe. Python : cast_fx_scale_per_fed. 0.25 par défaut : les seuils de
+	 * NS_Curffe_GreatFireballCharge supposent cette valeur (les sorts non nourris restent à l'échelle 1).
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Cast")
-	float CastFXScalePerFed = 0.f;
+	float CastFXScalePerFed = 0.25f;
 
 	/** Autres clients : le compte nourri répliqué change (seuils, échelle de l'effet). */
 	UFUNCTION()
@@ -365,9 +416,22 @@ protected:
 	/** Échelle de CastFXComponent pour Count unités nourries (1 + CastFXScalePerFed × Count). */
 	void ApplyCastFXScale(int32 Count);
 
+	/** Point du cue de seuil : socket du sort (CastInfo.FXSocket), sinon l'effet d'incantation, sinon le personnage. */
+	FVector GetFeedCueLocation() const;
+
 	/** Non répliqué au propriétaire : il le prédit lui-même. */
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Leap")
+	UPROPERTY(ReplicatedUsing = OnRep_LeapTarget, BlueprintReadOnly, Category = "Gen|Leap")
 	FGenLeapTarget LeapTarget;
+
+	/** Autres clients : le cercle d'atterrissage arrive (réveille l'indicateur, revue V6-V8, M-5). */
+	UFUNCTION()
+	void OnRep_LeapTarget();
+
+	/** L'indicateur peut avoir quelque chose à dessiner (incantation, canalisation, bond). */
+	void WakeSpellIndicator();
+
+	/** Un ralenti local a changé : grâce des corrections côté serveur (UGenCharacterMovementComponent). */
+	void NoteLocalSpeedChange();
 
 	/** Propriétaire de l'affichage des unités nourries (serveur et client propriétaire, non répliqué). */
 	GenFeeding::FFedDisplay FedDisplay;
@@ -407,9 +471,6 @@ protected:
 	/** Lance ou arrête l'effet d'incantation selon CastInfo (rien sur un serveur dédié). */
 	void UpdateCastFX();
 
-	/** Horloge des incantations : temps serveur (GameState), sinon temps du monde. */
-	float GetCastClockSeconds() const;
-
 	/** Pendant l'incantation : face à la visée (rotation de contrôle) ; sinon : face au déplacement. */
 	void SetFaceAim(bool bFaceAim);
 
@@ -427,6 +488,17 @@ private:
 	void GrantStartupAbilitiesAndEffects();
 	void RemoveStartupAbilitiesAndEffects();
 	void OnMoveSpeedChanged(const FOnAttributeChangeData& Data);
+
+	/** Vitesse de marche du CMC = MoveSpeed × GetLocalMoveSpeedMultiplier(). */
+	void RefreshMaxWalkSpeed();
+
+	struct FLocalMoveSpeedMultiplier
+	{
+		FObjectKey Source;
+		FName Reason;
+		float Multiplier = 1.f;
+	};
+	TArray<FLocalMoveSpeedMultiplier, TInlineAllocator<2>> LocalMoveSpeedMultipliers;
 
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 	TArray<FActiveGameplayEffectHandle> GrantedEffectHandles;

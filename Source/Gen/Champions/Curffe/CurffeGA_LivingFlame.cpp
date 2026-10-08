@@ -1,5 +1,6 @@
 #include "Champions/Curffe/CurffeGA_LivingFlame.h"
 
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
@@ -7,7 +8,9 @@
 #include "Champions/Curffe/CurffeEffects.h"
 #include "Champions/Curffe/CurffeGameplayTags.h"
 #include "Character/GenCharacterBase.h"
+#include "Engine/World.h"
 #include "GenGameplayTags.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCurffeLivingFlame, Log, All);
 
@@ -28,7 +31,10 @@ UCurffeGA_LivingFlame::UCurffeGA_LivingFlame()
 
 void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 {
-	// Forme de feu prédite chez le client : intouchable, vue par tous (État + tag propre à Curffe pour son visuel)
+	// Forme de feu prédite chez le client : intouchable, vue par tous (État + tag propre à Curffe pour son visuel).
+	// Revue P3 T8-10, M1 : le GE prédit est remplacé par celui du serveur (commencé ~½ RTT plus tard, retrait reçu ~½ RTT
+	// après sa fin) : le propriétaire garde les tags de la forme ~1 RTT après SA fin de forme, alors qu'il peut déjà agir
+	// (verrou local levé) et être touché (tout est décidé par le serveur). Affichage seulement ; son Foyer suit son verrou
 	FGameplayEffectSpecHandle FormSpec = MakeOutgoingGameplayEffectSpec(UGenGE_TimedState::StaticClass(), GetAbilityLevel());
 	if (FormSpec.IsValid())
 	{
@@ -37,6 +43,15 @@ void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 		FormTags.AddTag(CurffeGameplayTags::State_LivingFlame);
 		UGenGE_TimedState::SetDuration(*FormSpec.Data, FormDuration, FormTags);
 		FormEffectHandle = ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, FormSpec);
+	}
+
+	// Revue P3 T8-10, I2 : Foyer plein dès le départ, prédit chez le client (fenêtre de la visée) et annulé si le serveur
+	// refuse le lancer. Rien ne peut le dépenser pendant la forme (verrou de lancement) : même résultat qu'à la fin de la
+	// forme, sans le trou d'un RTT où « flamme vivante -> grande boule de feu à 3 flammes » partait sans flamme. Le Foyer
+	// n'affiche les flammes qu'à la fin de la forme (UCurffeHearthComponent).
+	if (RefillEffect)
+	{
+		ApplyGameplayEffectToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, RefillEffect->GetDefaultObject<UGameplayEffect>(), GetAbilityLevel());
 	}
 
 	// Sans sort pendant la forme : verrou de lancement, seul point d'entrée du tag (State.CastLocked local + fenêtre
@@ -70,6 +85,23 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 	// Plan Visuals V3 : geste de l'anneau, à vitesse 1, jusqu'au bout même après la fin du sort
 	PlayPhaseMontage(FinishMontage, 1.f, /*bStopWhenAbilityEnds*/ false);
 
+	// Hâte (revue P3 T8-10, M3) : multiplicateur local posé par CETTE machine (serveur, client propriétaire) à SA fin de
+	// forme, retiré HasteDuration plus tard. Prédite chez le client sans le RTT d'un GE du serveur ; le serveur ouvre sa
+	// grâce de mouvement aux deux bornes (NoteLocalSpeedChange). Clé : la classe du sort (une flamme vivante par personnage)
+	AGenCharacterBase* HasteCharacter = GetGenCharacterFromActorInfo();
+	if (HasteCharacter && HasteMultiplier > 1.f && HasteDuration > 0.f && GetWorld())
+	{
+		static const FName HasteReason(TEXT("LivingFlameHaste"));
+		const UClass* HasteSource = GetClass();
+		HasteCharacter->SetLocalMoveSpeedMultiplier(HasteSource, HasteReason, HasteMultiplier);
+		GetWorld()->GetTimerManager().SetTimer(HasteTimer, FTimerDelegate::CreateWeakLambda(HasteCharacter, [HasteCharacter, HasteSource]()
+		{
+			HasteCharacter->ClearLocalMoveSpeedMultiplier(HasteSource, HasteReason);
+		}), HasteDuration, false);
+		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[%s] %s : hâte x%.2f %.1fs"), HasteCharacter->HasAuthority() ? TEXT("SERVEUR") : TEXT("CLIENT"),
+			*GetName(), HasteMultiplier, HasteDuration);
+	}
+
 	const AActor* Avatar = GetAvatarActorFromActorInfo();
 	if (Avatar && Avatar->HasAuthority())
 	{
@@ -79,21 +111,7 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 		Params.KnockbackDistance = BurstKnockback;
 		SpawnGroundArea(BurstAreaClass, Avatar->GetActorLocation(), Params, UGenGE_Damage::StaticClass(), BurstDamage, 0.f);
 
-		// Foyer plein
-		if (RefillEffect)
-		{
-			ApplyGameplayEffectToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, RefillEffect->GetDefaultObject<UGameplayEffect>(), GetAbilityLevel());
-		}
-
-		// Hâte : appliquée par le serveur (hors fenêtre de prédiction), répliquée au propriétaire
-		FGameplayEffectSpecHandle HasteSpec = MakeOutgoingGameplayEffectSpec(UGenGE_TimedMoveSpeed::StaticClass(), GetAbilityLevel());
-		if (HasteSpec.IsValid())
-		{
-			UGenGE_TimedMoveSpeed::SetMagnitudes(*HasteSpec.Data, HasteDuration, HasteMultiplier, FGameplayTagContainer());
-			ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, HasteSpec);
-		}
-
-		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[SERVEUR] %s : anneau (%.0f cm), Foyer rempli, hâte x%.2f %.1fs"), *GetName(), BurstRadius, HasteMultiplier, HasteDuration);
+		UE_LOG(LogCurffeLivingFlame, Verbose, TEXT("[SERVEUR] %s : anneau (%.0f cm)"), *GetName(), BurstRadius);
 	}
 
 	FinishAbility();
@@ -110,3 +128,38 @@ void UCurffeGA_LivingFlame::EndAbility(const FGameplayAbilitySpecHandle Handle, 
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
+
+#define LOCTEXT_NAMESPACE "CurffeGA_LivingFlame"
+
+void UCurffeGA_LivingFlame::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Super::GetTooltipArgs(Args);
+	Args.Add(TEXT("Duration"), GenAbilityTooltip::Seconds(FormDuration));
+	Args.Add(TEXT("Radius"), GenAbilityTooltip::Meters(BurstRadius));
+	Args.Add(TEXT("Damage"), GenAbilityTooltip::Number(BurstDamage));
+	Args.Add(TEXT("Knockback"), GenAbilityTooltip::Meters(BurstKnockback));
+	Args.Add(TEXT("Haste"), GenAbilityTooltip::Percent(HasteMultiplier - 1.f));
+	Args.Add(TEXT("HasteDuration"), GenAbilityTooltip::Seconds(HasteDuration));
+}
+
+void UCurffeGA_LivingFlame::GetTooltipEffectLines(TArray<FText>& OutLines) const
+{
+	OutLines.Add(FText::Format(LOCTEXT("Form", "Forme de feu {0} : intouchable, sans sort"), GenAbilityTooltip::Seconds(FormDuration)));
+	TArray<FText> Burst;
+	Burst.Add(FText::Format(LOCTEXT("Burst", "Fin de la forme : anneau {0}, {1} dégâts"), GenAbilityTooltip::Meters(BurstRadius), GenAbilityTooltip::Number(BurstDamage)));
+	if (BurstKnockback > 0.f)
+	{
+		Burst.Add(FText::Format(LOCTEXT("BurstKnockback", "recul {0}"), GenAbilityTooltip::Meters(BurstKnockback)));
+	}
+	OutLines.Add(GenAbilityTooltip::Join(Burst, LOCTEXT("Comma", ", ")));
+	if (RefillEffect)
+	{
+		OutLines.Add(LOCTEXT("Refill", "Foyer rempli"));
+	}
+	if (HasteMultiplier > 1.f && HasteDuration > 0.f)
+	{
+		OutLines.Add(FText::Format(LOCTEXT("Haste", "Vitesse +{0} pendant {1}"), GenAbilityTooltip::Percent(HasteMultiplier - 1.f), GenAbilityTooltip::Seconds(HasteDuration)));
+	}
+}
+
+#undef LOCTEXT_NAMESPACE

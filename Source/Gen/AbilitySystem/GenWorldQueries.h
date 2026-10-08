@@ -3,8 +3,10 @@
 #include "CoreMinimal.h"
 
 class AActor;
+class APawn;
 class UWorld;
 struct FHitResult;
+enum class EGenViewerRelation : uint8;
 
 /**
  * Requêtes de monde partagées par les projectiles et les zones au sol.
@@ -29,4 +31,16 @@ namespace GenWorldQueries
 
 	/** Sol sous Point (trace vers le bas sur WorldStatic) ; Point lui-même si rien n'est trouvé. */
 	GEN_API FVector FindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors);
+
+	/** Comme FindFloor, mais dit si un sol a été trouvé (OutFloor inchangé sinon). */
+	GEN_API bool TryFindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors, FVector& OutFloor);
+
+	/**
+	 * Point de vue du joueur local de World (GEngine->GetFirstLocalPlayerController : jamais un contrôleur distant ; le
+	 * premier en écran partagé) sur un effet de SourcePawn / SourceTeam. Soi : même PlayerState (juste quand le joueur
+	 * local est mort ou entre deux possessions) ou même pion (pion sans PlayerState). Sans joueur local (serveur dédié) :
+	 * équipe GenNoTeam, donc ennemi ou neutre ; les appelants ne dessinent rien là. Seule règle du « joueur local » des
+	 * visuels (zones, projectiles, indicateurs, corps fantôme).
+	 */
+	GEN_API EGenViewerRelation GetLocalViewerRelation(const UWorld* World, const APawn* SourcePawn, uint8 SourceTeam);
 }

@@ -6,6 +6,7 @@
 #include "GenGA_Projectile.generated.h"
 
 class AGenProjectile;
+struct FGenProjectileShotParams;
 class UGameplayEffect;
 
 /**
@@ -23,8 +24,34 @@ class GEN_API UGenGA_Projectile : public UGenGA_Cast
 public:
 	UGenGA_Projectile();
 
+	/**
+	 * Plan Visuals V6 : couloir jusqu'à la portée du projectile (coupé au premier mur), largeur = diamètre de collision ×
+	 * l'échelle que le serveur appliquera pour Fed, éclat au rayon du tir (GenIndicatorRules::ComputeProjectileAim).
+	 */
+	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const override;
+
+	/** Tir de base (bIsBasicAttack, déclaré par le sort) : jamais de ligne de visée par défaut. */
+	bool IsBasicAttack() const { return bIsBasicAttack; }
+
+	/** Dégâts d'un tir avec Fed unités nourries : le tir (SpawnProjectile) et l'infobulle lisent cette valeur. */
+	float GetShotDamage(int32 Fed, int32 Level = 1) const;
+
+	/** Vitesse, taille, explosion et repoussement d'un tir avec Fed unités nourries (tir et infobulle). */
+	FGenProjectileShotParams GetShotParams(int32 Fed) const;
+
+	//~ UGenGameplayAbility (infobulle) : {Damage} (sans flamme), {DamageMax}, {Range}, {ExplosionRadius}, {Knockback}, {EnergyOnHit}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipRange() const override;
+	virtual FText GetFeedTooltipLines(int32 Fed) const override;
+
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
+
+	/**
+	 * Attaque de base (clic gauche, Pyroblast) : ligne de visée seulement si le joueur l'a demandée (console
+	 * gen.ShowBasicAttackAimLine 1, client ; passera dans les réglages, UI §7.2). Art Bible §7.2 : Filler sans télégraphe.
+	 */
+	virtual bool WantsAimIndicator() const override;
 
 	/** Serveur uniquement : fait apparaître le projectile en direction de TargetLocation. */
 	UFUNCTION(BlueprintCallable, Category = "Gen|Projectile")

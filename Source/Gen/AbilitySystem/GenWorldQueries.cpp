@@ -2,11 +2,15 @@
 
 #include "AbilitySystem/GenAreaRules.h"
 #include "Actors/GenProjectile.h"
+#include "Character/GenCharacterBase.h"
 #include "CollisionQueryParams.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/Engine.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerController.h"
+#include "Player/GenPlayerState.h"
 
 namespace GenWorldQueries
 {
@@ -83,17 +87,35 @@ namespace GenWorldQueries
 
 	FVector FindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors)
 	{
+		FVector Floor = Point;
+		TryFindFloor(World, Point, IgnoredActors, Floor);
+		return Floor;
+	}
+
+	bool TryFindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors, FVector& OutFloor)
+	{
 		if (!World)
 		{
-			return Point;
+			return false;
 		}
 
 		FHitResult Hit;
 		const FCollisionObjectQueryParams Floors(ECC_WorldStatic);
 		if (World->LineTraceSingleByObjectType(Hit, Point + FVector(0.f, 0.f, FloorTraceUp), Point - FVector(0.f, 0.f, FloorTraceDown), Floors, MakeParams(IgnoredActors)))
 		{
-			return FVector(Hit.ImpactPoint);
+			OutFloor = FVector(Hit.ImpactPoint);
+			return true;
 		}
-		return Point;
+		return false;
+	}
+
+	EGenViewerRelation GetLocalViewerRelation(const UWorld* World, const APawn* SourcePawn, uint8 SourceTeam)
+	{
+		const APlayerController* Viewer = (World && GEngine) ? GEngine->GetFirstLocalPlayerController(World) : nullptr;
+		const AGenPlayerState* ViewerState = Viewer ? Viewer->GetPlayerState<AGenPlayerState>() : nullptr;
+		const bool bViewerIsSource = SourcePawn
+			&& ((ViewerState && SourcePawn->GetPlayerState() == ViewerState) || (Viewer && Viewer->GetPawn() == SourcePawn));
+		const uint8 ViewerTeam = ViewerState ? ViewerState->GetTeamId() : GenNoTeam;
+		return GenAreaRules::GetViewerRelation(bViewerIsSource, ViewerTeam, SourceTeam, GenNoTeam);
 	}
 }

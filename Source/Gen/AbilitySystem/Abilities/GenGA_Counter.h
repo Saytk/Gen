@@ -10,8 +10,10 @@
  * et la mêlée pendant CounterWindow (les zones au sol passent), ralenti pendant la fenêtre.
  * Chaque coup bloqué (Event.Counter.Blocked, serveur) rapporte ResourcePerBlock, l'énergie une fois par
  * incantation, et repousse un attaquant au corps à corps. La fenêtre se termine à la fin du délai, à la
- * mort, sur un contrôle dur (surveillance de UGenGA_Cast, posée dès l'incantation : garder CastTime > 0)
- * ou quand le joueur lance un autre sort.
+ * mort, sur un contrôle dur (surveillance de UGenGA_Cast, armée dès l'activation, quelle que soit CastTime)
+ * ou quand le joueur active un autre sort avec sa touche (jamais un sort passif ou déclenché par un événement).
+ * Posture (State.Countering) et ralenti : posés par chaque machine à SON départ et retirés à SA fin (revue Plan 2
+ * Tasks 7-8, I-4) ; les autres joueurs reçoivent la posture du serveur (tag répliqué aux proxys simulés).
  * Pas de CancelAbilitiesWithTag dans l'asset : la fenêtre ne se termine que par les règles ci-dessus.
  */
 UCLASS()
@@ -24,6 +26,12 @@ public:
 
 	/** Coups bloqués pendant la fenêtre en cours (serveur ; tests). */
 	int32 GetBlockCount() const { return BlockCount; }
+
+	float GetCounterWindow() const { return CounterWindow; }
+
+	//~ UGenGameplayAbility (infobulle) : {Window}, {ResourcePerBlock}, {EnergyOnFirstBlock}, {WindowSpeed}, {Knockback}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
 
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
@@ -38,8 +46,18 @@ protected:
 	UFUNCTION()
 	void OnWindowFinished();
 
-	/** Un autre sort du joueur vient d'être activé : la posture se termine. */
+	/** Un autre sort vient d'être activé : la posture se termine si c'est un appui du joueur (EndsStanceOnActivation). */
 	void OnAbilityActivated(UGameplayAbility* ActivatedAbility);
+
+	/**
+	 * Revue Plan 2 Tasks 7-8, I-3 : seule une activation par touche du joueur termine la posture (sort à InputTag,
+	 * prédit ou local, non déclenché par un événement). Un passif, un sort déclenché (réaction à un coup, au kill) ou
+	 * serveur seulement la laisse : sinon le serveur la terminerait seul, en plein coup bloqué.
+	 */
+	static bool EndsStanceOnActivation(const UGameplayAbility* ActivatedAbility);
+
+	/** Pose (vrai) ou retire la posture et son ralenti sur CETTE machine. */
+	void SetWindowState(bool bActive);
 
 	/** Durée de la posture (après l'incantation). */
 	UPROPERTY(EditDefaultsOnly, Category = "Counter", meta = (ClampMin = "0.1", Units = "s"))
@@ -66,7 +84,7 @@ protected:
 	FGameplayTag BlockCueTag;
 
 private:
-	FActiveGameplayEffectHandle WindowEffectHandle;
+	bool bWindowStateApplied = false;
 	FDelegateHandle AbilityActivatedHandle;
 	int32 BlockCount = 0;
 };

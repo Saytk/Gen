@@ -103,6 +103,54 @@ bool FGenRingDirectionsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenClientLeapTest, "Gen.Area.ClientLeap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenClientLeapTest::RunTest(const FString& Parameters)
+{
+	// AcceptClientLeap(ServerStart, ClientDistance, ClientYaw, ServerLanding, MaxDistance) : revue V6-V8, I-1 (point
+	// d'atterrissage à 150 cm près, depuis la position du serveur ; plus de test de lacet)
+	auto Landing = [](const FVector& Start, float Distance, float Yaw) { return Start + FRotator(0.f, Yaw, 0.f).Vector() * Distance; };
+	const FVector Start = FVector::ZeroVector;
+	TestTrue(TEXT("même bond"), GenAreaRules::AcceptClientLeap(Start, 650.f, 10.f, Landing(Start, 650.f, 10.f), 700.f));
+	TestTrue(TEXT("portée pile (arrondi)"), GenAreaRules::AcceptClientLeap(Start, 700.5f, 0.f, Landing(Start, 700.f, 0.f), 700.f));
+	TestFalse(TEXT("au-delà de la portée"), GenAreaRules::AcceptClientLeap(Start, 720.f, 0.f, Landing(Start, 700.f, 0.f), 700.f));
+	TestFalse(TEXT("pas de bond annoncé"), GenAreaRules::AcceptClientLeap(Start, -1.f, 0.f, Landing(Start, 500.f, 0.f), 700.f));
+	TestFalse(TEXT("distance non finie"), GenAreaRules::AcceptClientLeap(Start, std::numeric_limits<float>::quiet_NaN(), 0.f, Landing(Start, 500.f, 0.f), 700.f));
+	TestFalse(TEXT("lacet non fini"), GenAreaRules::AcceptClientLeap(Start, 500.f, std::numeric_limits<float>::infinity(), Landing(Start, 500.f, 0.f), 700.f));
+	TestTrue(TEXT("lacet autour de ±180°"), GenAreaRules::AcceptClientLeap(Start, 500.f, 178.f, Landing(Start, 500.f, -179.f), 700.f));
+
+	// Bond court de côté (2 m), départs à 20 cm d'écart : le lacet diffère de plusieurs degrés, l'atterrissage de ~20 cm
+	const FVector ClientStart(0.f, 20.f, 0.f);
+	const FVector Cursor(0.f, 220.f, 0.f);
+	const float ClientDistance = FVector::Dist2D(ClientStart, Cursor);
+	const float ClientYaw = (Cursor - ClientStart).Rotation().Yaw;
+	const FVector ServerLanding = GenAreaRules::ClampToRange(Start, Cursor, 700.f);
+	TestTrue(TEXT("bond court de côté, 20 cm d'écart : accepté"), GenAreaRules::AcceptClientLeap(Start, ClientDistance, ClientYaw, ServerLanding, 700.f));
+	TestTrue(TEXT("bond court en biais, 20 cm d'écart latéral : accepté"),
+		GenAreaRules::AcceptClientLeap(Start, 200.f, (FVector(200.f, 0.f, 0.f) - FVector(0.f, 20.f, 0.f)).Rotation().Yaw, FVector(200.f, 0.f, 0.f), 700.f));
+
+	// Atterrissage à plus de 150 cm de celui du serveur : refusé
+	TestFalse(TEXT("lacet à 30° sur 5 m : refusé"), GenAreaRules::AcceptClientLeap(Start, 500.f, 30.f, Landing(Start, 500.f, 0.f), 700.f));
+	TestFalse(TEXT("2 m plus court : refusé"), GenAreaRules::AcceptClientLeap(Start, 300.f, 0.f, Landing(Start, 500.f, 0.f), 700.f));
+	TestTrue(TEXT("1 m plus court : accepté"), GenAreaRules::AcceptClientLeap(Start, 400.f, 0.f, Landing(Start, 500.f, 0.f), 700.f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenRingWallTest, "Gen.Area.RingWall",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenRingWallTest::RunTest(const FString& Parameters)
+{
+	// IsRingWall(ImpactNormal, WalkableFloorZ) : revue Plan 2 Tasks 7-8, M-8. WalkableFloorZ par défaut du CMC : cos(44.765°)
+	const float WalkableZ = 0.71f;
+	TestTrue(TEXT("mur vertical"), GenAreaRules::IsRingWall(FVector(-1.f, 0.f, 0.f), WalkableZ));
+	TestFalse(TEXT("sol plat"), GenAreaRules::IsRingWall(FVector::UpVector, WalkableZ));
+	TestFalse(TEXT("pente de 30°"), GenAreaRules::IsRingWall(FVector(-0.5f, 0.f, 0.866f), WalkableZ));
+	TestTrue(TEXT("pente de 60° (non praticable)"), GenAreaRules::IsRingWall(FVector(-0.866f, 0.f, 0.5f), WalkableZ));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenLineOfSightSamplesTest, "Gen.Area.LineOfSightSamples",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 

@@ -13,6 +13,7 @@
 #include "Actors/GenProjectile.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayPrediction.h"
 #include "GameplayTagContainer.h"
 #include "Net/GenNetTestHelpers.h"
@@ -463,8 +464,10 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 				ASSERT_THAT(AreEqual(0, ProjectileCount));
 				ASSERT_THAT(IsFalse(HasCooldown(ServerCasterASC.Get(), GreatFireballClass), TEXT("Cooldown seulement au départ du tir")));
 				ASSERT_THAT(IsTrue(ServerCaster->GetCastInfo().IsCasting(), TEXT("Barre de cast gardée jusqu'au départ")));
-				const float BaseSpeed = ServerCasterASC->GetNumericAttributeBase(UGenAttributeSet::GetMoveSpeedAttribute());
-				ASSERT_THAT(IsTrue(GetAttribute(ServerCasterASC.Get(), UGenAttributeSet::GetMoveSpeedAttribute()) < BaseSpeed - 1.f, TEXT("Ralenti d'incantation gardé jusqu'au départ")));
+				// Revue Plan 2 Tasks 7-8, I-4 : ralenti local (multiplicateur du personnage), plus un GE
+				const float Speed = GetAttribute(ServerCasterASC.Get(), UGenAttributeSet::GetMoveSpeedAttribute());
+				ASSERT_THAT(IsTrue(ServerCaster->GetLocalMoveSpeedMultiplier() < 1.f, TEXT("Ralenti d'incantation gardé jusqu'au départ")));
+				ASSERT_THAT(IsTrue(ServerCaster->GetCharacterMovement()->MaxWalkSpeed < Speed - 1.f, TEXT("Vitesse de marche ralentie")));
 			});
 	}
 

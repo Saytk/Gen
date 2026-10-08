@@ -1,4 +1,6 @@
 #include "Character/GenCharacterBase.h"
+#include "Character/GenCharacterMovementComponent.h"
+#include "Character/GenSpellIndicatorComponent.h"
 
 #include "Abilities/GameplayAbilityTypes.h"
 #include "AbilitySystem/Abilities/GenGA_Cast.h"
@@ -7,6 +9,8 @@
 #include "AbilitySystem/GenCastBarRules.h"
 #include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenKnockback.h"
+#include "Actors/GenGroundArea.h"
+#include "Actors/GenProjectile.h"
 #include "AbilitySystemGlobals.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -23,7 +27,7 @@
 #include "NiagaraFunctionLibrary.h"
 
 AGenCharacterBase::AGenCharacterBase(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UGenCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -49,6 +53,9 @@ AGenCharacterBase::AGenCharacterBase(const FObjectInitializer& ObjectInitializer
 
 	StatusVisuals = CreateDefaultSubobject<UGenStatusVisualsComponent>(TEXT("StatusVisuals"));
 	StatusVisuals->SetupAttachment(GetCapsuleComponent());
+
+	SpellIndicator = CreateDefaultSubobject<UGenSpellIndicatorComponent>(TEXT("SpellIndicator"));
+	SpellIndicator->SetupAttachment(GetCapsuleComponent());
 }
 
 void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -58,6 +65,7 @@ void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AGenCharacterBase, bIsDead);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, CastInfo, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedResource, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedSpentCount, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, LeapTarget, COND_SkipOwner);
 }
 
@@ -79,6 +87,7 @@ void AGenCharacterBase::StartCast(UClass* Ability, float Duration, UNiagaraSyste
 
 	SetFaceAim(true);
 	UpdateCastFX();
+	WakeSpellIndicator();
 }
 
 void AGenCharacterBase::StartFeedCast(UClass* Ability, int32 FeedSlots, float FeedInterval, float CastTime, UNiagaraSystem* FX, FName FXSocket)
@@ -122,6 +131,7 @@ void AGenCharacterBase::StartChannel(UClass* Ability, float Duration)
 	CastInfo.StartTime = GetCastClockSeconds();
 	CastInfo.bChannel = true;
 	UpdateCastFX(); // éteint l'effet d'une incantation précédente
+	WakeSpellIndicator();
 }
 
 float AGenCharacterBase::GetCastElapsedFraction() const
@@ -133,6 +143,20 @@ void AGenCharacterBase::SetLeapTarget(const FGenLeapTarget& Target)
 {
 	LeapTarget = Target;
 	LeapTarget.StartTime = GetCastClockSeconds();
+	WakeSpellIndicator();
+}
+
+void AGenCharacterBase::OnRep_LeapTarget()
+{
+	WakeSpellIndicator();
+}
+
+void AGenCharacterBase::WakeSpellIndicator()
+{
+	if (SpellIndicator)
+	{
+		SpellIndicator->Wake();
+	}
 }
 
 void AGenCharacterBase::ClearLeapTarget(UClass* Ability)
@@ -188,6 +212,7 @@ void AGenCharacterBase::OnRep_CastInfo(const FGenCastInfo& OldCastInfo)
 
 	// Autres clients : la rotation arrive déjà par le mouvement répliqué, seul l'effet est à gérer
 	UpdateCastFX();
+	WakeSpellIndicator();
 }
 
 void AGenCharacterBase::UpdateCastFX()
@@ -337,9 +362,16 @@ float AGenCharacterBase::GetMaxResource() const
 	return AttributeSet ? AttributeSet->GetMaxResource() : 0.f;
 }
 
-void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)
+void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count, bool bSpent)
 {
 	const uint8 Old = FedResource;
+	// Revue V6-V8, I-3 : un lancer (baisse dépensée) fait tourner le compteur répliqué avec le compte
+	const bool bSpentDrop = bSpent && Count < Old && FedDisplay.Source == FObjectKey(Source);
+	if (bSpentDrop)
+	{
+		++FedSpentCount;
+	}
+	bLastFedDropSpent = bSpentDrop;
 	// Revue V2-V4, M1 : un autre sort prend l'affichage (ex : B nourrit pendant le départ différé de A, qui garde ses
 	// flammes affichées) => son compte part de 0, son premier seuil fait son pop au lieu d'un "2 -> 1" muet
 	const bool bNewSource = Count > 0 && FedDisplay.Source != FObjectKey(Source);
@@ -364,6 +396,7 @@ void AGenCharacterBase::ResetFedResource()
 	const uint8 Old = FedResource;
 	FedDisplay = GenFeeding::FFedDisplay();
 	FedResource = 0;
+	bLastFedDropSpent = false;
 	if (Old != 0)
 	{
 		NotifyFedResourceChanged(Old, 0);
@@ -383,6 +416,10 @@ void AGenCharacterBase::OnRep_FedResource(uint8 OldValue)
 	// Revue V2-V4, M2 : pop seulement pour une hausse vue APRÈS l'incantation (reçue dans une image précédente). Reçus
 	// ensemble (personnage devenu pertinent en plein nourrissage), le compte s'affiche sans pop.
 	const bool bAllowPop = bCasting && CastInfoRepFrame != GFrameCounter;
+
+	// Revue V6-V8, I-3 : le compteur de lancers, reçu avec le compte, dit si une baisse est un lancer
+	bLastFedDropSpent = FedSpentCount != LastSeenFedSpentCount;
+	LastSeenFedSpentCount = FedSpentCount;
 
 	if (FedResource != Old)
 	{
@@ -409,7 +446,7 @@ void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New, bool bAll
 		// donne qu'un pop : GCN_Curffe_FeedThreshold se dimensionne sur ce compte, jamais sur "+1"
 		FGameplayCueParameters Params;
 		Params.RawMagnitude = New;
-		Params.Location = CastFXComponent ? CastFXComponent->GetComponentLocation() : GetActorLocation();
+		Params.Location = GetFeedCueLocation();
 		Params.SourceObject = CastInfo.Ability ? CastInfo.Ability->GetDefaultObject() : nullptr;
 		Params.Instigator = this;
 		Params.EffectCauser = this;
@@ -422,6 +459,17 @@ void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New, bool bAll
 		}
 		OnFedThresholdReached.Broadcast(this, New);
 	}
+}
+
+FVector AGenCharacterBase::GetFeedCueLocation() const
+{
+	// Contrat de GCN_Curffe_FeedThreshold : au socket du sort (main, pieds pour le bond), là où les flammes arrivent
+	const USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (MeshComponent && !CastInfo.FXSocket.IsNone() && MeshComponent->DoesSocketExist(CastInfo.FXSocket))
+	{
+		return MeshComponent->GetSocketLocation(CastInfo.FXSocket);
+	}
+	return CastFXComponent ? CastFXComponent->GetComponentLocation() : GetActorLocation();
 }
 
 void AGenCharacterBase::ApplyCastFXScale(int32 Count)
@@ -444,8 +492,21 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 		return EGenHitResponse::Hit;
 	}
 
-	// Seul un ennemi déclenche le contre ; un attaquant nul (instigateur détruit, ex. zone d'un lanceur mort) reste un ennemi
-	const bool bFromEnemy = !Attacker || AreEnemies(Attacker, this);
+	// Seul un ennemi déclenche le contre. Attaquant nul (instigateur détruit) : l'équipe retenue par la source (projectile,
+	// zone) décide (revue Plan 2 Tasks 7-8, M-6) ; sans source connue, il reste un ennemi
+	bool bFromEnemy = true;
+	if (Attacker)
+	{
+		bFromEnemy = AreEnemies(Attacker, this);
+	}
+	else if (const AGenProjectile* Projectile = Cast<AGenProjectile>(Source))
+	{
+		bFromEnemy = AreTeamsEnemies(Projectile->GetSourceTeam(), GetTeamId());
+	}
+	else if (const AGenGroundArea* Area = Cast<AGenGroundArea>(Source))
+	{
+		bFromEnemy = AreTeamsEnemies(Area->GetSourceTeam(), GetTeamId());
+	}
 	const bool bCountering = bFromEnemy && AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Countering);
 	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, IsUntouchable(), Kind);
 
@@ -510,7 +571,7 @@ void AGenCharacterBase::OnAbilitySystemInitialized()
 	AttributeSet->OnOutOfHealth.Remove(OutOfHealthHandle);
 
 	// Vitesse de déplacement pilotée par l'attribut MoveSpeed (slows / boosts via GameplayEffects)
-	GetCharacterMovement()->MaxWalkSpeed = AttributeSet->GetMoveSpeed();
+	RefreshMaxWalkSpeed();
 	MoveSpeedChangedHandle = AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMoveSpeedAttribute())
 		.AddUObject(this, &ThisClass::OnMoveSpeedChanged);
 
@@ -617,7 +678,81 @@ void AGenCharacterBase::RemoveStartupAbilitiesAndEffects()
 
 void AGenCharacterBase::OnMoveSpeedChanged(const FOnAttributeChangeData& Data)
 {
-	GetCharacterMovement()->MaxWalkSpeed = Data.NewValue;
+	RefreshMaxWalkSpeed();
+}
+
+void AGenCharacterBase::SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier)
+{
+	const FObjectKey Key(Source);
+	FLocalMoveSpeedMultiplier* Entry = LocalMoveSpeedMultipliers.FindByPredicate([&Key, Reason](const FLocalMoveSpeedMultiplier& Item)
+	{
+		return Item.Source == Key && Item.Reason == Reason;
+	});
+	if (!Entry)
+	{
+		Entry = &LocalMoveSpeedMultipliers.AddDefaulted_GetRef();
+		Entry->Source = Key;
+		Entry->Reason = Reason;
+	}
+	const float NewMultiplier = FMath::Max(Multiplier, 0.f);
+	const bool bChanged = Entry->Multiplier != NewMultiplier;
+	Entry->Multiplier = NewMultiplier;
+	RefreshMaxWalkSpeed();
+	if (bChanged)
+	{
+		NoteLocalSpeedChange();
+	}
+}
+
+void AGenCharacterBase::ClearLocalMoveSpeedMultiplier(const UObject* Source, FName Reason)
+{
+	const FObjectKey Key(Source);
+	if (LocalMoveSpeedMultipliers.RemoveAll([&Key, Reason](const FLocalMoveSpeedMultiplier& Item) { return Item.Source == Key && Item.Reason == Reason; }) > 0)
+	{
+		RefreshMaxWalkSpeed();
+		NoteLocalSpeedChange();
+	}
+}
+
+void AGenCharacterBase::NoteLocalSpeedChange()
+{
+	// Revue V6-V8, I-2 : serveur d'un client distant, grâce des corrections autour de la borne du ralenti
+	if (UGenCharacterMovementComponent* Movement = Cast<UGenCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		Movement->NoteLocalSpeedChange();
+	}
+}
+
+void AGenCharacterBase::FlushMovesToServer()
+{
+	// Revue V6-V8, I-2 : client propriétaire (pas l'hôte) : le mouvement en attente part AVANT la RPC qui suit (activation,
+	// visée), pour que le serveur le simule avec le même ralenti que le client
+	if (GetLocalRole() == ROLE_AutonomousProxy && IsLocallyControlled())
+	{
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->FlushServerMoves();
+		}
+	}
+}
+
+float AGenCharacterBase::GetLocalMoveSpeedMultiplier() const
+{
+	float Product = 1.f;
+	for (const FLocalMoveSpeedMultiplier& Item : LocalMoveSpeedMultipliers)
+	{
+		Product *= Item.Multiplier;
+	}
+	return Product;
+}
+
+void AGenCharacterBase::RefreshMaxWalkSpeed()
+{
+	// Sans ASC (pas encore initialisé) : la vitesse par défaut du CMC reste la base
+	if (AttributeSet)
+	{
+		GetCharacterMovement()->MaxWalkSpeed = AttributeSet->GetMoveSpeed() * GetLocalMoveSpeedMultiplier();
+	}
 }
 
 void AGenCharacterBase::HandleOutOfHealth(AActor* DamageInstigator, AActor* DamageCauser)

@@ -20,6 +20,21 @@ class GEN_API UGenGA_GroundArea : public UGenGA_Cast
 public:
 	UGenGA_GroundArea();
 
+	/** Plan Visuals V6 : arc de portée seulement ; le cercle reste l'aperçu de la zone (Plan 2, AGenGroundArea). */
+	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const override;
+
+	/** Rayon de la zone avec Fed unités nourries : la zone posée (OnCastLaunched) et l'infobulle lisent cette valeur. */
+	float GetAreaRadius(int32 Fed) const;
+
+	/** Dégâts de la zone avec Fed unités nourries (zone et infobulle). */
+	float GetAreaDamage(int32 Fed, int32 Level = 1) const;
+
+	//~ UGenGameplayAbility (infobulle) : {Damage}, {Radius} (sans flamme), {RadiusMax}, {Range}, {Stun}, {Delay}, {Knockback}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipRange() const override { return Range; }
+	virtual FText GetFeedTooltipLines(int32 Fed) const override;
+	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
@@ -48,7 +63,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (ClampMin = "0.0", Units = "s"))
 	float ImpactDelay = 0.8f;
 
-	/** Un télégraphe ne descend jamais sous cette durée (guidelines §3.1 : zones retardées 0.6–1.0 s). */
+	/**
+	 * Un télégraphe ne descend jamais sous cette durée chez les autres joueurs (guidelines §3.1 : zones retardées
+	 * 0.6–1.0 s). Le délai réel ajoute GenAreaRules::TelegraphLatencyMargin (latence d'apparition chez eux).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (ClampMin = "0.0", Units = "s"))
 	float MinTelegraph = 0.6f;
 

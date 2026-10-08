@@ -41,6 +41,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<const UInputAction> CancelAction;
 
+	/**
+	 * Optionnel : maintenir affiche l'infobulle de tous les sorts de la barre (UGenAbilityBar). Touche posée dans le
+	 * mapping context (éditeur). Python : show_tooltips_action.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<const UInputAction> ShowTooltipsAction;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (TitleProperty = "InputTag"))
 	TArray<FGenAbilityInputAction> AbilityInputActions;
 };

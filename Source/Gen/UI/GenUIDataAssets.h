@@ -20,13 +20,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lines") FLinearColor Line_Bronze = FLinearColor::White;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lines") FLinearColor Line_Outline = FLinearColor::Black;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Surfaces") FLinearColor Bg_Panel = FLinearColor::Black;
+	/** bg.panelRaised #2B1E16 α 0.88 (§2.1) : infobulles (défaut : le jeton, depuis GenUITokens). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Surfaces") FLinearColor Bg_PanelRaised = GenUIRules::HexToLinear(GenUITokens::BgPanelRaisedHex, GenUITokens::BgPanelRaisedAlpha);
+	/** accent.brass #D6A47C (§2.2) : libellé de touche des infobulles (défaut : le jeton, depuis GenUITokens). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Accent") FLinearColor Accent_Brass = GenUIRules::HexToLinear(GenUITokens::AccentBrassHex, 1.f);
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_Overlay = FLinearColor::Black;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_Locked = FLinearColor::Black;
 	/**
 	 * cooldown.noEnergy #2E4A78 α 0.45 (§2.5) : voile « pas assez d'énergie ». Valeur posée dans DA_UIPalette via HexToLinear ;
 	 * le défaut est le jeton lui-même (depuis le hex), pour qu'une palette pas encore mise à jour ne voile pas le disque en noir opaque.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_NoEnergy = GenUIRules::HexToLinear(TEXT("#2E4A78"), 0.45f);
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_NoEnergy = GenUIRules::HexToLinear(GenUITokens::CooldownNoEnergyHex, GenUITokens::CooldownNoEnergyAlpha);
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Energy") FLinearColor Energy_Charging = FLinearColor::Yellow;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Energy") FLinearColor Energy_Full = FLinearColor::Yellow;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Flash") FLinearColor Flash_White = FLinearColor::White;
@@ -59,6 +63,24 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Motion", meta = (Units = "s")) float ReadyFlashDuration = 0.2f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Motion", meta = (Units = "s")) float UltimatePulseDuration = 0.3f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") int32 UltimateSegments = 4;
+	/** Infobulle de sort (§4.1) : délai de survol avant le fondu d'entrée. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip", meta = (Units = "s")) float TooltipHoverDelay = 0.3f;
+	/** motion.fast (§5.1) : fondu des infobulles (entrée ease-out, sortie ease-in). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Motion", meta = (Units = "s")) float MotionFast = 0.15f;
+	/** Marge intérieure d'un panneau du HUD (§2.7 : 8 px, Space_2). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Layout") float HudPanelPadding = 8.f;
+	/** radius.panel (§2.8 : 4 px) : panneaux, cartes, infobulles. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Layout") float RadiusPanel = 4.f;
+	/** Bordure des panneaux (§2.9 : 1 px). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Layout") float PanelOutlineWidth = 1.f;
+	/** Largeur maximale d'une infobulle (§7.1 : <= 80 caractères par ligne en TS_Body), à l'échelle de texte 100 %. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip") float TooltipMaxWidth = 480.f;
+	/** Écart entre l'infobulle et le haut de l'emplacement (§2.7, entre groupes : 8 px). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip") float TooltipGap = 8.f;
+	/** Sondage du survol des emplacements et pas du fondu (pas de NativeTick, §8.4). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip", meta = (Units = "s")) float TooltipPollInterval = 0.05f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip", meta = (Units = "s")) float TooltipFadeStep = 0.016f;
+
 	/** Rafraîchissement du balayage et du chiffre pendant une recharge (pas de NativeTick). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar", meta = (Units = "s")) float CooldownRefreshInterval = 0.05f;
 

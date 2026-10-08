@@ -7,6 +7,26 @@
 #include "AbilitySystem/GenMontageTiming.h"
 #include "Champions/Curffe/CurffeHearthRules.h"
 #include "Champions/Curffe/CurffeTuning.h"
+#include "Actors/GenProjectile.h"
+#include "UObject/UnrealType.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFedChargeSectionTest, "Gen.Visuals.FedChargeSection",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenFedChargeSectionTest::RunTest(const FString& Parameters)
+{
+	// UGenGA_Cast::FedChargeMontage (AM_FlamePillar_Charge_Fed : Fed_1@0, Fed_2@0.4, Fed_3@0.8, 0.4 s chacune)
+	TestEqual(TEXT("sans nourrissage : ChargeMontage"), GenMontageTiming::GetFedChargeSection(0), FName(NAME_None));
+	TestEqual(TEXT("1 unité"), GenMontageTiming::GetFedChargeSection(1), FName(TEXT("Fed_1")));
+	TestEqual(TEXT("2 unités"), GenMontageTiming::GetFedChargeSection(2), FName(TEXT("Fed_2")));
+	TestEqual(TEXT("3 unités"), GenMontageTiming::GetFedChargeSection(3), FName(TEXT("Fed_3")));
+	TestEqual(TEXT("au-delà : bornée à Fed_3"), GenMontageTiming::GetFedChargeSection(5), FName(TEXT("Fed_3")));
+	// Longueur de la SECTION (0.4 s), jamais celle du montage (1.2 s) : calée sur CastTime
+	TestEqual(TEXT("0.4 s sur 0.4 s : vitesse 1"), GenMontageTiming::GetFedChargeRate(0.4f, 0.4f), 1.f, 0.0001f);
+	TestEqual(TEXT("0.4 s sur 0.5 s : 0.8"), GenMontageTiming::GetFedChargeRate(0.4f, 0.5f), 0.8f, 0.0001f);
+	TestTrue(TEXT("pas la longueur du montage"), !FMath::IsNearlyEqual(GenMontageTiming::GetFedChargeRate(0.4f, 0.5f), GenMontageTiming::GetPlayRate(1.2f, 0.5f)));
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenMontageTimingTest, "Gen.Visuals.MontageTiming",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -26,6 +46,27 @@ bool FGenMontageTimingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("borne basse"), GenMontageTiming::GetPlayRate(0.1f, 1.f), GenMontageTiming::MinPlayRate, 0.0001f);
 	TestEqual(TEXT("durée nulle : vitesse 1"), GenMontageTiming::GetPlayRate(0.5f, 0.f), 1.f, 0.0001f);
 	TestEqual(TEXT("clip vide : vitesse 1"), GenMontageTiming::GetPlayRate(0.f, 0.5f), 1.f, 0.0001f);
+
+	// PIE : avec 2 flammes, le lanceur ne joue jamais Feed_3 (section tenue = dernier seuil atteignable)
+	TestEqual(TEXT("2 flammes sur 3 sections : Feed_2 tenue"), GenMontageTiming::GetFeedHoldSection(2, 3), 2);
+	TestTrue(TEXT("2 flammes : boucle de Feed_2 imposée"), GenMontageTiming::ShouldHoldFeedSection(2, 3));
+	TestEqual(TEXT("1 flamme : Feed_1 tenue"), GenMontageTiming::GetFeedHoldSection(1, 3), 1);
+	TestFalse(TEXT("3 flammes : Feed_3 boucle déjà (dernière)"), GenMontageTiming::ShouldHoldFeedSection(3, 3));
+	TestEqual(TEXT("plus de flammes que de sections : la dernière"), GenMontageTiming::GetFeedHoldSection(5, 3), 3);
+	TestFalse(TEXT("rien à nourrir : rien à tenir"), GenMontageTiming::ShouldHoldFeedSection(0, 3));
+	TestFalse(TEXT("montage sans section Feed_N"), GenMontageTiming::ShouldHoldFeedSection(2, 0));
+
+	// PIE : clic gauche maintenu, la charge suivante ne coupe pas le geste de lancer (0.15 s protégées)
+	TestEqual(TEXT("une image après le lancer : charge retardée"), GenMontageTiming::GetChargeStartDelay(0.016f, 0.4f, 0.15f), 0.134f, 0.0001f);
+	TestEqual(TEXT("geste fini depuis longtemps : pas de retard"), GenMontageTiming::GetChargeStartDelay(0.3f, 0.4f, 0.15f), 0.f, 0.0001f);
+	TestEqual(TEXT("aucun geste en cours : pas de retard"), GenMontageTiming::GetChargeStartDelay(-1.f, 0.4f, 0.15f), 0.f, 0.0001f);
+	TestEqual(TEXT("retard borné à la moitié de l'incantation"), GenMontageTiming::GetChargeStartDelay(0.f, 0.2f, 0.15f), 0.1f, 0.0001f);
+	TestEqual(TEXT("sans protection : pas de retard"), GenMontageTiming::GetChargeStartDelay(0.f, 0.4f, 0.f), 0.f, 0.0001f);
+	// La charge retardée finit toujours à CastTime : clip de 0.4 s, retard 0.134 s => joué sur 0.266 s
+	const float Delay = GenMontageTiming::GetChargeStartDelay(0.016f, 0.4f, 0.15f);
+	const float Rate = GenMontageTiming::GetDelayedChargeRate(0.4f, 0.4f, Delay);
+	TestEqual(TEXT("charge retardée : finit à CastTime"), Delay + 0.4f / Rate, 0.4f, 0.0001f);
+	TestEqual(TEXT("sans retard : vitesse normale"), GenMontageTiming::GetDelayedChargeRate(0.4f, 0.4f, 0.f), 1.f, 0.0001f);
 	return true;
 }
 
@@ -151,6 +192,12 @@ bool FGenLeapAimTest::RunTest(const FString& Parameters)
 	FGenAimGeometry G;
 	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector(1500.f, 0.f, 0.f), P, 3, G);
 	TestEqual(TEXT("atterrissage borné à 7 m"), G.TargetCenter.X, 700.0, 0.01);
+
+	// Revue V6-V8, M-4 : curseur sur le lanceur => direction = son avant (comme le client et le serveur)
+	FGenAimGeometry OnSelf;
+	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector::ZeroVector, P, 1, OnSelf, FVector(0.f, -1.f, 0.f));
+	TestTrue(TEXT("curseur sur le lanceur : son avant"), OnSelf.Direction.Equals(FVector(0.f, -1.f, 0.f), 0.001f));
+	TestTrue(TEXT("repli nul : axe X"), GenIndicatorRules::FlatDirection(FVector::ZeroVector, FVector::UpVector).Equals(FVector(1.f, 0.f, 0.f), 0.001f));
 	TestEqual(TEXT("rayon d'atterrissage"), G.TargetRadius, 150.f, 0.01f);
 	TestEqual(TEXT("arc de portée"), G.RangeArcRadius, 700.f, 0.01f);
 	TestEqual(TEXT("3 flammes : 3 amorces"), G.StubDirections.Num(), 3);
@@ -165,6 +212,59 @@ bool FGenLeapAimTest::RunTest(const FString& Parameters)
 	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector(300.f, 400.f, 0.f), P, 0, G);
 	TestEqual(TEXT("curseur dans la portée : atterrissage au curseur"), G.TargetCenter.Y, 400.0, 0.01);
 	TestEqual(TEXT("0 flamme : aucune amorce"), G.StubDirections.Num(), 0);
+
+	// Vol (vu par tous) : même cercle et mêmes amorces que la visée, au point verrouillé, sans arc de portée
+	FGenAimGeometry Aim;
+	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector(0.f, 500.f, 0.f), P, 2, Aim);
+	FGenAimGeometry Flight;
+	GenIndicatorRules::ComputeLeapFlight(Aim.TargetCenter, FVector(0.f, 1.f, 0.f), P, 2, Flight);
+	TestTrue(TEXT("vol : même centre"), Flight.TargetCenter.Equals(Aim.TargetCenter, 0.01));
+	TestEqual(TEXT("vol : même rayon"), Flight.TargetRadius, Aim.TargetRadius, 0.01f);
+	TestEqual(TEXT("vol : pas d'arc de portée"), Flight.RangeArcRadius, 0.f);
+	TestEqual(TEXT("vol : 2 amorces"), Flight.StubDirections.Num(), 2);
+	for (int32 Index = 0; Index < 2 && Index < Flight.StubDirections.Num() && Index < Aim.StubDirections.Num(); ++Index)
+	{
+		TestTrue(*FString::Printf(TEXT("vol : amorce %d = visée"), Index), Flight.StubDirections[Index].Equals(Aim.StubDirections[Index], 0.001f));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenHearthFlightsTest, "Gen.Curffe.HearthFlights",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenHearthFlightsTest::RunTest(const FString& Parameters)
+{
+	using namespace CurffeHearthRules;
+	// 5 flammes, nourrissage de 3 : les emplacements 4, 3 puis 2 s'éteignent (les flammes restantes gardent 0..1)
+	TestEqual(TEXT("1re flamme nourrie : emplacement 4"), GetFedSocketIndex(5, 0, 5), 4);
+	TestEqual(TEXT("3e flamme nourrie : emplacement 2"), GetFedSocketIndex(5, 2, 5), 2);
+	TestEqual(TEXT("3 flammes, 1re nourrie : emplacement 2"), GetFedSocketIndex(3, 0, 5), 2);
+	TestEqual(TEXT("hors bornes"), GetFedSocketIndex(1, 1, 5), INDEX_NONE);
+
+	// Cohérent avec GetSocketStates : l'emplacement quitté est dans le sort
+	TArray<ESocket, TInlineAllocator<8>> States;
+	GetSocketStates(5, 2, 5, States);
+	TestTrue(TEXT("emplacement de la 2e flamme : dans le sort"), States[GetFedSocketIndex(5, 1, 5)] == ESocket::InSpell);
+	TestTrue(TEXT("emplacement suivant : encore allumé"), States[GetFedSocketIndex(5, 2, 5)] == ESocket::Lit);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenBaseExplosionAimTest, "Gen.Visuals.BaseExplosionAim",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenBaseExplosionAimTest::RunTest(const FString& Parameters)
+{
+	// Pyroblast : non nourrissable, éclat de 120 cm sans nourrissage (même règle que le tir : GetShotExplosionRadius)
+	GenIndicatorRules::FProjectileAimParams P;
+	P.SpawnForwardOffset = 70.f;
+	P.Range = 1300.f;
+	P.CollisionRadius = 30.f;
+	P.BaseExplosionRadius = 120.f;
+	FGenAimGeometry G;
+	GenIndicatorRules::ComputeProjectileAim(FVector::ZeroVector, FVector::ForwardVector, P, 0, -1.f, G);
+	TestEqual(TEXT("éclat de base"), G.CapRadius, GenFeeding::GetShotExplosionRadius(0, P.ExplosionMinFeed, P.ExplosionRadius, P.BaseExplosionRadius), 0.01f);
+	TestEqual(TEXT("120 cm"), G.CapRadius, 120.f, 0.01f);
+	TestEqual(TEXT("largeur sans échelle"), G.LineWidth, 60.f, 0.01f);
 	return true;
 }
 
@@ -212,6 +312,29 @@ bool FCurffeHearthSocketsTest::RunTest(const FString& Parameters)
 
 	CurffeHearthRules::GetSocketStates(9, 0, 5, S);
 	TestEqual(TEXT("plus de flammes que d'emplacements : borné"), S.Num(), 5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenProjectileMarkerDefaultsTest, "Gen.Visuals.ProjectileMarker",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenProjectileMarkerDefaultsTest::RunTest(const FString& Parameters)
+{
+	// V7 : getters lisibles sur le CDO (la visée V1 les lit sans projectile), marqueur = collision × échelle × 1.2
+	const AGenProjectile* CDO = GetDefault<AGenProjectile>();
+	TestEqual(TEXT("rayon de collision non mis à l'échelle"), CDO->GetCollisionRadius(), 20.f);
+	TestEqual(TEXT("portée max"), CDO->GetMaxRange(), 1500.f);
+	TestEqual(TEXT("marqueur : collision × 1 × 1.2"), CDO->GetGroundMarkerRadius(), 24.f, 0.001f);
+	TestEqual(TEXT("pas d'éclaboussure par défaut"), CDO->GetExplosionRadius(), 0.f);
+	TestNull(TEXT("pas de plan sur le CDO (créé en BeginPlay, clients seulement)"), CDO->GetGroundMarker());
+
+	// Le rayon d'éclaboussure est répliqué (taille de l'impact chez les clients)
+	const FProperty* Property = FindFProperty<FProperty>(AGenProjectile::StaticClass(), TEXT("ExplosionRadius"));
+	TestTrue(TEXT("ExplosionRadius répliqué"), Property && Property->HasAnyPropertyFlags(CPF_Net));
+
+	// Le matériau par défaut existe (MI_Telegraph_Marker) : tout projectile a un marqueur (Art Bible §7.1 règle 6)
+	const FObjectProperty* MaterialProperty = FindFProperty<FObjectProperty>(AGenProjectile::StaticClass(), TEXT("GroundMarkerMaterial"));
+	TestTrue(TEXT("GroundMarkerMaterial par défaut"), MaterialProperty && MaterialProperty->GetObjectPropertyValue_InContainer(CDO) != nullptr);
 	return true;
 }
 

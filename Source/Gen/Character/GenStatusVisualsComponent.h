@@ -9,6 +9,8 @@
 class UAbilitySystemComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class UStaticMesh;
 class UStaticMeshComponent;
 
@@ -63,7 +65,22 @@ struct FGenStatusVisual
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	TObjectPtr<UMaterialInterface> OwnerMeshMaterial;
+
+	/**
+	 * Plan Visuals V9 : système Niagara attaché au corps tant que l'état est actif (ex : State.Curffe.Ablaze ->
+	 * NS_Curffe_AblazeBody sur spine_03), désactivé quand il prend fin (les particules s'éteignent d'elles-mêmes).
+	 * Un état peut avoir une forme (Mesh), un système, ou les deux. Python : system.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
+	TObjectPtr<UNiagaraSystem> System;
+
+	/** Socket du corps où attacher System (vide : centre du personnage). Python : socket. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
+	FName Socket;
 };
+
+/** Emplacement de Custom Primitive Data du corps qui porte la relation au joueur local (M_VFX_GhostDither). */
+inline constexpr int32 GenOwnerMeshRelationDataIndex = 0;
 
 /**
  * Formes d'état du personnage (contre, étourdi, intouchable...) : suit les tags de l'ASC, répliqués
@@ -90,6 +107,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Status")
 	bool IsStatusFlashing(FGameplayTag Tag) const;
 
+	/**
+	 * Système Niagara de l'état Tag demandé en ce moment (lu par les tests et le PIE). Le composant n'existe que sur une
+	 * machine qui peut rendre (FApp::CanEverRender : jamais en -nullrhi), la demande suit le tag partout.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Gen|Status")
+	bool IsStatusSystemActive(FGameplayTag Tag) const;
+
+	/**
+	 * Corps sous un matériau imposé (OwnerMeshMaterial) : écrit la relation au joueur local (1 soi, 2 allié, 3 ennemi,
+	 * 4 neutre, comme RelationIndex de M_VFX_Telegraph) dans la Custom Primitive Data GenOwnerMeshRelationDataIndex du
+	 * corps. Rien sans substitution, rien sur un serveur dédié. Appelé à chaque substitution et quand une équipe ou le
+	 * joueur local change (RefreshAllViewerRelations).
+	 */
+	void RefreshViewerRelation();
+
+	/** Rafraîchit RefreshViewerRelation sur tous les personnages du monde (changement d'équipe ou de joueur local). */
+	static void RefreshAllViewerRelations(const UWorld* World);
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -97,6 +132,15 @@ private:
 	void OnTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void SetShown(int32 Index, bool bShown);
 	void SetFlash(int32 Index, bool bFlash);
+	/** Lance (bActive) ou désactive le système de l'état Index. */
+	void SetSystemActive(int32 Index, bool bActive);
+
+	/**
+	 * Revue V6-V8, I-5 : un système d'état fini de lui-même (non bouclé, tué par l'élimination) n'est plus le nôtre :
+	 * son emplacement est vidé (jamais désactivé ensuite) et il retourne au pool.
+	 */
+	UFUNCTION()
+	void OnStatusSystemFinished(UNiagaraComponent* System);
 	void RefreshOwnerMesh();
 
 	TArray<FGenStatusVisual> Visuals;
@@ -106,6 +150,16 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> ShapeMIDs;
+
+	/**
+	 * Systèmes en cours, par état (nul quand il est désactivé ou fini). Pool en ManualRelease (revue V6-V8, I-5) : le pool
+	 * ne reprend jamais un composant tant qu'on le tient, on le rend nous-mêmes (ReleaseToPool).
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> Systems;
+
+	/** Système demandé par état (tag présent et System renseigné). */
+	TArray<bool> SystemWanted;
 
 	/** Matériaux d'origine du corps, gardés tant qu'un OwnerMeshMaterial est imposé. */
 	UPROPERTY(Transient)

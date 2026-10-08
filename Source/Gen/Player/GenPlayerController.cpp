@@ -3,6 +3,7 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Character/GenCharacterBase.h"
+#include "Character/GenStatusVisualsComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -49,6 +50,16 @@ void AGenPlayerController::AcknowledgePossession(APawn* P)
 	}
 }
 
+void AGenPlayerController::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	if (IsLocalController())
+	{
+		UGenStatusVisualsComponent::RefreshAllViewerRelations(GetWorld());
+	}
+}
+
 void AGenPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -67,6 +78,13 @@ void AGenPlayerController::SetupInputComponent()
 	if (InputConfig->CancelAction)
 	{
 		EnhancedInput->BindAction(InputConfig->CancelAction, ETriggerEvent::Started, this, &ThisClass::CancelCast);
+	}
+
+	if (InputConfig->ShowTooltipsAction)
+	{
+		EnhancedInput->BindAction(InputConfig->ShowTooltipsAction, ETriggerEvent::Started, this, &ThisClass::ShowAbilityDetailsPressed);
+		EnhancedInput->BindAction(InputConfig->ShowTooltipsAction, ETriggerEvent::Completed, this, &ThisClass::ShowAbilityDetailsReleased);
+		EnhancedInput->BindAction(InputConfig->ShowTooltipsAction, ETriggerEvent::Canceled, this, &ThisClass::ShowAbilityDetailsReleased);
 	}
 
 	for (const FGenAbilityInputAction& Binding : InputConfig->AbilityInputActions)
@@ -123,6 +141,25 @@ void AGenPlayerController::CancelCast()
 	if (UGenAbilitySystemComponent* ASC = GetGenAbilitySystemComponent())
 	{
 		ASC->CancelPendingCasts();
+	}
+}
+
+void AGenPlayerController::ShowAbilityDetailsPressed()
+{
+	SetShowAbilityDetails(true);
+}
+
+void AGenPlayerController::ShowAbilityDetailsReleased()
+{
+	SetShowAbilityDetails(false);
+}
+
+void AGenPlayerController::SetShowAbilityDetails(bool bShown)
+{
+	if (bShowingAbilityDetails != bShown)
+	{
+		bShowingAbilityDetails = bShown;
+		OnShowAbilityDetailsChanged.Broadcast(bShown);
 	}
 }
 

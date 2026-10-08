@@ -6,9 +6,9 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayTag.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "AbilitySystem/Effects/GenGE_Gain.h"
-#include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenMontageTiming.h"
 #include "AbilitySystem/GenTargetData.h"
@@ -20,6 +20,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Character/GenCharacterBase.h"
+#include "Character/GenSpellIndicatorComponent.h"
 #include "Champions/Curffe/CurffeTuning.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -27,6 +28,17 @@
 #include "HAL/PlatformTime.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGenCast, Log, All);
+
+namespace GenCastPrivate
+{
+	/** Clé du ralenti d'incantation parmi les multiplicateurs locaux du personnage. */
+	FName GenCastSlowReason()
+	{
+		static const FName Reason(TEXT("CastSlow"));
+		return Reason;
+	}
+}
+using namespace GenCastPrivate;
 
 #define GEN_CAST_LOG(Verbosity, Format, ...) UE_LOG(LogGenCast, Verbosity, TEXT("[%s] %s: " Format), (CurrentActorInfo && CurrentActorInfo->IsNetAuthority()) ? TEXT("SERVEUR") : TEXT("CLIENT"), *GetName(), ##__VA_ARGS__)
 
@@ -37,6 +49,14 @@ UGenGA_Cast::UGenGA_Cast()
 	MaxFeed = CurffeTuning::MaxFeedPerSpell;
 
 	ActivationOwnedTags.AddTag(GenGameplayTags::State_Casting);
+}
+
+void UGenGA_Cast::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Super::GetTooltipArgs(Args);
+	Args.Add(TEXT("CastTime"), GenAbilityTooltip::Seconds(CastTime));
+	Args.Add(TEXT("FeedInterval"), GenAbilityTooltip::Seconds(FeedInterval));
+	Args.Add(TEXT("MaxFeed"), MaxFeed);
 }
 
 void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
@@ -63,6 +83,9 @@ void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 
 	// Un seul sort incanté à la fois : celui-ci remplace l'incantation en cours (un sort déjà parti continue)
 	CancelOtherPendingCasts();
+
+	// Indicateur de visée du lanceur, de l'appui au verrouillage de la visée (le sort remplacé a fermé le sien)
+	BeginAimIndicator();
 
 	// Contrôles durs surveillés pendant TOUTE l'activation, quel que soit le déroulé (même sans nourrissage ni
 	// incantation) : OnCastInterrupted décide selon la phase (IsInterruptedByHardCC)
@@ -134,30 +157,11 @@ bool UGenGA_Cast::IsServerForRemoteClient() const
 
 void UGenGA_Cast::CancelOtherPendingCasts()
 {
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!ASC)
+	// Même règle que la touche d'annulation (un sort déjà parti n'est jamais annulé, ni un sort verrouillé côté serveur :
+	// CanBeCanceled faux), sauf ce sort-ci
+	if (UGenAbilitySystemComponent* ASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
 	{
-		return;
-	}
-
-	TArray<UGenGA_Cast*, TInlineAllocator<4>> ToCancel;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-	{
-		if (Spec.Handle == CurrentSpecHandle || !Spec.IsActive())
-		{
-			continue;
-		}
-		UGenGA_Cast* Other = Cast<UGenGA_Cast>(Spec.GetPrimaryInstance());
-		if (Other && Other->IsCastPending())
-		{
-			ToCancel.Add(Other);
-		}
-	}
-
-	for (UGenGA_Cast* Other : ToCancel)
-	{
-		// Sans effet sur un sort verrouillé côté serveur (déjà lancé par le client, CanBeCanceled faux)
-		Other->CancelAbility(Other->GetCurrentAbilitySpecHandle(), Other->GetCurrentActorInfo(), Other->GetCurrentActivationInfo(), true);
+		ASC->CancelPendingCasts(this);
 	}
 }
 
@@ -298,6 +302,21 @@ void UGenGA_Cast::PlayFeedMontage()
 	const float StepLength = FeedMontage->GetSectionLength(FirstSection != INDEX_NONE ? FirstSection : 0);
 	const float Rate = GetPhaseRate(FeedMontage, StepLength, ActiveFeedInterval, GenMontageTiming::GetExpectedFeedRate(FeedInterval, ActiveFeedInterval));
 	PlayPhaseMontage(FeedMontage, Rate, /*bStopWhenAbilityEnds*/ true);
+
+	// Le geste ne dépasse pas le dernier seuil atteignable (2 flammes : Feed_2 tenue, jamais Feed_3 avant la charge).
+	// Par l'ASC : local sur cette machine et répliqué aux autres joueurs depuis le serveur
+	int32 FeedSectionCount = 0;
+	while (FeedMontage->GetSectionIndex(*FString::Printf(TEXT("Feed_%d"), FeedSectionCount + 1)) != INDEX_NONE)
+	{
+		++FeedSectionCount;
+	}
+	const int32 FeedCap = FMath::Min(MaxFeed, FeedSlotsAtPress);
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (ASC && ASC->GetCurrentMontage() == FeedMontage && GenMontageTiming::ShouldHoldFeedSection(FeedCap, FeedSectionCount))
+	{
+		const FName HoldSection(*FString::Printf(TEXT("Feed_%d"), GenMontageTiming::GetFeedHoldSection(FeedCap, FeedSectionCount)));
+		ASC->CurrentMontageSetNextSectionName(HoldSection, HoldSection);
+	}
 }
 
 void UGenGA_Cast::OnFeedMontageDelayFinished()
@@ -480,7 +499,8 @@ void UGenGA_Cast::OnFeedSynced()
 	// on l'arrête explicitement, sinon il continuerait jusqu'au lancer ou à la fin du sort
 	if (FeedMontage)
 	{
-		const UAnimMontage* NextPhase = CastTime > 0.f ? ChargeMontage.Get() : nullptr;
+		FName ChargeSection;
+		const UAnimMontage* NextPhase = CastTime > 0.f ? GetChargePhaseMontage(ChargeSection) : nullptr;
 		if (!NextPhase || NextPhase->GetGroupName() != FeedMontage->GetGroupName())
 		{
 			StopFeedMontage();
@@ -516,6 +536,27 @@ void UGenGA_Cast::EndFeedTasks()
 	}
 }
 
+void UGenGA_Cast::BeginAimIndicator()
+{
+	if (!IsLocallyControlled() || !WantsAimIndicator())
+	{
+		return;
+	}
+	if (const AGenCharacterBase* Character = GetGenCharacterFromActorInfo(); Character && Character->GetSpellIndicator())
+	{
+		Character->GetSpellIndicator()->BeginAim(this);
+	}
+}
+
+void UGenGA_Cast::EndAimIndicator()
+{
+	// Sans effet si un autre sort a ouvert sa propre visée depuis
+	if (const AGenCharacterBase* Character = GetGenCharacterFromActorInfo(); Character && Character->GetSpellIndicator())
+	{
+		Character->GetSpellIndicator()->EndAim(this);
+	}
+}
+
 void UGenGA_Cast::EndAimTask()
 {
 	if (AimTask)
@@ -534,12 +575,12 @@ void UGenGA_Cast::MarkFeedEnded(int32 Count, bool bFinal)
 	}
 }
 
-void UGenGA_Cast::SetFedVisual(int32 Count)
+void UGenGA_Cast::SetFedVisual(int32 Count, bool bSpent)
 {
 	FedVisualCount = Count;
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		Character->SetFedResource(this, static_cast<uint8>(FMath::Clamp(Count, 0, 255)));
+		Character->SetFedResource(this, static_cast<uint8>(FMath::Clamp(Count, 0, 255)), bSpent);
 	}
 }
 
@@ -560,12 +601,42 @@ void UGenGA_Cast::StartCasting()
 	// Le geste continue après la fin normale du sort (le lancer tombe à la fin de l'incantation).
 	// Une annulation (contrôle dur, mort) le coupe quand même : la tâche écoute OnGameplayAbilityCancelled.
 	// V3 : calé sur CastTime quand le lancer est un CastMontage à part ; montage unique du Plan 1 : vitesse 1.
-	if (ChargeMontage)
+	// Charge nourrie (FedChargeMontage) : la section du compte affiché, calée sur CastTime par SA longueur
+	FName ChargeSection;
+	UAnimMontage* ChargePhase = GetChargePhaseMontage(ChargeSection);
+	if (ChargePhase && ChargeSection != NAME_None)
 	{
-		const float Rate = GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, CastMontage != nullptr, CastTime)
-			? GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), CastTime, 1.f)
-			: 1.f;
-		PlayPhaseMontage(ChargeMontage, Rate, /*bStopWhenAbilityEnds*/ false);
+		const float SectionLength = ChargePhase->GetSectionLength(ChargePhase->GetSectionIndex(ChargeSection));
+		GetPhaseRate(ChargePhase, SectionLength, CastTime, 1.f); // avertissement seulement (clip à recaler)
+		PlayPhaseMontage(ChargePhase, GenMontageTiming::GetFedChargeRate(SectionLength, CastTime), /*bStopWhenAbilityEnds*/ false, ChargeSection);
+	}
+	else if (ChargePhase)
+	{
+		// Clic gauche maintenu : le geste de lancer du sort précédent joue encore (activation suivante une image après le
+		// lancer) ; la charge attend la fin de sa fenêtre au lieu de le couper. Seulement pour une charge calée sur
+		// CastTime (elle est alors jouée plus vite et finit au même moment) ; le minuteur du sort ne change pas
+		float Delay = 0.f;
+		if (CastMontage && GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, true, CastTime))
+		{
+			const FGameplayAbilityActorInfo* Info = GetCurrentActorInfo();
+			const UAnimInstance* AnimInstance = Info ? Info->GetAnimInstance() : nullptr;
+			const bool bThrowPlaying = AnimInstance && AnimInstance->Montage_IsPlaying(CastMontage) && LastCastMontageTime >= 0.0;
+			const float SinceThrow = bThrowPlaying ? static_cast<float>(GetWorld()->GetTimeSeconds() - LastCastMontageTime) : -1.f;
+			Delay = GenMontageTiming::GetChargeStartDelay(SinceThrow, CastTime, CastMontageReleaseHold);
+		}
+
+		if (Delay > 0.f)
+		{
+			PendingChargeDelay = Delay;
+			UAbilityTask_WaitDelay* ChargeDelayTask = UAbilityTask_WaitDelay::WaitDelay(this, Delay);
+			ChargeDelayTask->OnFinish.AddDynamic(this, &ThisClass::OnChargeDelayFinished);
+			ChargeDelayTask->ReadyForActivation();
+			GEN_CAST_LOG(Verbose, "Charge retardée de %.3fs (geste de lancer précédent protégé)", Delay);
+		}
+		else
+		{
+			PlayChargeMontage(0.f);
+		}
 	}
 
 	CastStartTime = GetWorld()->GetTimeSeconds();
@@ -585,6 +656,29 @@ void UGenGA_Cast::StartCasting()
 	UAbilityTask_WaitDelay* CastTask = UAbilityTask_WaitDelay::WaitDelay(this, CastTime);
 	CastTask->OnFinish.AddDynamic(this, &ThisClass::OnCastFinished);
 	CastTask->ReadyForActivation();
+}
+
+void UGenGA_Cast::PlayChargeMontage(float Delay)
+{
+	if (!ChargeMontage)
+	{
+		return;
+	}
+	const bool bScaled = GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, CastMontage != nullptr, CastTime);
+	// Retardée : jouée plus vite, sans avertissement de recalage pour cette accélération voulue
+	const float ExpectedRate = Delay > 0.f && CastTime > Delay ? CastTime / (CastTime - Delay) : 1.f;
+	const float Rate = bScaled ? GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), FMath::Max(CastTime - Delay, KINDA_SMALL_NUMBER), ExpectedRate) : 1.f;
+	PlayPhaseMontage(ChargeMontage, Rate, /*bStopWhenAbilityEnds*/ false);
+}
+
+void UGenGA_Cast::OnChargeDelayFinished()
+{
+	// Incantation toujours en cours (une annulation termine la tâche avec le sort)
+	if (IsActive() && !bReleased)
+	{
+		PlayChargeMontage(PendingChargeDelay);
+	}
+	PendingChargeDelay = 0.f;
 }
 
 void UGenGA_Cast::OnServerAimReceived(const FGameplayAbilityTargetDataHandle& DataHandle)
@@ -698,17 +792,18 @@ void UGenGA_Cast::OnServerLaunchDelayFinished()
 
 void UGenGA_Cast::ApplyCastSlow()
 {
-	// Ralenti appliqué dans la fenêtre de prédiction de l'activation
-	if (CastSlowHandle.IsValid() || CastMoveSpeedMultiplier >= 1.f)
+	if (bCastSlowApplied || CastMoveSpeedMultiplier >= 1.f)
 	{
 		return;
 	}
 
-	FGameplayEffectSpecHandle SlowSpec = MakeOutgoingGameplayEffectSpec(UGenGE_MoveSpeedMultiplier::StaticClass(), GetAbilityLevel());
-	if (SlowSpec.IsValid())
+	// Revue Plan 2 Tasks 7-8, I-4 : multiplicateur local posé par le serveur et le client propriétaire, chacun au début de
+	// SON incantation et retiré à SA fin. Un GE prédit restait chez le client jusqu'au retrait du serveur (~1 RTT) :
+	// correction du mouvement à chaque fin d'incantation.
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		SlowSpec.Data->SetSetByCallerMagnitude(GenGameplayTags::SetByCaller_MoveSpeedMultiplier, CastMoveSpeedMultiplier);
-		CastSlowHandle = ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, SlowSpec);
+		Character->SetLocalMoveSpeedMultiplier(this, GenCastSlowReason(), CastMoveSpeedMultiplier);
+		bCastSlowApplied = true;
 	}
 }
 
@@ -733,10 +828,13 @@ void UGenGA_Cast::StartInterruptWatch()
 
 void UGenGA_Cast::EndCastPresentation()
 {
-	if (CastSlowHandle.IsValid())
+	if (bCastSlowApplied)
 	{
-		BP_RemoveGameplayEffectFromOwnerWithHandle(CastSlowHandle);
-		CastSlowHandle.Invalidate();
+		bCastSlowApplied = false;
+		if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+		{
+			Character->ClearLocalMoveSpeedMultiplier(this, GenCastSlowReason());
+		}
 	}
 
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
@@ -749,6 +847,7 @@ void UGenGA_Cast::StopCasting()
 {
 	bIsFeeding = false;
 	EndFeedTasks();
+	EndAimIndicator();
 
 	// Toutes les écritures de l'affichage (estimation, compte annoncé par le client) passent par SetFedVisual
 	if (FedVisualCount > 0)
@@ -888,6 +987,9 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	}
 
 	const int32 Fed = ResolveFedCount(Data);
+	const FGenTargetData_Aim* AimData = (Data && Data->GetScriptStruct() == FGenTargetData_Aim::StaticStruct())
+		? static_cast<const FGenTargetData_Aim*>(Data)
+		: nullptr;
 
 	// Le sort part : on applique cooldown, coût et dépense de la ressource maintenant, pour qu'une
 	// incantation interrompue (annulée, contrôle dur, mort) ne coûte rien. Le client est dans la fenêtre
@@ -912,18 +1014,29 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	{
 		SpendResource(Fed);
 	}
-	SetFedVisual(0);
+	// Revue V6-V8, I-3 : lancer => les unités sont dans le sort (le Foyer ne les fait pas revenir), répliqué avec le compte
+	SetFedVisual(0, /*bSpent*/ true);
 	bReleased = true;
 
 	GEN_CAST_LOG(Verbose, "Visée reçue : %s, nourri : %d", *Hit->Location.ToCompactString(), Fed);
 
-	OutRelease.AimLocation = Hit->Location;
+	// Revue Plan 2 Tasks 7-8, M-1 : le client honnête vise sur le plan du lanceur (GetCursorLocationOnPlane) ; un Z modifié
+	// ne choisit ni l'étage d'une carte à niveaux ni une zone sous le sol (FindFloor part de ce point)
+	OutRelease.AimLocation = FVector(Hit->Location.X, Hit->Location.Y, Avatar->GetActorLocation().Z);
 	OutRelease.AimDirection = (Hit->Location - Avatar->GetActorLocation()).GetSafeNormal2D();
 	if (OutRelease.AimDirection.IsNearlyZero())
 	{
 		OutRelease.AimDirection = Avatar->GetActorForwardVector().GetSafeNormal2D(UE_SMALL_NUMBER, FVector::ForwardVector);
 	}
 	OutRelease.Fed = Fed;
+	if (AimData)
+	{
+		OutRelease.ClientLeapDistance = AimData->LeapDistance;
+		OutRelease.ClientLeapYaw = AimData->LeapYaw;
+	}
+
+	// Visée verrouillée : l'indicateur se ferme avant le geste (le sort part)
+	EndAimIndicator();
 
 	// Se tourner vers la cible (client et serveur, pour que la prédiction concorde)
 	if (bTurnToAim)
@@ -937,6 +1050,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 		const float Target = GetCastMontageTargetDuration();
 		const float Rate = Target > 0.f ? GetPhaseRate(CastMontage, CastMontage->GetPlayLength(), Target, 1.f) : 1.f;
 		PlayPhaseMontage(CastMontage, Rate, bStopCastMontageWithAbility);
+		LastCastMontageTime = GetWorld() ? GetWorld()->GetTimeSeconds() : -1.0;
 	}
 
 	return true;
@@ -955,7 +1069,23 @@ float UGenGA_Cast::GetPhaseRate(const UAnimMontage* Montage, float AuthoredLengt
 	return Rate;
 }
 
-UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds)
+UAnimMontage* UGenGA_Cast::GetChargePhaseMontage(FName& OutSection) const
+{
+	OutSection = NAME_None;
+	if (FedChargeMontage && FedVisualCount > 0)
+	{
+		const FName Section = GenMontageTiming::GetFedChargeSection(FedVisualCount);
+		if (FedChargeMontage->GetSectionIndex(Section) != INDEX_NONE)
+		{
+			OutSection = Section;
+			return FedChargeMontage;
+		}
+		GEN_CAST_LOG(Warning, "%s : section %s absente, ChargeMontage joué à la place", *GetNameSafe(FedChargeMontage), *Section.ToString());
+	}
+	return ChargeMontage;
+}
+
+UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds, FName StartSection)
 {
 	if (!Montage)
 	{
@@ -967,7 +1097,7 @@ UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Mon
 	// que dans le même groupe de slots. Les assets doivent le respecter (vérifié aussi par le script des montages).
 	if (!bWarnedPhaseSlotGroups)
 	{
-		for (const UAnimMontage* Other : { FeedMontage.Get(), ChargeMontage.Get(), CastMontage.Get() })
+		for (const UAnimMontage* Other : { FeedMontage.Get(), ChargeMontage.Get(), FedChargeMontage.Get(), CastMontage.Get() })
 		{
 			if (Other && Other != Montage && Other->GetGroupName() != Montage->GetGroupName())
 			{
@@ -981,7 +1111,7 @@ UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Mon
 #endif
 
 	UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-		this, NAME_None, Montage, Rate, NAME_None, bStopWhenAbilityEnds, CastMontageRootMotionScale);
+		this, NAME_None, Montage, Rate, StartSection, bStopWhenAbilityEnds, CastMontageRootMotionScale);
 	Task->ReadyForActivation();
 	return Task;
 }
@@ -995,7 +1125,7 @@ void UGenGA_Cast::StopClientCastMontages()
 		return;
 	}
 
-	for (UAnimMontage* Montage : { FeedMontage.Get(), ChargeMontage.Get(), CastMontage.Get() })
+	for (UAnimMontage* Montage : { FeedMontage.Get(), ChargeMontage.Get(), FedChargeMontage.Get(), CastMontage.Get() })
 	{
 		if (Montage)
 		{
@@ -1014,7 +1144,7 @@ void UGenGA_Cast::AbortCastMontages()
 	{
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 		{
-			for (const UAnimMontage* Montage : { ChargeMontage.Get(), CastMontage.Get() })
+			for (const UAnimMontage* Montage : { ChargeMontage.Get(), FedChargeMontage.Get(), CastMontage.Get() })
 			{
 				if (Montage)
 				{
@@ -1145,6 +1275,9 @@ AGenProjectile* UGenGA_Cast::SpawnProjectileShot(TSubclassOf<AGenProjectile> Sho
 	}
 
 	Projectile->InitializeShot(ShotParams);
+	// Équipe retenue au tir : les cibles restent justes si le lanceur disparaît pendant le vol (revue Plan 2 Tasks 7-8, M-6)
+	const AGenCharacterBase* Character = GetGenCharacterFromActorInfo();
+	Projectile->SetSourceTeam(Character ? Character->GetTeamId() : GenNoTeam);
 	Projectile->Salvo = Salvo;
 	Projectile->DamageEffectSpecHandle = MakeDamageSpec(DamageClass, DamageAmount, Projectile);
 	Projectile->InstigatorOnHitSpecHandle = MakeGainSpec(EnergyGain, ResourceGain);

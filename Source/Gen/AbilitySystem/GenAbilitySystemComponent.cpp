@@ -81,6 +81,14 @@ TArray<FActiveGameplayEffectHandle> UGenAbilitySystemComponent::ApplyEffectsToSe
 void UGenAbilitySystemComponent::OnGiveAbility(FGameplayAbilitySpec& AbilitySpec)
 {
 	Super::OnGiveAbility(AbilitySpec);
+
+	// Revue P3 T8-10, I1 : les tags requis du sort accordé (instance : un sort peut les poser à l'octroi) sont suivis
+	const UGenGameplayAbility* GenAbility = Cast<UGenGameplayAbility>(AbilitySpec.GetPrimaryInstance() ? AbilitySpec.GetPrimaryInstance() : AbilitySpec.Ability.Get());
+	if (GenAbility)
+	{
+		RegisterGraceTags(GenAbility->GetActivationRequiredTagsForGrace());
+	}
+
 	OnAbilitiesChanged.Broadcast(AbilitySpec, /*bRemoved*/ false);
 }
 
@@ -189,6 +197,15 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 					AbilitiesToActivate.AddUnique(Spec->Handle);
 				}
 			}
+		}
+	}
+
+	// Revue V6-V8, I-2 : les mouvements en attente partent avant les RPC d'activation (ralentis locaux à la borne)
+	if (AbilitiesToActivate.Num() > 0)
+	{
+		if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetAvatarActor()))
+		{
+			Character->FlushMovesToServer();
 		}
 	}
 
@@ -344,12 +361,18 @@ void UGenAbilitySystemComponent::OnTagUpdated(const FGameplayTag& Tag, bool TagE
 {
 	Super::OnTagUpdated(Tag, TagExists);
 
-	// Revue V2-V4, I1 : seuls les tags qui changent la règle de nourrissage d'un sort déjà prédit par le client
-	if ((Tag == GenGameplayTags::State_FastFeeding || Tag == GenGameplayTags::State_FreeResource) && GetWorld())
+	// Revue V2-V4, I1 : les tags qui changent la règle de nourrissage d'un sort déjà prédit par le client ; revue P3
+	// T8-10, I1 : et ceux que les sorts accordés exigent (grâce de DoesAbilitySatisfyTagRequirements)
+	if (IsGraceTag(Tag) && GetWorld())
 	{
 		FGraceTagTimes& Times = GraceTagTimes.FindOrAdd(Tag);
 		(TagExists ? Times.Added : Times.Removed) = GetWorld()->GetTimeSeconds();
 	}
+}
+
+bool UGenAbilitySystemComponent::IsGraceTag(const FGameplayTag& Tag) const
+{
+	return Tag == GenGameplayTags::State_FastFeeding || Tag == GenGameplayTags::State_FreeResource || RegisteredGraceTags.HasTagExact(Tag);
 }
 
 bool UGenAbilitySystemComponent::WasGraceTagChangedNear(const FGameplayTag& Tag, bool bAdded, double ReferenceTime) const
@@ -372,7 +395,7 @@ void UGenAbilitySystemComponent::ClearCastLock()
 	CastLockEnforcedUntil = -1.0;
 }
 
-int32 UGenAbilitySystemComponent::CancelPendingCasts()
+int32 UGenAbilitySystemComponent::CancelPendingCasts(const UGameplayAbility* Except)
 {
 	// Plan 3 Task 6. Liste d'abord : annuler un sort modifie les specs actifs
 	TArray<UGenGA_Cast*, TInlineAllocator<4>> Pending;
@@ -380,7 +403,7 @@ int32 UGenAbilitySystemComponent::CancelPendingCasts()
 	{
 		UGenGA_Cast* CastAbility = Spec.IsActive() ? Cast<UGenGA_Cast>(Spec.GetPrimaryInstance()) : nullptr;
 		// CanBeCanceled : serveur, visée du client reçue (départ différé compris) => le sort part quand même
-		if (CastAbility && CastAbility->IsCastPending() && CastAbility->CanBeCanceled())
+		if (CastAbility && CastAbility != Except && CastAbility->IsCastPending() && CastAbility->CanBeCanceled())
 		{
 			Pending.Add(CastAbility);
 		}
@@ -396,6 +419,13 @@ int32 UGenAbilitySystemComponent::CancelPendingCasts()
 		// Revue P3 T3-7, I2 : un sort annulé dont la touche reste enfoncée (clic gauche en répétition automatique) ne se
 		// relance pas tout seul dans la même image (ProcessAbilityInput) : il faut relâcher puis rappuyer. Tous les sorts de
 		// la même touche (Pyroblast et boule de feu partagent le clic gauche) : la touche entière est « relâchée » pour eux.
+		// Touche d'annulation seulement : un sort qui en remplace un autre (Except) peut partager sa touche et doit garder
+		// son appui (relâchement du nourrissage). La répétition automatique du sort remplacé reste bloquée tant que le
+		// nouveau s'incante (ProcessAbilityInput, IsAnotherAbilityCasting)
+		if (Except)
+		{
+			continue;
+		}
 		InputHeldSpecHandles.Remove(Handle);
 		InputPressedSpecHandles.Remove(Handle);
 		if (CastAbility->InputTag.IsValid())

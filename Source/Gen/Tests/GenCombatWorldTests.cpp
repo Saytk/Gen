@@ -4,6 +4,7 @@
 
 #include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
+#include "NiagaraSystem.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
@@ -230,6 +231,21 @@ bool FGenStatusVisualTest::RunTest(const FString& Parameters)
 	TestWorld.Advance(0.8f);
 	TestFalse(TEXT("caché à la fin"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
 
+	// Plan Visuals V9 : un état avec seulement un système Niagara (ni forme ni matériau) suit aussi son tag
+	FGenStatusVisual Countering;
+	Countering.Tag = GenGameplayTags::State_Countering;
+	Countering.System = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Gen/Champions/Curffe/VFX/NS_Curffe_AblazeBody.NS_Curffe_AblazeBody"));
+	TestNotNull(TEXT("système de test"), Countering.System.Get());
+	Visuals->Bind(ASC, { Stunned, Countering });
+	TestFalse(TEXT("système : caché au départ"), Visuals->IsStatusShown(GenGameplayTags::State_Countering) || Visuals->IsStatusSystemActive(GenGameplayTags::State_Countering));
+	ASC->AddLooseGameplayTag(GenGameplayTags::State_Countering);
+	TestTrue(TEXT("système : affiché avec le tag"), Visuals->IsStatusShown(GenGameplayTags::State_Countering));
+	TestTrue(TEXT("système : lancé avec le tag"), Visuals->IsStatusSystemActive(GenGameplayTags::State_Countering));
+	TestFalse(TEXT("l'autre état reste caché"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+	ASC->RemoveLooseGameplayTag(GenGameplayTags::State_Countering);
+	TestFalse(TEXT("système : caché sans le tag"), Visuals->IsStatusShown(GenGameplayTags::State_Countering));
+	TestFalse(TEXT("système : désactivé sans le tag"), Visuals->IsStatusSystemActive(GenGameplayTags::State_Countering));
+
 	Visuals->Unbind();
 	return true;
 }
@@ -270,6 +286,19 @@ bool FGenFedResourceEventTest::RunTest(const FString& Parameters)
 	// Pop seulement quand le compte augmente : jamais au lancer (3 -> 0) ni à la remise à zéro
 	TestEqual(TEXT("3 pops"), Pops.Num(), 3);
 	TestTrue(TEXT("pops 1, 3, 2"), Pops == TArray<int32>({ 1, 3, 2 }));
+
+	// Revue V6-V8, I-3 : une baisse est un lancer seulement si le sort le dit (pas de déduction par la ressource)
+	Dummy->SetFedResource(Source, 3);
+	Dummy->SetFedResource(Source, 0, /*bSpent*/ true);
+	TestTrue(TEXT("lancer : baisse dépensée"), Dummy->WasLastFedDropSpent());
+	Dummy->SetFedResource(Source, 2);
+	TestFalse(TEXT("une hausse n'est pas un lancer"), Dummy->WasLastFedDropSpent());
+	Dummy->SetFedResource(Source, 0);
+	TestFalse(TEXT("annulation : rendue"), Dummy->WasLastFedDropSpent());
+	const UObject* OtherSource = GetTransientPackage();
+	Dummy->SetFedResource(Source, 2);
+	Dummy->SetFedResource(OtherSource, 0, /*bSpent*/ true);
+	TestFalse(TEXT("un autre sort ne dépense pas l'affichage d'un autre"), Dummy->WasLastFedDropSpent());
 	return true;
 }
 

@@ -16,6 +16,7 @@ class UAnimMontage;
 class UGameplayEffect;
 class UNiagaraSystem;
 struct FGameplayAbilityTargetData;
+struct FGenTargetData_Aim;
 struct FGenAreaParams;
 struct FGenProjectileSalvo;
 struct FGenProjectileShotParams;
@@ -29,6 +30,12 @@ struct FGenCastRelease
 	FVector AimDirection = FVector::ForwardVector;
 	/** Unités nourries, validées par le serveur et déjà dépensées. */
 	int32 Fed = 0;
+	/**
+	 * Bond annoncé par la visée du client (FGenTargetData_Aim::LeapDistance / LeapYaw), < 0 = aucun. Le sort le valide
+	 * (GenAreaRules::AcceptClientLeap : portée, et atterrissage à 150 cm près depuis le serveur) : revue V6-V8, I-1.
+	 */
+	float ClientLeapDistance = -1.f;
+	float ClientLeapYaw = 0.f;
 };
 
 /**
@@ -72,6 +79,21 @@ public:
 	/** Serveur : visée reçue en avance, le lancer attend la fin de l'incantation mesurée par le serveur (tests). */
 	bool IsWaitingForDeferredLaunch() const { return bServerShotLocked && PendingAimData.Num() > 0; }
 
+	/**
+	 * Client (ou hôte), au moment d'envoyer la visée : le sort y ajoute ce que le serveur doit reprendre à l'identique
+	 * (bond : distance et lacet). Data.HitResult.Location = point visé. Par défaut : rien.
+	 */
+	virtual void FillAimData(FGenTargetData_Aim& Data) const {}
+
+	/** Durée d'incantation (après le nourrissage). */
+	float GetCastTime() const { return CastTime; }
+
+	//~ UGenGameplayAbility (infobulle) : {CastTime}, {FeedInterval}, {MaxFeed}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipCastTime() const override { return CastTime; }
+	virtual int32 GetTooltipMaxFeed() const override { return bFeedable ? MaxFeed : 0; }
+	virtual float GetTooltipFeedInterval() const override { return FeedInterval; }
+
 	//~ UGameplayAbility
 	/** Faux sur le serveur entre la visée du client et le départ du sort : le client a déjà lancé. */
 	virtual bool CanBeCanceled() const override;
@@ -91,6 +113,9 @@ protected:
 
 	/** Termine le sort. Seul le serveur réplique la fin (voir le commentaire dans le .cpp). */
 	void FinishAbility();
+
+	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
+	bool IsServerForRemoteClient() const;
 
 	/**
 	 * Verrou de lancement (State.CastLocked, tag local sur le serveur et le client) ; retiré à la fin du sort.
@@ -164,6 +189,16 @@ protected:
 	bool bTurnToAim = true;
 
 	/**
+	 * Indicateur de visée (UGenSpellIndicatorComponent, client propriétaire seulement) de l'appui au verrouillage de la
+	 * visée (ReleaseCast), si le sort a une géométrie (GetAimGeometry). Python : show_aim_indicator.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Indicator")
+	bool bShowAimIndicator = true;
+
+	/** Ce sort ouvre-t-il l'indicateur de visée maintenant (lu à l'activation) ? Par défaut : bShowAimIndicator. */
+	virtual bool WantsAimIndicator() const { return bShowAimIndicator; }
+
+	/**
 	 * Montage d'incantation (optionnel, répliqué par le GAS) : joué dès le début de l'incantation (après le nourrissage).
 	 * Avec un CastMontage : préparation seule, calée sur CastTime (bScaleChargeMontageToCastTime).
 	 * Sans CastMontage (montage unique du Plan 1) : préparation puis geste de lancer, à vitesse 1 ; le régler pour que
@@ -171,6 +206,15 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "CastTime > 0"))
 	TObjectPtr<UAnimMontage> ChargeMontage;
+
+	/**
+	 * Charge nourrie (optionnel, ex : AM_FlamePillar_Charge_Fed) : remplace ChargeMontage quand l'incantation commence avec
+	 * au moins une unité nourrie (compte AFFICHÉ). Sections Fed_1, Fed_2, Fed_3 non enchaînées ; la section
+	 * Fed_<clamp(N, 1, 3)> est jouée seule, calée sur CastTime (longueur de la section / CastTime). Section absente :
+	 * ChargeMontage. Même groupe de slots que les autres phases. Python : fed_charge_montage.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "bFeedable && CastTime > 0"))
+	TObjectPtr<UAnimMontage> FedChargeMontage;
 
 	/** Montage de lancer (optionnel, répliqué aux autres joueurs par le GAS). Joué au lancer. */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation")
@@ -212,6 +256,15 @@ protected:
 	bool bStopCastMontageWithAbility = false;
 
 	/**
+	 * Clic gauche maintenu : le geste de lancer (CastMontage) du sort précédent est protégé pendant cette durée ; la
+	 * charge de l'incantation suivante attend, puis joue plus vite pour finir à CastTime (GenMontageTiming::
+	 * GetChargeStartDelay). Cosmétique seulement, le minuteur du sort ne change pas. 0 = aucune protection.
+	 * Python : cast_montage_release_hold.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (ClampMin = "0.0", Units = "s"))
+	float CastMontageReleaseHold = 0.15f;
+
+	/**
 	 * Durée de jeu de la phase lancée, à laquelle CastMontage est calé (0 = vitesse 1 : geste au lancer puis suivi).
 	 * Surcharges prévues : bond -> durée du vol ; contre -> fenêtre ; Living Flame -> forme.
 	 */
@@ -221,7 +274,13 @@ protected:
 	 * Joue un montage de phase à Rate (répliqué aux autres joueurs par le GAS), avec CastMontageRootMotionScale.
 	 * nullptr si Montage est nul (asset pas encore créé) : l'appelant n'a rien d'autre à faire.
 	 */
-	UAbilityTask_PlayMontageAndWait* PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds);
+	UAbilityTask_PlayMontageAndWait* PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds, FName StartSection = NAME_None);
+
+	/**
+	 * Montage de la phase de charge (après le nourrissage) : FedChargeMontage et sa section Fed_<N> si l'incantation
+	 * commence avec FedVisualCount > 0 et que la section existe, sinon ChargeMontage (OutSection = NAME_None).
+	 */
+	UAnimMontage* GetChargePhaseMontage(FName& OutSection) const;
 
 	/** Vitesse calée sur TargetDuration ; avertit si le clip devrait être recalé (hors Shipping). */
 	float GetPhaseRate(const UAnimMontage* Montage, float AuthoredLength, float TargetDuration, float ExpectedRate) const;
@@ -246,6 +305,10 @@ private:
 	void ScheduleFeedTick();
 	/** V3 : joue FeedMontage (rate calée sur l'intervalle actif, Feed_1 trouvée par son nom). */
 	void PlayFeedMontage();
+	/** Joue ChargeMontage, retardé de Delay (geste de lancer précédent protégé) et calé pour finir à CastTime. */
+	void PlayChargeMontage(float Delay);
+	UFUNCTION()
+	void OnChargeDelayFinished();
 	/** Revue V2-V4, I2 : serveur pour un client distant, geste de nourrissage lancé avec le retard de l'estimation. */
 	UFUNCTION()
 	void OnFeedMontageDelayFinished();
@@ -259,7 +322,7 @@ private:
 	/** Client (ou hôte) : fin du nourrissage => prévient le serveur puis incante. */
 	void StopFeedingLocal();
 	void EndFeedTasks();
-	void SetFedVisual(int32 Count);
+	void SetFedVisual(int32 Count, bool bSpent = false);
 	/**
 	 * Serveur pour un client distant : recalcule l'affichage (estimation ou annonce du client bornée par le temps,
 	 * jamais en recul, GenFeeding::ReconcileDisplayedFed), l'applique et le renvoie.
@@ -295,8 +358,9 @@ private:
 	/** Arrête d'écouter la visée (après la première : les suivantes sont ignorées). */
 	void EndAimTask();
 
-	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
-	bool IsServerForRemoteClient() const;
+	/** Plan Visuals V6 : ouvre (client propriétaire, WantsAimIndicator) ou ferme l'indicateur de visée de ce sort. */
+	void BeginAimIndicator();
+	void EndAimIndicator();
 
 	/**
 	 * Lancer : borne le nourrissage, CommitAbility (cooldown, coût), dépense la ressource, tourne le lanceur,
@@ -316,7 +380,11 @@ private:
 	void AcknowledgeDeferredAim();
 	void SpendResource(int32 Amount);
 
-	FActiveGameplayEffectHandle CastSlowHandle;
+	/**
+	 * Ralenti de l'incantation posé (multiplicateur local de AGenCharacterBase). Revue Plan 2 Tasks 7-8, I-4 : plus de GE
+	 * prédit, chaque machine le pose à SON début et le retire à SA fin, comme ses propres mouvements (aucune correction).
+	 */
+	bool bCastSlowApplied = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitDelay> FeedTickTask;
@@ -331,6 +399,11 @@ private:
 #if !UE_BUILD_SHIPPING
 	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
 	bool bWarnedPhaseSlotGroups = false;
+
+	/** Départ (temps du monde) du dernier CastMontage de cette instance ; gardé d'une activation à l'autre (auto-répétition). */
+	double LastCastMontageTime = -1.0;
+	/** Retard de la charge en cours d'attente (OnChargeDelayFinished). */
+	float PendingChargeDelay = 0.f;
 #endif
 	/** Tâche de visée en cours (serveur pour un client distant : attend la visée). */
 	UPROPERTY(Transient)

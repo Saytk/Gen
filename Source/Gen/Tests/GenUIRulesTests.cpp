@@ -5,6 +5,7 @@
 #include "InputCoreTypes.h"
 #include "Internationalization/Culture.h"
 #include "Internationalization/Internationalization.h"
+#include "UI/GenUIDataAssets.h"
 #include "UI/GenUIRules.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUICooldownFormatTest, "Gen.UI.CooldownFormat",
@@ -188,6 +189,32 @@ bool FGenUIEnergySlotTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("assez d'énergie : prêt"), GenUIRules::ResolveSlotState(true, false, 0.f, true), EGenAbilitySlotState::Ready);
 	TestEqual(TEXT("sans le 4e argument : prêt"), GenUIRules::ResolveSlotState(true, false, 0.f), EGenAbilitySlotState::Ready);
 	TestEqual(TEXT("vide prime sur tout"), GenUIRules::ResolveSlotState(false, true, 2.f, false), EGenAbilitySlotState::Empty);
+
+	// Revue P3 T8-10, M5 : CostFundedSegments(Energy, Cost, Segments), même règle que CheckCost (GenEnergy::CanAfford)
+	TestEqual(TEXT("R : 25 pour 25 -> financé"), GenUIRules::CostFundedSegments(25.f, 25.f, 1), 1);
+	TestEqual(TEXT("R : 24.9976 -> pas financé (CanAfford refuse)"), GenUIRules::CostFundedSegments(24.9976f, 25.f, 1), 0);
+	TestEqual(TEXT("F : 99 -> 3 sur 4"), GenUIRules::CostFundedSegments(99.f, 100.f, 4), 3);
+	TestEqual(TEXT("F : 100 -> 4"), GenUIRules::CostFundedSegments(100.f, 100.f, 4), 4);
+	TestEqual(TEXT("coût 30 à 30 d'énergie : lançable, arc plein"), GenUIRules::CostFundedSegments(30.f, 30.f, 2), 2);
+	TestEqual(TEXT("coût 30 à 29 : un segment sur deux"), GenUIRules::CostFundedSegments(29.f, 30.f, 2), 1);
+	TestEqual(TEXT("plus que le coût : borné"), GenUIRules::CostFundedSegments(250.f, 100.f, 4), 4);
+	TestEqual(TEXT("sans coût : 0"), GenUIRules::CostFundedSegments(50.f, 0.f, 4), 0);
+
+	// Revue P3 T8-10, M4 : flash « prêt » au passage à l'état lançable, depuis une recharge ou un manque d'énergie
+	TestTrue(TEXT("recharge -> prêt : flash"), GenUIRules::IsReadyFlash(EGenAbilitySlotState::Cooldown, EGenAbilitySlotState::Ready));
+	TestTrue(TEXT("pas assez -> prêt : flash"), GenUIRules::IsReadyFlash(EGenAbilitySlotState::NoEnergy, EGenAbilitySlotState::Ready));
+	TestFalse(TEXT("recharge -> pas assez : pas de flash"), GenUIRules::IsReadyFlash(EGenAbilitySlotState::Cooldown, EGenAbilitySlotState::NoEnergy));
+	TestFalse(TEXT("prêt -> prêt : pas de flash"), GenUIRules::IsReadyFlash(EGenAbilitySlotState::Ready, EGenAbilitySlotState::Ready));
+	TestFalse(TEXT("bloqué -> prêt : pas de flash"), GenUIRules::IsReadyFlash(EGenAbilitySlotState::Locked, EGenAbilitySlotState::Ready));
+	TestFalse(TEXT("vide -> prêt (liaison) : pas de flash"), GenUIRules::IsReadyFlash(EGenAbilitySlotState::Empty, EGenAbilitySlotState::Ready));
+
+	// Revue P3 T8-10, M9 : le défaut C++ et la palette du jeu lisent le même jeton (§2.5)
+	const FLinearColor Token = GenUIRules::HexToLinear(GenUITokens::CooldownNoEnergyHex, GenUITokens::CooldownNoEnergyAlpha);
+	TestTrue(TEXT("défaut C++ = jeton cooldown.noEnergy"), GetDefault<UGenUIPalette>()->Cooldown_NoEnergy.Equals(Token, 0.0001f));
+	if (const UGenUIPalette* Palette = LoadObject<UGenUIPalette>(nullptr, TEXT("/Game/Gen/UI/Foundation/DA_UIPalette.DA_UIPalette")))
+	{
+		TestTrue(TEXT("DA_UIPalette = jeton cooldown.noEnergy"), Palette->Cooldown_NoEnergy.Equals(Token, 0.0001f));
+	}
 	return true;
 }
 

@@ -9,8 +9,15 @@
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenHitRules.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystemInterface.h"
+#include "GameplayCueManager.h"
 #include "Character/GenPlayerCharacter.h"
+#include "Engine/CollisionProfile.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayTagContainer.h"
 #include "Net/GenNetCurffeTestAbilities.h"
@@ -429,6 +436,10 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 	TWeakObjectPtr<AGenPlayerCharacter> ServerCaster;
 	TWeakObjectPtr<AGenPlayerCharacter> ServerEnemy;
 	TArray<TWeakObjectPtr<AGenNetTestRingProjectile>> RingProjectiles;
+	/** Lacet et position de chaque boule de l'anneau à son apparition (ordre d'apparition). */
+	TArray<float> RingYaws;
+	TArray<FVector> RingOrigins;
+	TWeakObjectPtr<AActor> ServerWall;
 	TSet<const FGenProjectileSalvo*> RingSalvos;
 	int32 AreaCount = 0;
 	int32 CasterPlayerId = INDEX_NONE;
@@ -439,6 +450,12 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 	float EnemyHealthBefore = 0.f;
 	float ClientMark = 0.f;
 	float ServerMark = 0.f;
+
+	/** Signaux d'impact du bond joués, par monde (revue Plan 2 Tasks 7-8, M-4). */
+	TMap<TWeakObjectPtr<UWorld>, int32> ImpactCues;
+	/** Chez le propriétaire, son bond était encore actif quand le signal a joué (donc à SON atterrissage). */
+	bool bOwnerCueDuringOwnLeap = false;
+	FDelegateHandle CueHandle;
 
 	static constexpr float LandingDamage = 5.f;
 	static constexpr float RingDamage = 8.f;
@@ -454,6 +471,7 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 		// sur le CDO au moment d'accorder le sort (GrantAbilities) ; la recharge est reprise par l'instance à l'activation.
 		GetMutableDefault<UGenNetTestGA_MeteorLeap>()->InputTag = LeapInputTag();
 		UGenNetTestGA_MeteorLeap::TestCooldownTags = FGameplayTagContainer(LeapCooldownTag());
+		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
 
 		FNetworkComponentBuilder<FBasePIENetworkComponentState>()
 			.WithClients(2)
@@ -469,6 +487,13 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 			ServerWorld->RemoveOnActorSpawnedHandler(SpawnHandle);
 		}
 		SpawnHandle.Reset();
+		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
+		UGenNetTestGA_MeteorLeap::TestImpactCueTag = FGameplayTag();
+		if (CueHandle.IsValid())
+		{
+			UAbilitySystemGlobals::Get().GetGameplayCueManager()->OnGameplayCueRouted().Remove(CueHandle);
+			CueHandle.Reset();
+		}
 	}
 
 	bool HasLanded() const
@@ -510,6 +535,8 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 					if (AGenNetTestRingProjectile* Ring = Cast<AGenNetTestRingProjectile>(Actor))
 					{
 						RingProjectiles.Add(Ring);
+						RingYaws.Add(Ring->GetActorRotation().Yaw);
+						RingOrigins.Add(Ring->GetActorLocation());
 						FlamesAtRing = GetAttribute(ServerCaster->GetAbilitySystemComponent(), UGenAttributeSet::GetResourceAttribute());
 					}
 					else if (Cast<AGenGroundArea>(Actor))
@@ -635,12 +662,67 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 				ASSERT_THAT(IsNear(1.f, static_cast<float>(ObservedTarget.Direction.X), 0.05f, TEXT("Direction du bond (+X)")));
 			});
 		QueueAssertLanding(3);
+		Network.ThenServer(TEXT("Serveur : triangle régulier, première boule selon la visée"), [this](FBasePIENetworkComponentState&)
+		{
+			// Revue Plan 2 Tasks 7-8, M-10 : les boules partent selon GenAreaRules::GetRingDirections(3, direction du bond)
+			ASSERT_THAT(AreEqual(3, RingYaws.Num()));
+			const float Expected[] = { 0.f, 120.f, -120.f };
+			for (int32 Index = 0; Index < 3; ++Index)
+			{
+				ASSERT_THAT(IsNear(0.f, FMath::FindDeltaAngleDegrees(Expected[Index], RingYaws[Index]), 3.f,
+					*FString::Printf(TEXT("Boule %d : lacet %.1f° (attendu %.0f°)"), Index, RingYaws[Index], Expected[Index])));
+			}
+		});
 		Network.UntilClient(TEXT("Client 1 : point d'atterrissage effacé après l'atterrissage"), 1, [this](FBasePIENetworkComponentState& Client)
 		{
 			const AGenPlayerState* PS = FindPlayerStateById(Client.World, CasterPlayerId);
 			const AGenCharacterBase* Caster = PS ? PS->GetPawn<AGenCharacterBase>() : nullptr;
 			return Caster && !Caster->GetLeapTarget().IsActive();
 		}, DefaultWait());
+	}
+
+	/**
+	 * Revue Plan 2 Tasks 7-8, M-4 : le signal d'impact du bond joue chez le propriétaire à SON atterrissage (prédit, son bond
+	 * encore actif), une seule fois (le serveur le diffuse sous sa clé d'activation, que lui seul ignore), et une fois chez
+	 * l'autre client. Rien sur le serveur dédié.
+	 */
+	TEST_METHOD(ImpactCue_PredictedForOwner_OncePerClient)
+	{
+		UGenNetTestGA_MeteorLeap::TestImpactCueTag = Tag(TEXT("GameplayCue.FlameLeap.Impact"));
+		CueHandle = UAbilitySystemGlobals::Get().GetGameplayCueManager()->OnGameplayCueRouted().AddLambda(
+			[this](AActor* Target, FGameplayTag CueTag, EGameplayCueEvent::Type Event, const FGameplayCueParameters&, EGameplayCueExecutionOptions)
+			{
+				if (!Target || Event != EGameplayCueEvent::Executed || CueTag != UGenNetTestGA_MeteorLeap::TestImpactCueTag)
+				{
+					return;
+				}
+				++ImpactCues.FindOrAdd(Target->GetWorld());
+				const APawn* Pawn = Cast<APawn>(Target);
+				if (Pawn && Pawn->IsLocallyControlled() && !Pawn->HasAuthority())
+				{
+					const IAbilitySystemInterface* Owner = Cast<IAbilitySystemInterface>(Target);
+					bOwnerCueDuringOwnLeap = Owner && IsAbilityActive(Owner->GetAbilitySystemComponent(), UGenNetTestGA_MeteorLeap::StaticClass());
+				}
+			});
+		QueueSetup();
+		QueueFeed(0.45f);
+		Network
+			.UntilServer(TEXT("Serveur : atterri"), [this](FBasePIENetworkComponentState&) { return HasLanded(); }, DefaultWait())
+			.UntilClients(TEXT("Clients : signal d'impact joué"), [this](FBasePIENetworkComponentState& Client) { return ImpactCues.FindRef(Client.World) > 0; }, DefaultWait());
+		QueueServerWait(TEXT("Serveur : 0.5 s pour un éventuel doublon"), 0.5f);
+		Network
+			.ThenServer(TEXT("Serveur dédié : aucun signal"), [this](FBasePIENetworkComponentState& Server)
+			{
+				ASSERT_THAT(AreEqual(0, ImpactCues.FindRef(Server.World), TEXT("Signal cosmétique : jamais sur le serveur dédié")));
+			})
+			.ThenClients(TEXT("Clients : un seul signal chacun"), [this](FBasePIENetworkComponentState& Client)
+			{
+				ASSERT_THAT(AreEqual(1, ImpactCues.FindRef(Client.World), TEXT("Un signal par client, sans doublon")));
+			})
+			.ThenClient(TEXT("Client 0 : signal joué à son propre atterrissage"), 0, [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsTrue(bOwnerCueDuringOwnLeap, TEXT("Prédit : joué pendant le bond local, pas à la diffusion du serveur")));
+			});
 	}
 
 	/** Étourdi en plein vol : ignoré, le vol continue, la zone et l'anneau partent. */
@@ -663,6 +745,42 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 				ASSERT_THAT(IsTrue(Leap && Leap->IsActive() && Leap->IsAirborne(), TEXT("L'étourdissement ne coupe pas le vol")));
 			});
 		QueueAssertLanding(1);
+	}
+
+	/**
+	 * Règle des murs de l'anneau (revue Plan 2 Tasks 7-8, M-8 et M-10) : boules à 2 m du point d'atterrissage, un mur
+	 * (serveur seulement : l'anneau est du serveur) à ~1 m devant. La boule apparaît contre le mur, pas derrière.
+	 */
+	TEST_METHOD(RingSpawnsAgainstWall)
+	{
+		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 200.f;
+		QueueSetup();
+		Network.ThenServer(TEXT("Serveur : mur devant le point d'atterrissage"), [this](FBasePIENetworkComponentState& Server)
+		{
+			// Bloc de 50 cm d'épaisseur, face avant à X = 605 (atterrissage en X = 500, capsule de 42 cm : jamais touché en vol)
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AStaticMeshActor* Wall = Server.World->SpawnActor<AStaticMeshActor>(FVector(630.f, 0.f, 150.f), FRotator::ZeroRotator, Params);
+			ASSERT_THAT(IsNotNull(Wall));
+			Wall->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+			Wall->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+			Wall->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+			Wall->SetActorScale3D(FVector(0.5f, 4.f, 3.f));
+			ServerWall = Wall;
+		});
+		QueueFeed(0.45f);
+		Network
+			.UntilServer(TEXT("Serveur : atterrissage et anneau"), [this](FBasePIENetworkComponentState&) { return HasLanded() && RingOrigins.Num() > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : la boule apparaît contre le mur"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(AreEqual(1, RingOrigins.Num()));
+			ASSERT_THAT(IsNear(600.f, static_cast<float>(RingOrigins[0].X), 3.f, TEXT("Contre la face du mur (X = 605, moins 5 cm), pas à 2 m (X = 700)")));
+			ASSERT_THAT(IsNear(0.f, FMath::FindDeltaAngleDegrees(0.f, RingYaws[0]), 3.f, TEXT("Boule selon la visée (+X)")));
+			if (ServerWall.IsValid())
+			{
+				ServerWall->Destroy();
+			}
+		});
 	}
 
 	/** Étourdi pendant le décollage (nourrissage) : rien ne part, rien n'est payé. */
@@ -703,6 +821,250 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 					&& !ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked")))
 					&& FMath::IsNearlyEqual(GetAttribute(ASC, UGenAttributeSet::GetResourceAttribute()), MaxFlames, 0.01f);
 			}, DefaultWait());
+	}
+};
+
+// =====================================================================================================================
+
+/**
+ * Gen.Net.BackfireEnds (revue Plan 2 Tasks 7-8, I-3, I-4 et M-10) : comment la posture se termine.
+ * - fin naturelle de la fenêtre : posture et ralenti retirés partout, chaque machine à sa propre fin ;
+ * - un nouvel appui de clic gauche la termine (serveur et client) ; le clic gauche maintenu (répétition) ne la termine pas ;
+ * - un sort passif ou déclenché par un événement ne la termine pas ;
+ * - la mort la termine.
+ * Client 0 contre (équipe 0), client 1 l'observe (équipe 1).
+ */
+NETWORK_TEST_CLASS(BackfireEnds, "Gen.Net")
+{
+	FPIENetworkComponent<FBasePIENetworkComponentState> Network{ TestRunner, TestCommandBuilder, bInitializing };
+
+	TWeakObjectPtr<AGenPlayerCharacter> ServerCaster;
+	TWeakObjectPtr<AGenPlayerCharacter> ServerOther;
+	int32 CasterPlayerId = INDEX_NONE;
+	float ClientMark = 0.f;
+	float WindowMultiplier = 0.f;
+
+	static FGameplayTag PrimaryInputTag() { return Tag(TEXT("InputTag.Ability.Primary")); }
+
+	BEFORE_EACH()
+	{
+		IgnoreUntitledMapNetWarnings(*TestRunner);
+
+		// Sort déclenché : touche et événement de test (lus à l'activation et quand le sort est accordé)
+		UGenNetTestGA_Triggered::TestInputTag = PrimaryInputTag();
+		UGenNetTestGA_Triggered::SetTriggerEvent(Tag(TEXT("Event.Counter.Blocked")));
+		UGenNetTestGA_Triggered::ActivationCount = 0;
+		UGenNetTestGA_Passive::ActivationCount = 0;
+		WindowMultiplier = UGenNetTestGA_Backfire::TestWindowMoveSpeedMultiplier;
+
+		FNetworkComponentBuilder<FBasePIENetworkComponentState>()
+			.WithClients(2)
+			.AsDedicatedServer()
+			.WithGameMode(LoadGameModeClass())
+			.Build(Network);
+	}
+
+	static bool IsCountering(const UAbilitySystemComponent* ASC)
+	{
+		return ASC && ASC->HasMatchingGameplayTag(Tag(TEXT("State.Countering")));
+	}
+
+	/** Pion du lanceur vu dans ce monde (serveur, propriétaire ou observateur). */
+	AGenCharacterBase* GetCasterIn(const UWorld* World) const
+	{
+		const AGenPlayerState* PS = FindPlayerStateById(World, CasterPlayerId);
+		return PS ? PS->GetPawn<AGenCharacterBase>() : nullptr;
+	}
+
+	void QueueClientWait(const TCHAR* Description, float Seconds)
+	{
+		Network
+			.ThenClient(TEXT("Client 0 : départ de l'attente"), 0, [this](FBasePIENetworkComponentState& Client) { ClientMark = Client.World->GetTimeSeconds(); })
+			.UntilClient(Description, 0, [this, Seconds](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + Seconds; }, DefaultWait());
+	}
+
+	void QueueSetup()
+	{
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : sol de test"), [this](FBasePIENetworkComponentState& Server) { ASSERT_THAT(IsNotNull(SpawnTestFloor(Server.World))); })
+			.UntilClients(TEXT("Clients : sol de test reçu"), [](FBasePIENetworkComponentState& Client) { return HasTestFloor(Client.World); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : contre, passif et sort déclenché accordés"), [this](FBasePIENetworkComponentState& Server)
+			{
+				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
+				AGenPlayerCharacter* Other = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Caster));
+				ASSERT_THAT(IsNotNull(Other));
+				ServerCaster = Caster;
+				ServerOther = Other;
+				CasterPlayerId = Caster->GetPlayerState()->GetPlayerId();
+				PlaceOnFloor(Caster, 0.f, 0.f);
+				PlaceOnFloor(Other, 0.f, 600.f);
+				Cast<UGenAbilitySystemComponent>(Caster->GetAbilitySystemComponent())->GrantAbilities(
+					{ UGenNetTestGA_Backfire::StaticClass(), UGenNetTestGA_Passive::StaticClass(), UGenNetTestGA_Triggered::StaticClass() }, nullptr);
+			})
+			.UntilClient(TEXT("Client 0 : sorts répliqués"), 0, [](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = GetLocalASC(Client);
+				return FindAbilitySpec(ASC, UGenNetTestGA_Backfire::StaticClass()) && FindAbilitySpec(ASC, UGenNetTestGA_Triggered::StaticClass());
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : vise devant lui"), 0, [](FBasePIENetworkComponentState& Client)
+			{
+				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
+				PC->bDebugAimOverride = true;
+				PC->DebugAimLocation = FVector(500.f, 0.f, StandingHeight);
+			});
+	}
+
+	/** Le client 0 lance le contre ; posture vue sur le serveur, chez lui et chez l'observateur. */
+	void QueueStartStance()
+	{
+		Network
+			.ThenClient(TEXT("Client 0 : lance le contre"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = GetLocalASC(Client);
+				const FGameplayAbilitySpec* Spec = FindAbilitySpec(ASC, UGenNetTestGA_Backfire::StaticClass());
+				ASSERT_THAT(IsTrue(Spec && ASC->TryActivateAbility(Spec->Handle, true), TEXT("Activation refusée côté client")));
+			})
+			.UntilServer(TEXT("Serveur : posture"), [this](FBasePIENetworkComponentState&) { return IsCountering(ServerCaster->GetAbilitySystemComponent()); }, DefaultWait())
+			.UntilClients(TEXT("Clients : posture vue (propriétaire et observateur)"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = GetCasterIn(Client.World);
+				return Caster && IsCountering(Caster->GetAbilitySystemComponent());
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : ralenti de la fenêtre (local)"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsNear(WindowMultiplier, ServerCaster->GetLocalMoveSpeedMultiplier(), 0.001f, TEXT("Ralenti de la fenêtre seul (incantation finie)")));
+			})
+			.ThenClient(TEXT("Client 0 : ralenti de la fenêtre (local)"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = GetCasterIn(Client.World);
+				ASSERT_THAT(IsNotNull(Caster));
+				ASSERT_THAT(IsNear(WindowMultiplier, Caster->GetLocalMoveSpeedMultiplier(), 0.001f));
+			});
+	}
+
+	/** Posture terminée partout : sort fini, tag retiré, plus de ralenti local. */
+	void QueueAssertStanceEnded(const TCHAR* Why)
+	{
+		Network
+			.UntilServer(*FString::Printf(TEXT("Serveur : posture terminée (%s)"), Why), [this](FBasePIENetworkComponentState&)
+			{
+				UAbilitySystemComponent* ASC = ServerCaster->GetAbilitySystemComponent();
+				return !IsAbilityActive(ASC, UGenNetTestGA_Backfire::StaticClass()) && !IsCountering(ASC);
+			}, DefaultWait())
+			// Plus de ralenti local (une boule de feu lancée par le nouvel appui a le sien le temps de son incantation)
+			.UntilServer(TEXT("Serveur : plus de ralenti local"), [this](FBasePIENetworkComponentState&)
+			{
+				return FMath::IsNearlyEqual(ServerCaster->GetLocalMoveSpeedMultiplier(), 1.f);
+			}, DefaultWait())
+			.UntilClients(TEXT("Clients : posture terminée"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = GetCasterIn(Client.World);
+				UAbilitySystemComponent* ASC = Caster ? Caster->GetAbilitySystemComponent() : GetASC(FindPlayerStateById(Client.World, CasterPlayerId));
+				const bool bOwnerDone = Client.ClientIndex != 0 || (!IsAbilityActive(ASC, UGenNetTestGA_Backfire::StaticClass())
+					&& (!Caster || FMath::IsNearlyEqual(Caster->GetLocalMoveSpeedMultiplier(), 1.f)));
+				return ASC && bOwnerDone && !IsCountering(ASC);
+			}, DefaultWait());
+	}
+
+	/** Fin naturelle de la fenêtre (3 s) : la vitesse de marche du propriétaire revient à l'attribut, sans GE à retirer. */
+	TEST_METHOD(WindowExpires_RemovesStanceAndSlowEverywhere)
+	{
+		QueueSetup();
+		QueueStartStance();
+		QueueAssertStanceEnded(TEXT("fin de la fenêtre"));
+		Network.ThenClient(TEXT("Client 0 : vitesse de marche rendue"), 0, [this](FBasePIENetworkComponentState& Client)
+		{
+			const AGenCharacterBase* Caster = GetCasterIn(Client.World);
+			ASSERT_THAT(IsNotNull(Caster));
+			const float MoveSpeed = GetAttribute(Caster->GetAbilitySystemComponent(), UGenAttributeSet::GetMoveSpeedAttribute());
+			ASSERT_THAT(IsNear(MoveSpeed, Caster->GetCharacterMovement()->MaxWalkSpeed, 0.01f));
+		});
+	}
+
+	/** Nouvel appui du clic gauche : la posture se termine sur les deux machines. */
+	TEST_METHOD(FreshPrimaryPress_EndsStance)
+	{
+		QueueSetup();
+		QueueStartStance();
+		Network.ThenClient(TEXT("Client 0 : appuie sur le clic gauche"), 0, [](FBasePIENetworkComponentState& Client)
+		{
+			SendInput(Client, PrimaryInputTag(), true);
+			SendInput(Client, PrimaryInputTag(), false);
+		});
+		QueueAssertStanceEnded(TEXT("nouvel appui"));
+	}
+
+	/** Clic gauche maintenu avant et pendant la posture : la répétition automatique ne la termine pas. */
+	TEST_METHOD(HeldPrimary_DoesNotEndStance)
+	{
+		QueueSetup();
+		Network.ThenClient(TEXT("Client 0 : maintient le clic gauche"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, PrimaryInputTag(), true); });
+		QueueClientWait(TEXT("Client 0 : clic tenu 0.5 s"), 0.5f);
+		QueueStartStance();
+		QueueClientWait(TEXT("Client 0 : clic toujours tenu 1 s dans la fenêtre"), 1.f);
+		Network
+			.ThenServer(TEXT("Serveur : posture toujours là"), [this](FBasePIENetworkComponentState&)
+			{
+				UAbilitySystemComponent* ASC = ServerCaster->GetAbilitySystemComponent();
+				ASSERT_THAT(IsTrue(IsAbilityActive(ASC, UGenNetTestGA_Backfire::StaticClass()) && IsCountering(ASC)));
+			})
+			.ThenClient(TEXT("Client 0 : posture toujours là, relâche le clic"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = GetLocalASC(Client);
+				ASSERT_THAT(IsTrue(IsAbilityActive(ASC, UGenNetTestGA_Backfire::StaticClass()) && IsCountering(ASC)));
+				SendInput(Client, PrimaryInputTag(), false);
+			});
+	}
+
+	/** Un passif (serveur) et un sort déclenché par un événement (prédit, avec une touche) ne terminent pas la posture. */
+	TEST_METHOD(PassiveOrTriggeredActivation_KeepsStance)
+	{
+		QueueSetup();
+		QueueStartStance();
+		Network
+			.ThenServer(TEXT("Serveur : active le passif"), [this](FBasePIENetworkComponentState&)
+			{
+				UAbilitySystemComponent* ASC = ServerCaster->GetAbilitySystemComponent();
+				const FGameplayAbilitySpec* Spec = FindAbilitySpec(ASC, UGenNetTestGA_Passive::StaticClass());
+				ASSERT_THAT(IsTrue(Spec && ASC->TryActivateAbility(Spec->Handle, true)));
+				ASSERT_THAT(AreEqual(1, UGenNetTestGA_Passive::ActivationCount));
+			})
+			.ThenClient(TEXT("Client 0 : événement qui déclenche le sort (prédit, envoyé au serveur)"), 0, [](FBasePIENetworkComponentState& Client)
+			{
+				FGameplayEventData Payload;
+				Payload.EventTag = Tag(TEXT("Event.Counter.Blocked"));
+				GetLocalASC(Client)->HandleGameplayEvent(Payload.EventTag, &Payload);
+			})
+			.UntilServer(TEXT("Serveur : sort déclenché activé chez le client et le serveur"), [](FBasePIENetworkComponentState&)
+			{
+				return UGenNetTestGA_Triggered::ActivationCount >= 2;
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : posture toujours là"), [this](FBasePIENetworkComponentState&)
+			{
+				UAbilitySystemComponent* ASC = ServerCaster->GetAbilitySystemComponent();
+				ASSERT_THAT(IsTrue(IsAbilityActive(ASC, UGenNetTestGA_Backfire::StaticClass()) && IsCountering(ASC)));
+			})
+			.ThenClient(TEXT("Client 0 : posture toujours là"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = GetLocalASC(Client);
+				ASSERT_THAT(IsTrue(IsAbilityActive(ASC, UGenNetTestGA_Backfire::StaticClass()) && IsCountering(ASC)));
+			});
+	}
+
+	/** Mort pendant la fenêtre : la posture se termine partout. */
+	TEST_METHOD(DeathDuringWindow_EndsStance)
+	{
+		QueueSetup();
+		QueueStartStance();
+		Network.ThenServer(TEXT("Serveur : le contreur meurt"), [this](FBasePIENetworkComponentState&)
+		{
+			ApplyDamage(ServerOther->GetAbilitySystemComponent(), ServerCaster->GetAbilitySystemComponent(), 100000.f);
+			ASSERT_THAT(IsTrue(ServerCaster->IsDead()));
+		});
+		QueueAssertStanceEnded(TEXT("mort"));
 	}
 };
 

@@ -31,6 +31,10 @@ public:
 	float GetAblazeDuration() const { return AblazeDuration; }
 	float GetNovaRadius() const { return NovaRadius; }
 
+	//~ UGenGameplayAbility (infobulle) : {Radius}, {Damage}, {Knockback}, {Duration}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
 

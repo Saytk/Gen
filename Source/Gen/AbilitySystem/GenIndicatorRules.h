@@ -42,10 +42,15 @@ struct FGenAimGeometry
 /** Règles pures des indicateurs de visée et des télégraphes. Sans état, testées hors monde. */
 namespace GenIndicatorRules
 {
-	inline FVector FlatDirection(const FVector& Direction)
+	inline FVector FlatDirection(const FVector& Direction, const FVector& Fallback = FVector::ForwardVector)
 	{
 		const FVector Flat = Direction.GetSafeNormal2D();
-		return Flat.IsNearlyZero() ? FVector::ForwardVector : Flat;
+		if (!Flat.IsNearlyZero())
+		{
+			return Flat;
+		}
+		const FVector FlatFallback = Fallback.GetSafeNormal2D();
+		return FlatFallback.IsNearlyZero() ? FVector::ForwardVector : FlatFallback;
 	}
 
 	/** Valeurs du sort et de la classe de projectile (jamais recopiées à la main). */
@@ -58,13 +63,16 @@ namespace GenIndicatorRules
 		int32 MaxFeed = 0;
 		int32 ExplosionMinFeed = 0;
 		float ExplosionRadius = 0.f;
+		/** Explosion sans nourrissage (Pyroblast) : rayon sous ExplosionMinFeed (GenFeeding::GetShotExplosionRadius). */
+		float BaseExplosionRadius = 0.f;
 		int32 KnockbackMinFeed = 0;
 	};
 
 	/**
 	 * Couloir d'un projectile : du point d'apparition jusqu'à sa portée (mesurée depuis ce point, comme AGenProjectile),
 	 * coupé au premier mur. WallDistance = distance du mur depuis Origin le long de Direction (< 0 = aucun mur).
-	 * Largeur = diamètre de collision × l'échelle que le serveur appliquera (ScaleByFeed). Éclat dès ExplosionMinFeed,
+	 * Largeur = diamètre de collision × l'échelle que le serveur appliquera (ScaleByFeed). Éclat au rayon que le serveur
+	 * donnera au tir (GenFeeding::GetShotExplosionRadius : ExplosionRadius dès ExplosionMinFeed, sinon BaseExplosionRadius),
 	 * posé où le projectile exploserait au bout du couloir (contre le mur : centre à un rayon du mur).
 	 */
 	inline void ComputeProjectileAim(const FVector& Origin, const FVector& Direction, const FProjectileAimParams& P, int32 Fed, float WallDistance, FGenAimGeometry& Out)
@@ -83,11 +91,12 @@ namespace GenIndicatorRules
 		const bool bWall = WallDistance >= 0.f && WallDistance - P.SpawnForwardOffset < FullLength;
 		Out.LineLength = bWall ? FMath::Max(WallDistance - P.SpawnForwardOffset, 0.f) : FullLength;
 
-		if (P.ExplosionRadius > 0.f && GenFeeding::ReachesThreshold(Fed, P.ExplosionMinFeed))
+		const float CapRadius = GenFeeding::GetShotExplosionRadius(Fed, P.ExplosionMinFeed, P.ExplosionRadius, P.BaseExplosionRadius);
+		if (CapRadius > 0.f)
 		{
 			const float CentreDistance = bWall ? FMath::Max(Out.LineLength - ScaledRadius, 0.f) : Out.LineLength;
 			Out.CapCenter = Out.LineStart + Out.Direction * CentreDistance;
-			Out.CapRadius = P.ExplosionRadius;
+			Out.CapRadius = CapRadius;
 			Out.bCapSpokes = GenFeeding::ReachesThreshold(Fed, P.KnockbackMinFeed);
 		}
 	}
@@ -102,18 +111,16 @@ namespace GenIndicatorRules
 	};
 
 	/**
-	 * Bond : arc de portée, point d'atterrissage borné à MaxDistance (ClampToRange, comme le sort), et une amorce par
-	 * unité nourrie selon GetRingDirections(Fed, direction du bond) : les directions exactes de l'anneau.
+	 * Bond en vol (vu par tous, décision du 2026-10-08) : cercle d'atterrissage au point verrouillé et une amorce par
+	 * unité nourrie selon GetRingDirections(Fed, direction du bond). Pas d'arc de portée (rien à viser).
 	 */
-	inline void ComputeLeapAim(const FVector& Origin, const FVector& Cursor, const FLeapAimParams& P, int32 Fed, FGenAimGeometry& Out)
+	inline void ComputeLeapFlight(const FVector& Landing, const FVector& Direction, const FLeapAimParams& P, int32 Fed, FGenAimGeometry& Out)
 	{
 		Out = FGenAimGeometry();
-		Out.Origin = Origin;
+		Out.Origin = Landing;
 		Out.Fed = Fed;
-		const FVector Landing = GenAreaRules::ClampToRange(Origin, Cursor, P.MaxDistance);
-		Out.Direction = FlatDirection(Landing - Origin);
-		Out.RangeArcRadius = P.MaxDistance;
-		Out.TargetCenter = FVector(Landing.X, Landing.Y, Origin.Z);
+		Out.Direction = FlatDirection(Direction);
+		Out.TargetCenter = Landing;
 		Out.TargetRadius = P.LandingRadius;
 		if (P.RingProjectileRadius > 0.f)
 		{
@@ -124,6 +131,20 @@ namespace GenIndicatorRules
 			Out.StubLength = P.StubLength;
 			Out.StubWidth = 2.f * P.RingProjectileRadius;
 		}
+	}
+
+	/**
+	 * Bond : arc de portée, point d'atterrissage borné à MaxDistance (ClampToRange, comme le sort), et une amorce par
+	 * unité nourrie selon GetRingDirections(Fed, direction du bond) : les directions exactes de l'anneau (ComputeLeapFlight).
+	 */
+	inline void ComputeLeapAim(const FVector& Origin, const FVector& Cursor, const FLeapAimParams& P, int32 Fed, FGenAimGeometry& Out,
+		const FVector& FallbackForward = FVector::ForwardVector)
+	{
+		// Revue V6-V8, M-4 : curseur sur le lanceur => son avant, comme le client (FillAimData) et le serveur (AimDirection)
+		const FVector Landing = GenAreaRules::ClampToRange(Origin, Cursor, P.MaxDistance);
+		ComputeLeapFlight(FVector(Landing.X, Landing.Y, Origin.Z), FlatDirection(Landing - Origin, FallbackForward), P, Fed, Out);
+		Out.Origin = Origin;
+		Out.RangeArcRadius = P.MaxDistance;
 	}
 
 	/** Zone au sol : seulement l'arc de portée (le cercle est l'aperçu d'AGenGroundArea, Plan 2 Task 6). */

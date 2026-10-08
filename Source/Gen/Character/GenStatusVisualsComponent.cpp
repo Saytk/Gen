@@ -1,11 +1,17 @@
 #include "Character/GenStatusVisualsComponent.h"
 
+#include "AbilitySystem/GenAreaRules.h"
+#include "AbilitySystem/GenWorldQueries.h"
 #include "AbilitySystemComponent.h"
+#include "Character/GenCharacterBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
 UGenStatusVisualsComponent::UGenStatusVisualsComponent()
@@ -56,6 +62,8 @@ void UGenStatusVisualsComponent::Bind(UAbilitySystemComponent* InASC, const TArr
 
 		Shapes.Add(Shape);
 		ShapeMIDs.Add(MID);
+		Systems.Add(nullptr);
+		SystemWanted.Add(false);
 		Shown.Add(false);
 		Flashing.Add(false);
 		FlashTimers.AddDefaulted();
@@ -97,9 +105,15 @@ void UGenStatusVisualsComponent::Unbind()
 			Shape->DestroyComponent();
 		}
 	}
+	for (int32 Index = 0; Index < Systems.Num(); ++Index)
+	{
+		SetSystemActive(Index, false);
+	}
 
 	Shapes.Reset();
 	ShapeMIDs.Reset();
+	Systems.Reset();
+	SystemWanted.Reset();
 	Shown.Reset();
 	Flashing.Reset();
 	FlashTimers.Reset();
@@ -122,6 +136,18 @@ bool UGenStatusVisualsComponent::IsStatusShown(FGameplayTag Tag) const
 	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
 	{
 		if (Visuals[Index].Tag == Tag && Shown[Index])
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UGenStatusVisualsComponent::IsStatusSystemActive(FGameplayTag Tag) const
+{
+	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
+	{
+		if (Visuals[Index].Tag == Tag && SystemWanted.IsValidIndex(Index) && SystemWanted[Index])
 		{
 			return true;
 		}
@@ -161,6 +187,10 @@ void UGenStatusVisualsComponent::SetShown(int32 Index, bool bShown)
 	{
 		Shapes[Index]->SetVisibility(bShown);
 	}
+	if (bShown != bWasShown)
+	{
+		SetSystemActive(Index, bShown);
+	}
 
 	UWorld* World = GetWorld();
 	if (bShown && !bWasShown && Visuals[Index].AppearFlashDuration > 0.f)
@@ -188,6 +218,81 @@ void UGenStatusVisualsComponent::SetShown(int32 Index, bool bShown)
 	}
 }
 
+void UGenStatusVisualsComponent::SetSystemActive(int32 Index, bool bActive)
+{
+	if (!Systems.IsValidIndex(Index))
+	{
+		return;
+	}
+
+	SystemWanted[Index] = bActive && Visuals[Index].System != nullptr;
+	if (!bActive)
+	{
+		// Désactivé, pas détruit : les particules finissent leur vie, puis le composant retourne au pool. Revue V6-V8, I-5 :
+		// seulement un composant qu'on tient encore (un système fini a déjà vidé son emplacement, OnStatusSystemFinished)
+		if (UNiagaraComponent* System = Systems[Index])
+		{
+			System->OnSystemFinished.RemoveDynamic(this, &ThisClass::OnStatusSystemFinished);
+			if (System->PoolingMethod == ENCPoolMethod::ManualRelease)
+			{
+				System->ReleaseToPool(); // désactive, puis rend au pool à la fin des particules
+			}
+			else
+			{
+				// Pool désactivé (FX.NiagaraComponentPool.Enable 0) : composant à nous, détruit à la fin des particules
+				System->SetAutoDestroy(true);
+				System->Deactivate();
+			}
+		}
+		Systems[Index] = nullptr;
+		return;
+	}
+
+	UNiagaraSystem* Template = Visuals[Index].System;
+	if (!Template || Systems[Index])
+	{
+		return;
+	}
+
+	// Attaché au corps (socket) s'il y en a un, sinon au composant (centre du personnage). Pool : Art Bible §7.8
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
+	USceneComponent* AttachTo = Character && Character->GetMesh() ? static_cast<USceneComponent*>(Character->GetMesh()) : this;
+	// Pas de pré-élimination au lancement : un état qui commence hors de l'écran doit s'afficher quand le personnage y
+	// revient (l'Effect Type gère l'élimination en cours de vie)
+	// Revue V6-V8, I-5 : ManualRelease, jamais AutoRelease (le pool reprendrait le composant à la fin du système, puis le
+	// prêterait à un autre effet que SetSystemActive(false) désactiverait). Contrat des assets : les Effect Types des
+	// systèmes d'état bouclés utilisent une réaction d'élimination « Resume » (pas Kill)
+	UNiagaraComponent* System = UNiagaraFunctionLibrary::SpawnSystemAttached(Template, AttachTo, Visuals[Index].Socket, FVector::ZeroVector, FRotator::ZeroRotator,
+		FVector::OneVector, EAttachLocation::SnapToTarget, /*bAutoDestroy*/ false, ENCPoolMethod::ManualRelease, /*bAutoActivate*/ true, /*bPreCullCheck*/ false);
+	Systems[Index] = System;
+	if (System)
+	{
+		System->OnSystemFinished.AddUniqueDynamic(this, &ThisClass::OnStatusSystemFinished);
+	}
+}
+
+void UGenStatusVisualsComponent::OnStatusSystemFinished(UNiagaraComponent* System)
+{
+	const int32 Index = System ? Systems.IndexOfByKey(System) : INDEX_NONE;
+	if (Index == INDEX_NONE)
+	{
+		return;
+	}
+
+	// Fini de lui-même : plus le nôtre. Rendu au pool par le moteur juste après cette diffusion (comme ReleaseToPool sur un
+	// système encore actif : ManualRelease_OnComplete), ou détruit si le pool est désactivé
+	System->OnSystemFinished.RemoveDynamic(this, &ThisClass::OnStatusSystemFinished);
+	Systems[Index] = nullptr;
+	if (System->PoolingMethod == ENCPoolMethod::ManualRelease)
+	{
+		System->PoolingMethod = ENCPoolMethod::ManualRelease_OnComplete;
+	}
+	else
+	{
+		System->SetAutoDestroy(true);
+	}
+}
+
 void UGenStatusVisualsComponent::SetFlash(int32 Index, bool bFlash)
 {
 	Flashing[Index] = bFlash;
@@ -211,8 +316,14 @@ void UGenStatusVisualsComponent::RefreshOwnerMesh()
 
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
-	if (!Mesh || Override == AppliedOwnerMaterial)
+	if (!Mesh)
 	{
+		return;
+	}
+	if (Override == AppliedOwnerMaterial)
+	{
+		// Même matériau (ex : Bind rappelé à l'arrivée du PlayerState) : la relation, elle, a pu changer
+		RefreshViewerRelation();
 		return;
 	}
 
@@ -236,5 +347,41 @@ void UGenStatusVisualsComponent::RefreshOwnerMesh()
 	if (!Override)
 	{
 		OriginalOwnerMaterials.Reset();
+	}
+	RefreshViewerRelation();
+}
+
+void UGenStatusVisualsComponent::RefreshViewerRelation()
+{
+	// Le matériau imposé (M_VFX_GhostDither) lit la relation ; les matériaux d'origine ne la lisent pas
+	if (!AppliedOwnerMaterial || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetOwner());
+	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+	if (!Mesh)
+	{
+		return;
+	}
+
+	const EGenViewerRelation Relation = GenWorldQueries::GetLocalViewerRelation(GetWorld(), Character, Character->GetTeamId());
+	Mesh->SetCustomPrimitiveDataFloat(GenOwnerMeshRelationDataIndex, static_cast<float>(Relation));
+}
+
+void UGenStatusVisualsComponent::RefreshAllViewerRelations(const UWorld* World)
+{
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	for (TActorIterator<AGenCharacterBase> It(World); It; ++It)
+	{
+		if (UGenStatusVisualsComponent* Visuals = It->FindComponentByClass<UGenStatusVisualsComponent>())
+		{
+			Visuals->RefreshViewerRelation();
+		}
 	}
 }

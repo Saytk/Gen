@@ -31,6 +31,41 @@ namespace GenAreaRules
 		return FVector(Origin.X + Clamped.X, Origin.Y + Clamped.Y, Target.Z);
 	}
 
+	/**
+	 * Revue V6-V8, I-1 : écart (cm, à plat) toléré entre le point d'atterrissage du bond annoncé par le client, refait
+	 * depuis la position du SERVEUR, et le point d'atterrissage du serveur.
+	 */
+	inline constexpr float LeapLandingTolerance = 150.f;
+
+	/**
+	 * Bond annoncé par le client (distance et lacet mesurés depuis SA position) : le serveur le reprend tel quel si la
+	 * distance ne dépasse pas la portée (1 cm de marge d'arrondi) et si ce bond, refait depuis la position du serveur
+	 * (ServerStart), atterrit à LandingTolerance près du point d'atterrissage du serveur (ServerLanding). Pas de test de
+	 * lacet (revue V6-V8, I-1) : quelques centimètres d'écart entre les positions faisaient refuser les bonds courts, et le
+	 * client choisit de toute façon son curseur ; seule la portée compte, et les murs restent bloqués par le mouvement.
+	 * Les deux machines construisent alors la même force de saut (FRootMotionSource_JumpForce::Matches). Refusé : le
+	 * serveur garde ses valeurs.
+	 */
+	inline bool AcceptClientLeap(const FVector& ServerStart, float ClientDistance, float ClientYaw, const FVector& ServerLanding, float MaxDistance,
+		float LandingTolerance = LeapLandingTolerance)
+	{
+		if (!FMath::IsFinite(ClientDistance) || !FMath::IsFinite(ClientYaw) || ClientDistance < 0.f || ClientDistance > MaxDistance + 1.f)
+		{
+			return false;
+		}
+		const FVector ClientLanding = ServerStart + FRotator(0.f, ClientYaw, 0.f).Vector() * FMath::Min(ClientDistance, MaxDistance);
+		return FVector::Dist2D(ClientLanding, ServerLanding) <= LandingTolerance;
+	}
+
+	/**
+	 * Revue Plan 2 Tasks 7-8, M-8 : un obstacle sur le chemin d'une boule de l'anneau n'est un mur que s'il n'est pas
+	 * praticable. Une pente ou le dessus d'une marche (normale assez verticale, WalkableFloorZ du personnage) ne l'est pas.
+	 */
+	inline bool IsRingWall(const FVector& ImpactNormal, float WalkableFloorZ)
+	{
+		return ImpactNormal.Z < WalkableFloorZ;
+	}
+
 	/** Count directions horizontales régulières (360° / Count), la première selon Forward aplati. */
 	inline TArray<FVector> GetRingDirections(int32 Count, const FVector& Forward)
 	{
@@ -90,6 +125,13 @@ namespace GenAreaRules
 	{
 		return Delay <= 0.f ? 0.f : FMath::Max(Delay, MinTelegraph);
 	}
+
+	/**
+	 * Revue Plan 2 Tasks 7-8, M-5 : un client distant reçoit la zone ~½ RTT après son apparition et montre donc son
+	 * télégraphe Delay − latence. Le plancher des zones retardées (MinTelegraph) est relevé de cette marge pour qu'il
+	 * reste respecté chez les autres joueurs jusqu'à 100 ms d'aller simple. Le remplissage suit l'heure serveur répliquée.
+	 */
+	inline constexpr float TelegraphLatencyMargin = 0.1f;
 
 	/** Remplissage du télégraphe : 0 à l'apparition, 1 à l'impact. */
 	inline float GetTelegraphFill(float Elapsed, float Delay)

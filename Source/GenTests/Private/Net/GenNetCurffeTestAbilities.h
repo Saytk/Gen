@@ -25,11 +25,14 @@ class UGenNetTestGA_Backfire : public UGenGA_Counter
 	GENERATED_BODY()
 
 public:
+	/** Ralenti de la fenêtre (les tests le comparent au multiplicateur local du personnage). */
+	static constexpr float TestWindowMoveSpeedMultiplier = 0.5f;
+
 	UGenNetTestGA_Backfire()
 	{
 		CastTime = 0.1f;
 		CounterWindow = 3.f;
-		WindowMoveSpeedMultiplier = 0.5f;
+		WindowMoveSpeedMultiplier = TestWindowMoveSpeedMultiplier;
 		ResourcePerBlock = 2.f;
 		EnergyOnFirstBlock = 10.f;
 		MeleeKnockbackDistance = 300.f;
@@ -108,17 +111,88 @@ public:
 	 */
 	static FGameplayTagContainer TestCooldownTags;
 
+	/** Distance d'apparition des boules de l'anneau, reprise à l'activation (0 par défaut ; test de la règle des murs). */
+	static float TestRingSpawnOffset;
+
+	/** Signal d'impact à l'atterrissage, repris à l'activation (aucun par défaut ; revue Plan 2 Tasks 7-8, M-4). */
+	static FGameplayTag TestImpactCueTag;
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
 	{
 		CooldownTags = TestCooldownTags;
+		RingSpawnOffset = TestRingSpawnOffset;
+		ImpactCueTag = TestImpactCueTag;
 		Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	}
 };
 
+/** Sort passif de test (revue Plan 2 Tasks 7-8, I-3) : sans touche, serveur seulement, se termine aussitôt. */
+UCLASS(NotBlueprintable, HideDropdown)
+class UGenNetTestGA_Passive : public UGenGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	UGenNetTestGA_Passive()
+	{
+		NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+	}
+
+	/** Activations, toutes machines confondues (un seul process). */
+	static int32 ActivationCount;
+
+protected:
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
+	{
+		++ActivationCount;
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	}
+};
+
 /**
- * Pyroblast de test (Plan 3 Task 9) : comme l'asset GA_Pyroblast, n'est lançable que sous State.Curffe.Ablaze
- * (ActivationRequiredTags dans l'asset ; ici par CanActivateAbility, le tag de Curffe n'étant pas exporté).
+ * Sort de test déclenché par un événement (revue Plan 2 Tasks 7-8, I-3) : il a une touche et il est prédit, mais une
+ * activation par événement n'est pas un appui du joueur. Touche et événement posés par le test (BEFORE_EACH) : la touche
+ * à chaque activation (avant PreActivate, qui prévient la posture), l'événement sur le CDO (lu quand le sort est accordé).
+ */
+UCLASS(NotBlueprintable, HideDropdown)
+class UGenNetTestGA_Triggered : public UGenGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	static FGameplayTag TestInputTag;
+	static int32 ActivationCount;
+
+	static void SetTriggerEvent(const FGameplayTag& EventTag)
+	{
+		UGenNetTestGA_Triggered* CDO = GetMutableDefault<UGenNetTestGA_Triggered>();
+		CDO->AbilityTriggers.Reset();
+		FAbilityTriggerData Trigger;
+		Trigger.TriggerTag = EventTag;
+		Trigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
+		CDO->AbilityTriggers.Add(Trigger);
+	}
+
+protected:
+	virtual void PreActivate(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+		FOnGameplayAbilityEnded::FDelegate* OnGameplayAbilityEndedDelegate, const FGameplayEventData* TriggerEventData = nullptr) override
+	{
+		InputTag = TestInputTag;
+		Super::PreActivate(Handle, ActorInfo, ActivationInfo, OnGameplayAbilityEndedDelegate, TriggerEventData);
+	}
+
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
+	{
+		++ActivationCount;
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	}
+};
+
+/**
+ * Pyroblast de test (Plan 3 Task 9) : comme l'asset GA_Pyroblast, n'est lançable que sous State.Curffe.Ablaze, par
+ * ActivationRequiredTags comme l'asset (revue P3 T8-10, I1 : la grâce du serveur porte sur les tags requis). Posé à
+ * l'octroi sur l'instance, jamais pendant le chargement du module (tag de Curffe demandé par son nom).
  */
 UCLASS(NotBlueprintable, HideDropdown)
 class UGenNetTestGA_Pyroblast : public UGenGA_Projectile
@@ -128,16 +202,16 @@ class UGenNetTestGA_Pyroblast : public UGenGA_Projectile
 public:
 	UGenNetTestGA_Pyroblast()
 	{
-		CastTime = 0.35f;
-		Damage = FScalableFloat(13.f);
+		// Valeurs de l'asset (spec : 0.40 s, 15 dégâts) ; attaque de base déclarée, comme sur GA_Pyroblast
+		CastTime = 0.4f;
+		Damage = FScalableFloat(15.f);
 		BaseExplosionRadius = 120.f;
+		bIsBasicAttack = true;
 	}
 
-	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
-		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override
+	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override
 	{
-		const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-		return ASC && ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Curffe.Ablaze")))
-			&& Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+		ActivationRequiredTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Curffe.Ablaze")));
+		Super::OnGiveAbility(ActorInfo, Spec);
 	}
 };
