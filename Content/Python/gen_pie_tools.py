@@ -187,11 +187,11 @@ def _watch_sample():
 
 
 def watch_start(extra=()):
-    """Surveille c1..c3 (pions serveur) et les acteurs extra [(label, actor)]."""
+    """Surveille c1..cN (pions serveur de chaque client) et les acteurs extra [(label, actor)]."""
     watch_stop()
-    server, _ = worlds()
+    server, clients = worlds()
     _watch["world"] = server.get_path_name()
-    _watch["actors"] = [("c%d" % i, server_pawn_for(i).get_path_name()) for i in (1, 2, 3)]
+    _watch["actors"] = [("c%d" % i, server_pawn_for(i).get_path_name()) for i in range(1, len(clients) + 1)]
     _watch["actors"] += [(label, actor.get_path_name()) for label, actor in extra]
     _watch["last"] = {}
     _watch["handle"] = unreal.register_slate_post_tick_callback(_watch_tick)
@@ -476,3 +476,78 @@ def stop_all_watches():
     schedule_stop()
     ui_watch_stop()
     watch_stop()
+
+
+# --- Plan 3 : énergie, résilience, visuels d'état, barre de sorts, combustion ------------------------------------
+
+def server_asc(client_index):
+    """ASC (serveur) du joueur client_index."""
+    return unreal.AbilitySystemLibrary.get_ability_system_component(server_pawn_for(client_index))
+
+
+def has_tag(actor, tag_name):
+    """L'ASC d'actor porte tag_name (compte > 0)."""
+    asc = unreal.AbilitySystemLibrary.get_ability_system_component(actor)
+    tag = unreal.GameplayTagService.request_tag(tag_name)
+    return bool(asc) and asc.has_matching_gameplay_tag(tag)
+
+
+def hard_cc(client_index, seconds, tag_name="State.Stunned"):
+    """Serveur : contrôle dur via ApplyHardCC (résilience comprise). Aucun sort actif chez la cible (RPC sous Python)."""
+    return server_asc(client_index).apply_hard_cc(unreal.GameplayTagService.request_tag(tag_name), seconds, None)
+
+
+def set_energy(client_index, value):
+    """Serveur : met l'énergie du joueur à value."""
+    return gain(client_index, energy=value - state(client_index)["energy"])
+
+
+def is_ablaze(client_index):
+    return has_tag(server_pawn_for(client_index), "State.Curffe.Ablaze")
+
+
+def status_shown(viewer_index, subject_index, tag_name):
+    """Forme d'état de subject affichée chez le client viewer."""
+    p = client_pawn(viewer_index, subject_index)
+    comp = p.get_component_by_class(unreal.GenStatusVisualsComponent) if p else None
+    return bool(comp) and comp.is_status_shown(unreal.GameplayTagService.request_tag(tag_name))
+
+
+def status_flashing(viewer_index, subject_index, tag_name):
+    """Flash d'apparition de la forme d'état de subject en cours chez le client viewer."""
+    p = client_pawn(viewer_index, subject_index)
+    comp = p.get_component_by_class(unreal.GenStatusVisualsComponent) if p else None
+    return bool(comp) and comp.is_status_flashing(unreal.GameplayTagService.request_tag(tag_name))
+
+
+def body_material(viewer_index, subject_index, slot=0):
+    """Matériau de la section slot du corps de subject chez le client viewer (corps fantôme d'Intouchable)."""
+    p = client_pawn(viewer_index, subject_index)
+    mesh = p.get_editor_property("mesh") if p else None
+    m = mesh.get_material(slot) if mesh else None
+    return m.get_name() if m else None
+
+
+def slot_states(client_index):
+    """États de la barre de sorts chez un client : {InputTag: état} (Ready, Cooldown, Locked, NoEnergy...)."""
+    out = {}
+    for name, s in client_slots(client_index).items():
+        out[str(s.get_editor_property("input_tag").get_editor_property("tag_name"))] = str(s.get_state()).split(".")[-1].split(":")[0]
+    return out
+
+
+def montage(viewer_index, subject_index):
+    """Montage joué par le pion subject vu depuis viewer : (nom, section, vitesse, position) ou None."""
+    p = client_pawn(viewer_index, subject_index)
+    anim = p.get_editor_property("mesh").get_anim_instance() if p else None
+    m = anim.get_current_active_montage() if anim else None
+    if not m:
+        return None
+    return (m.get_name(), str(anim.montage_get_current_section(m)), round(anim.montage_get_play_rate(m), 2),
+            round(anim.montage_get_position(m), 3))
+
+
+def clear_cooldowns(client_index):
+    """Serveur : retire les recharges actives (effets qui accordent un tag Cooldown.*) du joueur client_index."""
+    asc = server_asc(client_index)
+    return asc.remove_active_effects_with_granted_tags(unreal.GameplayTagService.request_tag_container(["Cooldown"]))

@@ -5,7 +5,8 @@ Utilisation (Python avec Pillow, hors éditeur ou dans l'éditeur si Pillow y es
     python Content/Python/gen_ui_icons.py [dossier_de_sortie]
 
 Sortie par défaut : <projet>/Saved/UIIcons/
-  - T_UI_Ability_Curffe_{Primary,Secondary,Mobility,1,2}.png  (256 px, RGBA ; 1 = Retour de flamme, 2 = Pilier de flammes)
+  - T_UI_Ability_Curffe_{Primary,Secondary,Mobility,1,2,3,Ultimate,Pyroblast}.png  (256 px, RGBA ; 1 = Retour de flamme,
+    2 = Pilier de flammes, 3 = Flamme vivante, Ultimate = Combustion, Pyroblast = LMB embrasé)
   - T_UI_Glyph_{LMB,RMB,Lock}.png                         (64 px, blanc, teinté en text.primary par le widget)
   - checks/ : niveaux de gris, flou gaussien 2 px, 32 px, planche contact et mesures (§2.11)
 
@@ -209,6 +210,80 @@ def icon_flame_pillar():
     return finish(img, ICON_SIZE)
 
 
+def flame_tongue(d, cx, base_y, half_w, height, col, sway=0.0, steps=24):
+    """Langue de flamme : base arrondie, effilée vers le haut avec un léger déhanché (sway en px)."""
+    pts_l, pts_r = [], []
+    for i in range(steps + 1):
+        t = i / steps  # 0 = base, 1 = pointe
+        y = base_y - height * t
+        w = half_w * math.sin(math.pi * (0.5 + 0.5 * t)) ** 0.8 * (1.0 - t) ** 0.35
+        x = cx + sway * math.sin(t * math.pi) * t
+        pts_l.append((x - w, y))
+        pts_r.append((x + w, y))
+    d.polygon([(s(x), s(y)) for x, y in pts_l + list(reversed(pts_r))], fill=col)
+
+
+def icon_living_flame():
+    """Flamme vivante : silhouette debout faite de feu, bras grands ouverts (en Y), anneau d'éclat évidé à sa base."""
+    img, d = canvas(ICON_SIZE)
+    background(d)
+    cx, gy = 128, 200
+    # Anneau d'éclat au sol : ellipse évidée (un anneau, jamais un disque)
+    d.ellipse([s(cx - 92), s(gy - 24), s(cx + 92), s(gy + 24)], outline=EDGE, width=s(10))
+    d.ellipse([s(cx - 88), s(gy - 20), s(cx + 88), s(gy + 20)], outline=BODY, width=s(4))
+    # Bras levés en Y : deux langues de flamme obliques, pointes vers le haut à gauche et à droite
+    for side in (-1, 1):
+        for col, w, tip in ((EDGE, 17, 0), (BODY, 11, 6)):
+            pts = [(cx + side * 6, 150 - w), (cx + side * (98 - tip), 38 + tip), (cx + side * 6 + side * w, 150 + w * 0.2)]
+            d.polygon([(s(x), s(y)) for x, y in pts], fill=col)
+    # Jambes : deux langues vers le sol
+    for side in (-1, 1):
+        pts = [(cx - 12, 150), (cx + 12, 150), (cx + side * 34, gy - 2)]
+        d.polygon([(s(x), s(y)) for x, y in pts], fill=EDGE)
+    # Torse : petite flamme
+    flame_tongue(d, cx, 166, 20, 82, EDGE)
+    flame_tongue(d, cx - 2, 160, 13, 66, BODY)
+    # Tête : orbe pâle
+    disc(d, cx, 72, 17, EDGE)
+    disc(d, cx - 2, 70, 13, BODY)
+    disc(d, cx - 5, 66, 6, CORE)
+    return finish(img, ICON_SIZE)
+
+
+def icon_combustion():
+    """Combustion : éruption radiale, couronne de langues de flamme séparées du cœur éclatant par un vide sombre."""
+    img, d = canvas(ICON_SIZE)
+    background(d)
+    cx, cy = 128, 128
+    n = 8
+    for k in range(n):
+        a = math.radians(-90 + k * 360 / n)
+        ca, sa = math.cos(a), math.sin(a)
+        px, py = -sa, ca
+        # Langue : base large à r0, pointe à r1, en 2 bandes
+        for col, r0, r1, w in ((EDGE, 50, 122, 15), (BODY, 56, 108, 9)):
+            pts = [(cx + ca * r0 + px * w, cy + sa * r0 + py * w), (cx + ca * r1, cy + sa * r1), (cx + ca * r0 - px * w, cy + sa * r0 - py * w)]
+            d.polygon([(s(x), s(y)) for x, y in pts], fill=col)
+    disc(d, cx, cy, 30, BODY)
+    disc(d, cx - 3, cy - 3, 22, CORE)
+    disc(d, cx - 8, cy - 8, 9, WHITE)
+    return finish(img, ICON_SIZE)
+
+
+def icon_pyroblast():
+    """Pyroblast : grosse comète qui monte, tête nettement plus grande que celle de la boule de feu (r 64 contre 40),
+    traînée courte et épaisse vers le bas. Le vol vertical la distingue de la diagonale de la boule de feu à 32 px."""
+    img, d = canvas(ICON_SIZE)
+    background(d)
+    hx, hy, r = 176, 100, 64
+    tx, ty = 128, 236
+    tapered_tail(d, hx, hy, r * 0.95, tx, ty, EDGE)
+    tapered_tail(d, hx - 4, hy + 4, r * 0.66, tx + (hx - tx) * 0.18, ty + (hy - ty) * 0.18, BODY)
+    tapered_tail(d, hx - 8, hy + 8, r * 0.32, tx + (hx - tx) * 0.42, ty + (hy - ty) * 0.42, CORE)
+    lit_orb(d, hx, hy, r)
+    return finish(img, ICON_SIZE)
+
+
 def rounded_rect(d, box, r, **kw):
     x0, y0, x1, y1 = box
     d.rounded_rectangle([s(x0), s(y0), s(x1), s(y1)], radius=s(r), **kw)
@@ -367,6 +442,9 @@ def main(out_dir=None):
         "T_UI_Ability_Curffe_Mobility": icon_mobility(),
         "T_UI_Ability_Curffe_1": icon_backfire(),
         "T_UI_Ability_Curffe_2": icon_flame_pillar(),
+        "T_UI_Ability_Curffe_3": icon_living_flame(),
+        "T_UI_Ability_Curffe_Ultimate": icon_combustion(),
+        "T_UI_Ability_Curffe_Pyroblast": icon_pyroblast(),
     }
     glyphs = {
         "T_UI_Glyph_LMB": glyph_mouse(left=True),
