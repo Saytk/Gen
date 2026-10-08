@@ -1,5 +1,6 @@
 #include "Character/GenCharacterBase.h"
 
+#include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenKnockback.h"
@@ -77,14 +78,23 @@ void AGenCharacterBase::StopCast(UClass* Ability)
 void AGenCharacterBase::ServerReportFedResource_Implementation(UClass* Ability, uint8 Count)
 {
 	// Message en retard (incantation finie, ou d'un autre sort) : ignoré
-	if (!CastInfo.IsCasting() || CastInfo.Ability != Ability)
+	if (!CastInfo.IsCasting() || CastInfo.Ability != Ability || !AbilitySystemComponent)
 	{
 		return;
 	}
 
-	// Borné aux unités disponibles ; jamais en dessous de ce que l'estimation du serveur affiche déjà
-	const int32 Available = FMath::Max(FMath::FloorToInt32(GetResource()), 0);
-	FedResource = static_cast<uint8>(FMath::Clamp(FMath::Max<int32>(FedResource, FMath::Min<int32>(Count, Available)), 0, 255));
+	// Le sort actif borne l'annonce : à ±1 de sa propre estimation, à la ressource et à son maximum
+	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (Spec.IsActive() && Spec.Ability && Spec.Ability->GetClass() == Ability)
+		{
+			if (UGenGA_Projectile* Projectile = Cast<UGenGA_Projectile>(Spec.GetPrimaryInstance()))
+			{
+				Projectile->ApplyReportedFedCount(Count);
+			}
+			return;
+		}
+	}
 }
 
 void AGenCharacterBase::OnRep_CastInfo()

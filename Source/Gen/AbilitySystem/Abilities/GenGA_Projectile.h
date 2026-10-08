@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "ActiveGameplayEffectHandle.h"
+#include "GameplayPrediction.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "GenGA_Projectile.generated.h"
 
@@ -24,7 +26,10 @@ struct FGameplayAbilityTargetData;
  *  1. Si CastTime > 0 : incantation (barre de cast, ralenti), annulée si le lanceur est étourdi ou meurt
  *     (ou par un autre sort via CancelAbilitiesWithTag)
  *  2. Le client récupère le point visé sous la souris et l'envoie au serveur (target data,
- *     avec le nombre d'unités nourries) => on vise à la FIN de l'incantation
+ *     avec le nombre d'unités nourries) => on vise à la FIN de l'incantation.
+ *     Serveur pour un client distant : pas de minuteur propre, c'est l'arrivée de la visée qui
+ *     termine l'incantation (durée vérifiée à CastTimeTolerance près). Dès qu'elle est arrivée,
+ *     les autres sorts du joueur ne peuvent plus annuler ce tir (le client l'a déjà lancé).
  *  3. CommitAbility + dépense de la ressource nourrie au lancer : une incantation interrompue ne coûte rien.
  *  4. Le personnage se tourne vers la cible, joue un montage optionnel
  *  5. Le serveur fait apparaître le projectile répliqué, mis à l'échelle par le nourrissage
@@ -38,6 +43,13 @@ class GEN_API UGenGA_Projectile : public UGenGameplayAbility
 
 public:
 	UGenGA_Projectile();
+
+	/** Serveur : compte exact annoncé par le client distant à la fin de son nourrissage (affichage seulement). */
+	void ApplyReportedFedCount(int32 Reported);
+
+	//~ UGameplayAbility
+	/** Faux sur le serveur une fois la visée du client reçue : le tir est parti côté client. */
+	virtual bool CanBeCanceled() const override;
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
@@ -53,6 +65,14 @@ protected:
 
 	UFUNCTION()
 	void OnTargetDataReady(const FGameplayAbilityTargetDataHandle& DataHandle);
+
+	/** Serveur pour un client distant : visée reçue pendant l'incantation. */
+	UFUNCTION()
+	void OnServerAimReceived(const FGameplayAbilityTargetDataHandle& DataHandle);
+
+	/** Serveur : visée arrivée trop tôt, fin de l'attente du reste de l'incantation. */
+	UFUNCTION()
+	void OnServerCastWaitFinished();
 
 	UFUNCTION()
 	void OnFeedTick();
@@ -175,6 +195,11 @@ private:
 	/** Nettoyage complet (fin ou annulation du sort). */
 	void StopCasting();
 
+	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
+	bool IsServerForRemoteClient() const;
+	/** Serveur : tire avec la visée reçue du client (ou annule si étourdi / mort entre-temps). */
+	void FinishServerCast();
+
 	/** Nombre d'unités nourries retenu pour ce tir (borné côté serveur). */
 	int32 ResolveFedCount(const FGameplayAbilityTargetData* Data) const;
 	void SpendResource(int32 Amount);
@@ -194,4 +219,15 @@ private:
 	float FeedStartTime = 0.f;
 	/** Serveur : durée du nourrissage mesurée entre l'activation et le signal du client. */
 	float ServerFeedElapsed = 0.f;
+	/** Serveur : compte brut annoncé par le client (ServerReportFedResource), sinon INDEX_NONE. */
+	int32 ReportedFedCount = INDEX_NONE;
+
+	/** Début de l'incantation (après le nourrissage), en temps du monde. */
+	float CastStartTime = 0.f;
+	/** Serveur : visée du client reçue, le tir partira (le sort n'est plus annulable par un autre sort). */
+	bool bServerShotLocked = false;
+	/** Serveur : visée reçue en avance, gardée jusqu'à la fin de l'incantation. */
+	FGameplayAbilityTargetDataHandle PendingAimData;
+	/** Serveur : clé de prédiction avec laquelle la visée est arrivée (le client y a prédit coût et cooldown). */
+	FPredictionKey PendingAimPredictionKey;
 };

@@ -108,8 +108,9 @@ public:
 	/**
 	 * Client propriétaire -> serveur : nombre exact d'unités nourries par Ability à la fin du nourrissage.
 	 * Purement visuel (les autres joueurs voient les flammes quitter l'orbite) : sans cela le serveur
-	 * n'affiche que sa propre estimation, qui peut avoir un tick de retard. Le nombre qui compte pour
-	 * le tir arrive avec la visée et y est validé.
+	 * n'affiche que sa propre estimation, qui peut avoir un tick de retard. Transmis au sort actif, qui
+	 * l'accepte à ±1 de son estimation (UGenGA_Projectile::ApplyReportedFedCount). Le nombre qui compte
+	 * pour le tir arrive avec la visée et y est validé.
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerReportFedResource(UClass* Ability, uint8 Count);

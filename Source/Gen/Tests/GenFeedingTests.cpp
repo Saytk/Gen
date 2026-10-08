@@ -36,6 +36,41 @@ bool FGenFeedingValidateTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFeedingReportTest, "Gen.Feeding.ReportedCount",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenFeedingReportTest::RunTest(const FString& Parameters)
+{
+	// ClampReportedFed(Reported, ServerEstimate, MaxFeed, Available)
+	TestEqual(TEXT("annonce égale à l'estimation"), GenFeeding::ClampReportedFed(3, 3, 5, 5.f), 3);
+	TestEqual(TEXT("estimation en retard d'un tick (5 contre 4)"), GenFeeding::ClampReportedFed(5, 4, 5, 5.f), 5);
+	TestEqual(TEXT("estimation en avance d'un tick"), GenFeeding::ClampReportedFed(2, 3, 5, 5.f), 2);
+	TestEqual(TEXT("bluff de 5 flammes dès l'activation"), GenFeeding::ClampReportedFed(5, 0, 5, 5.f), 1);
+	TestEqual(TEXT("annonce trop basse"), GenFeeding::ClampReportedFed(0, 4, 5, 5.f), 3);
+	TestEqual(TEXT("borné par la ressource"), GenFeeding::ClampReportedFed(3, 2, 5, 2.f), 2);
+	TestEqual(TEXT("borné par le maximum du sort"), GenFeeding::ClampReportedFed(6, 5, 5, 9.f), 5);
+	TestEqual(TEXT("plus de ressource du tout"), GenFeeding::ClampReportedFed(3, 3, 5, 0.f), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCastTimingTest, "Gen.Feeding.ServerCastWait",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenCastTimingTest::RunTest(const FString& Parameters)
+{
+	// GetServerCastWait(CastTime, ElapsedCastTime, Tolerance)
+	TestEqual(TEXT("visée à l'heure"), GenFeeding::GetServerCastWait(0.5f, 0.5f, 0.1f), 0.f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("visée en retard"), GenFeeding::GetServerCastWait(0.5f, 0.7f, 0.1f), 0.f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("gigue absorbée (0.45 s mesurées)"), GenFeeding::GetServerCastWait(0.5f, 0.45f, 0.1f), 0.f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("limite de la tolérance"), GenFeeding::GetServerCastWait(0.5f, 0.4f, 0.1f), 0.f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("visée trop tôt : attente du reste"), GenFeeding::GetServerCastWait(0.5f, 0.2f, 0.1f), 0.2f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("visée immédiate"), GenFeeding::GetServerCastWait(0.5f, 0.f, 0.1f), 0.4f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("sort instantané"), GenFeeding::GetServerCastWait(0.f, 0.f, 0.1f), 0.f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("tolérance négative ignorée"), GenFeeding::GetServerCastWait(0.5f, 0.45f, -1.f), 0.05f, KINDA_SMALL_NUMBER);
+	TestTrue(TEXT("tolérance petite devant les incantations"), GenFeeding::CastTimeTolerance > 0.f && GenFeeding::CastTimeTolerance <= 0.1f);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFeedingScaleTest, "Gen.Feeding.Scaling",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
