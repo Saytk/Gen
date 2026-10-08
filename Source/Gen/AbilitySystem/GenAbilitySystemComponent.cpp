@@ -155,13 +155,20 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 		ClearAbilityInput();
 		return;
 	}
+	// Revue PIE finale, C-5 : jamais d'appui en attente sous contrôle dur
+	if (HasHardCC())
+	{
+		ClearInputBuffer();
+	}
 
 	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>> AbilitiesToActivate;
 
 	// Sorts "WhileInputActive" : se relancent tant que la touche est maintenue (ex: M1 en auto)
 	CollectHeldActivations(AbilitiesToActivate);
 
-	// Sorts dont la touche vient d'être pressée cette frame
+	// Sorts dont la touche vient d'être pressée cette frame. Revue PIE finale, C-5 : décidé avant toute activation de
+	// l'image (deux appuis dans la même image gardent leur règle : le second remplace le premier)
+	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<4>> PressesToBuffer;
 	for (const FGameplayAbilitySpecHandle& SpecHandle : InputPressedSpecHandles)
 	{
 		if (FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(SpecHandle))
@@ -172,16 +179,50 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 			{
 				// Déjà actif : on transmet l'appui au sort (WaitInputPress, sorts chargés...)
 				AbilitySpecInputPressed(*Spec);
+				// Sa propre incantation finit bientôt : le sort repart juste après (clics gauches tapés en rythme)
+				if (ShouldBufferPress(*Spec))
+				{
+					PressesToBuffer.Add(SpecHandle);
+				}
 			}
 			else
 			{
 				const UGenGameplayAbility* AbilityCDO = Cast<UGenGameplayAbility>(Spec->Ability);
-				if (AbilityCDO && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::OnInputTriggered)
+				const bool bWantsActivation = AbilitiesToActivate.Contains(SpecHandle)
+					|| (AbilityCDO && AbilityCDO->ActivationPolicy == EGenAbilityActivationPolicy::OnInputTriggered);
+				if (bWantsActivation && ShouldBufferPress(*Spec))
+				{
+					// Verrou ou incantation qui finit bientôt : l'appui attend au lieu d'échouer ou de remplacer le sort
+					PressesToBuffer.Add(SpecHandle);
+					AbilitiesToActivate.Remove(SpecHandle);
+				}
+				else if (bWantsActivation)
 				{
 					AbilitiesToActivate.AddUnique(Spec->Handle);
 				}
 			}
 		}
+	}
+	if (PressesToBuffer.Num() > 0)
+	{
+		BufferPress(PressesToBuffer); // le dernier appui gagne
+	}
+
+	// Un appui frais qui part remplace l'appui en attente ; sinon l'appui retenu part dès qu'il peut, seul dans l'image
+	// (la répétition automatique attend : elle annulerait son incantation)
+	const bool bFreshActivation = AbilitiesToActivate.ContainsByPredicate([this](const FGameplayAbilitySpecHandle& Handle)
+	{
+		return InputPressedSpecHandles.Contains(Handle);
+	});
+	FGameplayAbilitySpecHandle BufferedHandle;
+	if (bFreshActivation)
+	{
+		ClearInputBuffer();
+	}
+	else if (TryTakeBufferedPress(BufferedHandle))
+	{
+		AbilitiesToActivate.Reset();
+		AbilitiesToActivate.Add(BufferedHandle);
 	}
 
 	ActivateFromInput(AbilitiesToActivate);
@@ -266,8 +307,9 @@ void UGenAbilitySystemComponent::RequestEndOfFrameInput()
 
 void UGenAbilitySystemComponent::OnWorldPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds)
 {
-	// Une seule passe par demande, dans le monde de ce composant (plusieurs mondes en PIE)
-	if (World != GetWorld() || !bEndOfFrameInputPending)
+	// Une seule passe par demande, dans le monde de ce composant (plusieurs mondes en PIE) ; à chaque image tant qu'un
+	// appui attend (revue PIE finale, C-5)
+	if (World != GetWorld() || (!bEndOfFrameInputPending && BufferedPressHandles.Num() == 0))
 	{
 		return;
 	}
@@ -281,10 +323,20 @@ void UGenAbilitySystemComponent::ProcessEndOfFrameInput()
 	// relâchés restent à ProcessAbilityInput (déjà passé dans cette image)
 	if (HasMatchingGameplayTag(GenGameplayTags::State_Dead))
 	{
+		ClearInputBuffer();
 		return;
 	}
+	// Revue PIE finale, C-5 : l'appui retenu d'abord, seul (la répétition automatique annulerait son incantation)
 	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<8>> AbilitiesToActivate;
-	CollectHeldActivations(AbilitiesToActivate);
+	FGameplayAbilitySpecHandle BufferedHandle;
+	if (TryTakeBufferedPress(BufferedHandle))
+	{
+		AbilitiesToActivate.Add(BufferedHandle);
+	}
+	else
+	{
+		CollectHeldActivations(AbilitiesToActivate);
+	}
 	ActivateFromInput(AbilitiesToActivate);
 }
 
@@ -304,6 +356,114 @@ void UGenAbilitySystemComponent::ClearAbilityInput()
 	InputPressedSpecHandles.Reset();
 	InputReleasedSpecHandles.Reset();
 	InputHeldSpecHandles.Reset();
+	ClearInputBuffer();
+}
+
+void UGenAbilitySystemComponent::ClearInputBuffer()
+{
+	BufferedPressHandles.Reset();
+	BufferedPressExpireTime = -1.0;
+}
+
+void UGenAbilitySystemComponent::NoteLocalCastLockDuration(float Duration)
+{
+	LocalCastLockEndTime = GetWorld() && Duration > 0.f ? GetWorld()->GetTimeSeconds() + Duration : -1.0;
+}
+
+bool UGenAbilitySystemComponent::HasHardCC() const
+{
+	return HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags());
+}
+
+bool UGenAbilitySystemComponent::ShouldBufferPress(const FGameplayAbilitySpec& Spec) const
+{
+	const UWorld* World = GetWorld();
+	if (!World || HasHardCC() || !Cast<UGenGameplayAbility>(Spec.Ability))
+	{
+		return false;
+	}
+	const double Now = World->GetTimeSeconds();
+
+	// Verrou de lancement (bond en vol, forme de feu) : dans ses InputBufferLead dernières secondes (fin inconnue : retenu,
+	// l'expiration du tampon borne l'attente)
+	if (HasMatchingGameplayTag(GenGameplayTags::State_CastLocked))
+	{
+		return LocalCastLockEndTime < 0.0 || LocalCastLockEndTime - Now <= InputBufferLead;
+	}
+
+	// Une incantation (celle de ce sort ou d'un autre) finit dans moins de InputBufferLead s
+	for (const FGameplayAbilitySpec& Other : ActivatableAbilities.Items)
+	{
+		const UGenGA_Cast* CastAbility = Other.IsActive() ? Cast<UGenGA_Cast>(Other.GetPrimaryInstance()) : nullptr;
+		if (CastAbility && CastAbility->IsCastPending())
+		{
+			const float Remaining = CastAbility->GetPendingCastTimeRemaining();
+			if (Remaining >= 0.f && Remaining <= InputBufferLead)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool UGenAbilitySystemComponent::IsBufferedPressBlocked(const FGameplayAbilitySpec& Spec) const
+{
+	if (Spec.IsActive() || HasMatchingGameplayTag(GenGameplayTags::State_CastLocked))
+	{
+		return true;
+	}
+	for (const FGameplayAbilitySpec& Other : ActivatableAbilities.Items)
+	{
+		const UGenGA_Cast* CastAbility = Other.IsActive() ? Cast<UGenGA_Cast>(Other.GetPrimaryInstance()) : nullptr;
+		if (CastAbility && CastAbility->IsCastPending())
+		{
+			return true;
+		}
+	}
+	// Encore refusé pour une raison passagère (fin du sort qui posait le verrou...) : il attend, jusqu'à expiration
+	const UGameplayAbility* Ability = Spec.GetPrimaryInstance() ? Spec.GetPrimaryInstance() : Spec.Ability.Get();
+	return !Ability || !Ability->CanActivateAbility(Spec.Handle, AbilityActorInfo.Get());
+}
+
+void UGenAbilitySystemComponent::BufferPress(const TArray<FGameplayAbilitySpecHandle, TInlineAllocator<4>>& Handles)
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Tous les sorts de l'appui (touche partagée : boule de feu et Pyroblast) ; part celui qui le peut au moment voulu
+	BufferedPressHandles.Reset();
+	BufferedPressHandles.Append(Handles);
+	BufferedPressExpireTime = World->GetTimeSeconds() + InputBufferDuration;
+	// Fin d'image : il part dans l'image où le verrou ou l'incantation se termine
+	RequestEndOfFrameInput();
+}
+
+bool UGenAbilitySystemComponent::TryTakeBufferedPress(FGameplayAbilitySpecHandle& OutHandle)
+{
+	if (BufferedPressHandles.Num() == 0)
+	{
+		return false;
+	}
+	const UWorld* World = GetWorld();
+	if (!World || World->GetTimeSeconds() > BufferedPressExpireTime || HasHardCC() || HasMatchingGameplayTag(GenGameplayTags::State_Dead))
+	{
+		ClearInputBuffer();
+		return false;
+	}
+	for (const FGameplayAbilitySpecHandle& Handle : BufferedPressHandles)
+	{
+		const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(Handle);
+		if (Spec && !IsBufferedPressBlocked(*Spec))
+		{
+			OutHandle = Handle;
+			ClearInputBuffer();
+			return true;
+		}
+	}
+	return false;
 }
 
 void UGenAbilitySystemComponent::AbilitySpecInputPressed(FGameplayAbilitySpec& Spec)
@@ -464,6 +624,12 @@ void UGenAbilitySystemComponent::ClearCastLock()
 
 int32 UGenAbilitySystemComponent::CancelPendingCasts(const UGameplayAbility* Except)
 {
+	// Revue PIE finale, C-5 : la touche d'annulation vide aussi l'appui en attente
+	if (!Except)
+	{
+		ClearInputBuffer();
+	}
+
 	// Plan 3 Task 6. Liste d'abord : annuler un sort modifie les specs actifs
 	TArray<UGenGA_Cast*, TInlineAllocator<4>> Pending;
 	for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)

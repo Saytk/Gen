@@ -9,6 +9,7 @@
 #include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenTargetData.h"
 #include "AbilitySystem/GenWorldQueries.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystemComponent.h"
 #include "Actors/GenGroundArea.h"
 #include "Character/GenCharacterBase.h"
@@ -132,6 +133,11 @@ void UGenGA_Leap::OnCastLaunched(const FGenCastRelease& Release)
 	// SetCastLock appelle UGenAbilitySystemComponent::NoteCastLock (jamais de tag posé à la main)
 	const float MinimumLandedTime = LeapDuration * 0.5f;
 	SetCastLock(true, MinimumLandedTime);
+	// Revue PIE finale, C-5 : fin prévue du vol (tampon des appuis du client : un appui dans ses derniers instants attend)
+	if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+	{
+		GenASC->NoteLocalCastLockDuration(LeapDuration);
+	}
 
 	// Point d'atterrissage vu par tous pendant le vol (cercle et amorces de l'anneau chez les autres joueurs)
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())

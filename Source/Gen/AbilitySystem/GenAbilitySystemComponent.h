@@ -41,6 +41,23 @@ public:
 	void ProcessAbilityInput(float DeltaTime, bool bGamePaused);
 	void ClearAbilityInput();
 
+	/**
+	 * Revue PIE finale, C-5 : tampon des appuis (client propriétaire seulement : il ne fait que retarder la tentative
+	 * d'activation locale). Un appui qui ne peut pas partir à cause du verrou de lancement (bond en vol, forme de feu) ou
+	 * d'une incantation qui finit dans moins de InputBufferLead s est retenu InputBufferDuration s et part dès que
+	 * possible, dans l'image même (passage de fin d'image). Le dernier appui gagne ; un appui qui part tout de suite, la
+	 * touche d'annulation, un contrôle dur ou la mort vident le tampon. Jamais de tampon sous contrôle dur.
+	 */
+	static constexpr float InputBufferDuration = 0.3f;
+	static constexpr float InputBufferLead = 0.2f;
+
+	/** Un appui attend (tests). */
+	bool HasBufferedInput() const { return BufferedPressHandles.Num() > 0; }
+	void ClearInputBuffer();
+
+	/** Revue PIE finale, C-5 : durée prévue du verrou de lancement qui vient d'être posé sur cette machine (bond : vol). */
+	void NoteLocalCastLockDuration(float Duration);
+
 	/** Vrai si un autre sort actif (que Except) porte State.Casting dans ses ActivationOwnedTags. */
 	bool IsAnotherAbilityCasting(FGameplayAbilitySpecHandle Except) const;
 
@@ -142,6 +159,21 @@ protected:
 
 	FDelegateHandle PostActorTickHandle;
 	bool bEndOfFrameInputPending = false;
+
+	/** Revue PIE finale, C-5 : cet appui peut-il attendre (verrou ou incantation qui finit bientôt), au lieu de partir ou d'échouer ? */
+	bool ShouldBufferPress(const FGameplayAbilitySpec& Spec) const;
+	/** L'appui retenu doit encore attendre (verrou, sort encore actif, incantation en cours). */
+	bool IsBufferedPressBlocked(const FGameplayAbilitySpec& Spec) const;
+	/** Appui retenu qui peut partir maintenant (tampon vidé) ; vide le tampon s'il a expiré ou sous contrôle dur. */
+	bool TryTakeBufferedPress(FGameplayAbilitySpecHandle& OutHandle);
+	void BufferPress(const TArray<FGameplayAbilitySpecHandle, TInlineAllocator<4>>& Handles);
+	bool HasHardCC() const;
+
+	/** Sorts de l'appui retenu (plusieurs si la touche est partagée). */
+	TArray<FGameplayAbilitySpecHandle, TInlineAllocator<2>> BufferedPressHandles;
+	double BufferedPressExpireTime = -1.0;
+	/** Fin prévue (temps du monde) du verrou de lancement local, < 0 = inconnue. */
+	double LocalCastLockEndTime = -1.0;
 
 	TArray<FGameplayAbilitySpecHandle> InputPressedSpecHandles;
 	TArray<FGameplayAbilitySpecHandle> InputReleasedSpecHandles;

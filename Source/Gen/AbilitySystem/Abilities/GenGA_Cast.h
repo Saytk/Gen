@@ -77,6 +77,12 @@ public:
 	/** Vrai pendant le nourrissage et l'incantation, avant le lancer. */
 	bool IsCastPending() const { return IsActive() && !bReleased; }
 
+	/**
+	 * Revue PIE finale, C-5 : temps restant (s) avant le lancer, pendant l'incantation ; < 0 pendant le nourrissage (fin
+	 * inconnue : elle dépend du relâché) ou hors incantation. Tampon des appuis (UGenAbilitySystemComponent).
+	 */
+	float GetPendingCastTimeRemaining() const;
+
 	/** Serveur : visée reçue en avance, le lancer attend la fin de l'incantation mesurée par le serveur (tests). */
 	bool IsWaitingForDeferredLaunch() const { return bServerShotLocked && PendingAimData.Num() > 0; }
 

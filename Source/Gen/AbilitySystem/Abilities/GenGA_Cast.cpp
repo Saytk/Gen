@@ -1380,3 +1380,14 @@ AGenGroundArea* UGenGA_Cast::SpawnGroundArea(TSubclassOf<AGenGroundArea> AreaCla
 	Area->FinishSpawning(SpawnTransform);
 	return Area;
 }
+
+float UGenGA_Cast::GetPendingCastTimeRemaining() const
+{
+	// Revue PIE finale, C-5 : seulement pendant l'incantation (CastStartTime posé par StartCasting)
+	const UWorld* World = GetWorld();
+	if (!IsCastPending() || bIsFeeding || !World)
+	{
+		return -1.f;
+	}
+	return FMath::Max(CastStartTime + CastTime - static_cast<float>(World->GetTimeSeconds()), 0.f);
+}

@@ -1,6 +1,7 @@
 #include "Champions/Curffe/CurffeGA_LivingFlame.h"
 
 #include "AbilitySystem/GenAbilityTooltipData.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
@@ -73,6 +74,11 @@ void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 	// Sans sort pendant la forme : verrou de lancement, seul point d'entrée du tag (State.CastLocked local + fenêtre
 	// du serveur : la forme du serveur commence ~½ RTT après celle du client, il ne refuse ses sorts qu'au début)
 	SetCastLock(true, FormDuration);
+	// Revue PIE finale, C-5 : fin prévue de la forme (tampon des appuis du client)
+	if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+	{
+		GenASC->NoteLocalCastLockDuration(FormDuration);
+	}
 
 	// Plan Visuals V4 : la forme se lit comme une canalisation (barre qui se vide, télégraphe de l'anneau)
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
