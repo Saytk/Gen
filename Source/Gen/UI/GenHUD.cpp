@@ -99,6 +99,7 @@ void AGenHUD::DrawCastBar(float X, float Y, float Width, float Height, const Gen
 
 	// Un cran par seuil de flamme (celui qui tombe sur le bout de la barre est déjà marqué par le bord).
 	// Clair devant le remplissage ; sombre une fois franchi, sinon presque invisible sur la couleur de cast.
+	const FLinearColor CastTickColor = GetCastTickColor();
 	for (const float Tick : Layout.Ticks)
 	{
 		if (Tick < 1.f)
@@ -245,6 +246,14 @@ void AGenHUD::DrawLocalPlayerPanel(const AGenCharacterBase* LocalCharacter)
 		const FString ResourceText = FString::Printf(TEXT("Flammes : %.0f / %.0f"), LocalCharacter->GetResource(), MaxResource);
 		DrawText(ResourceText, FLinearColor(1.f, 0.6f, 0.2f), X, Y, Font);
 	}
+}
+
+FLinearColor AGenHUD::GetCastTickColor() const
+{
+	// Jeton de la palette, jamais un littéral : il suit DA_UIPalette quand la palette change
+	const UGenUISubsystem* UI = UGenUISubsystem::Get(GetOwningPlayerController());
+	const UGenUIPalette* Palette = UI && UI->GetPalette() ? UI->GetPalette() : GetDefault<UGenUIPalette>();
+	return Palette->Text_Primary;
 }
 
 float AGenHUD::GetAbilityBarTop() const
