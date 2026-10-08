@@ -41,6 +41,9 @@ AGenCharacterBase::AGenCharacterBase(const FObjectInitializer& ObjectInitializer
 
 	// Mesh orienté comme le mannequin UE5 (face à +X)
 	GetMesh()->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -96.f), FRotator(0.f, -90.f, 0.f));
+
+	StatusVisuals = CreateDefaultSubobject<UGenStatusVisualsComponent>(TEXT("StatusVisuals"));
+	StatusVisuals->SetupAttachment(GetCapsuleComponent());
 }
 
 void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -342,6 +345,12 @@ void AGenCharacterBase::OnAbilitySystemInitialized()
 		AbilitySystemComponent->SetLooseGameplayTagCount(GenGameplayTags::State_Dead, 0, EGameplayTagReplicationState::TagOnly);
 		AbilitySystemComponent->SetNumericAttributeBase(UGenAttributeSet::GetHealthAttribute(), AttributeSet->GetMaxHealth());
 	}
+
+	// Formes d'état sur toutes les machines (Bind ignore le serveur dédié)
+	if (StatusVisuals)
+	{
+		StatusVisuals->Bind(AbilitySystemComponent, StatusVisualConfig);
+	}
 }
 
 void AGenCharacterBase::UninitializeAbilitySystem()
@@ -350,6 +359,11 @@ void AGenCharacterBase::UninitializeAbilitySystem()
 	if (!IsValid(AbilitySystemComponent))
 	{
 		return;
+	}
+
+	if (StatusVisuals)
+	{
+		StatusVisuals->Unbind();
 	}
 
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMoveSpeedAttribute()).Remove(MoveSpeedChangedHandle);

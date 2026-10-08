@@ -7,6 +7,7 @@
 #include "GameplayAbilitySpecHandle.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenHitRules.h"
+#include "Character/GenStatusVisualsComponent.h"
 #include "GenCharacterBase.generated.h"
 
 class UGameplayEffect;
@@ -217,6 +218,13 @@ protected:
 	/** Effets appliqués à l'apparition (ex: GE instantané de stats de départ du champion, passifs). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Abilities")
 	TArray<TSubclassOf<UGameplayEffect>> StartupEffects;
+
+	/** Formes d'état (contre, étourdi...) affichées sur ce personnage. Python : status_visual_config. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Status")
+	TArray<FGenStatusVisual> StatusVisualConfig;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|Status")
+	TObjectPtr<UGenStatusVisualsComponent> StatusVisuals;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Health")
 	bool bRagdollOnDeath = true;

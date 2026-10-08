@@ -7,6 +7,7 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "Champions/Curffe/CurffeEffects.h"
+#include "Character/GenStatusVisualsComponent.h"
 #include "Character/GenTrainingDummy.h"
 #include "GenGameplayTags.h"
 #include "Tests/GenTestWorld.h"
@@ -150,6 +151,44 @@ bool FGenCounterResolveTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("le contre est prévenu de chaque blocage"), Received, 2);
 	TestTrue(TEXT("instigateur transmis"), ReceivedInstigator == static_cast<const AActor*>(Attacker));
 	TestEqual(TEXT("nature du dernier coup bloqué"), ReceivedKind, static_cast<float>(EGenHitKind::Melee));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenStatusVisualTest, "Gen.Status.VisualFollowsTag",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenStatusVisualTest::RunTest(const FString& Parameters)
+{
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Dummy = TestWorld.SpawnDummy();
+	UGenAbilitySystemComponent* ASC = Dummy ? Dummy->GetGenAbilitySystemComponent() : nullptr;
+	if (!TestNotNull(TEXT("ASC du mannequin"), ASC))
+	{
+		return false;
+	}
+
+	UGenStatusVisualsComponent* Visuals = NewObject<UGenStatusVisualsComponent>(Dummy);
+	Visuals->SetupAttachment(Dummy->GetRootComponent());
+	Visuals->RegisterComponent();
+
+	FGenStatusVisual Stunned;
+	Stunned.Tag = GenGameplayTags::State_Stunned;
+	Stunned.AppearFlashDuration = 0.2f;
+	Visuals->Bind(ASC, { Stunned });
+
+	TestFalse(TEXT("caché au départ"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+	ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr);
+	TestTrue(TEXT("affiché pendant l'étourdissement"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+	TestTrue(TEXT("flash d'apparition"), Visuals->IsStatusFlashing(GenGameplayTags::State_Stunned));
+
+	TestWorld.Advance(0.3f);
+	TestFalse(TEXT("flash terminé"), Visuals->IsStatusFlashing(GenGameplayTags::State_Stunned));
+	TestTrue(TEXT("forme toujours là après le flash"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+
+	TestWorld.Advance(0.8f);
+	TestFalse(TEXT("caché à la fin"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+
+	Visuals->Unbind();
 	return true;
 }
 
