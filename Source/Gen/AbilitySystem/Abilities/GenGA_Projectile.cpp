@@ -140,7 +140,11 @@ void UGenGA_Projectile::OnFeedTick()
 	if (FedCount < Limit)
 	{
 		++FedCount;
-		SetFedVisual(FedCount);
+
+		// Serveur : le compte exact annoncé par le client (ServerReportFedResource) a pu arriver
+		// avant ce tick de l'estimation : ne pas faire redescendre l'affichage
+		const AGenCharacterBase* Character = GetGenCharacterFromActorInfo();
+		SetFedVisual(Character ? FMath::Max<int32>(FedCount, Character->GetFedResource()) : FedCount);
 	}
 
 	if (FedCount >= Limit)
@@ -171,6 +175,17 @@ void UGenGA_Projectile::StopFeedingLocal()
 	}
 
 	EndFeedTasks();
+
+	// Client distant : le serveur n'a qu'une estimation des unités nourries (son minuteur peut avoir un
+	// tick de retard, surtout quand le client s'arrête pile au maximum). On lui annonce le compte exact
+	// pour que les autres joueurs voient le bon nombre de flammes quitter l'orbite pendant l'incantation.
+	if (FedCount > 0 && CurrentActorInfo && !CurrentActorInfo->IsNetAuthority())
+	{
+		if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+		{
+			Character->ServerReportFedResource(GetClass(), static_cast<uint8>(FMath::Clamp(FedCount, 0, 255)));
+		}
+	}
 
 	// Client : envoie le signal au serveur et continue sans attendre. Hôte : se termine aussitôt.
 	UAbilityTask_NetworkSyncPoint* SyncTask = UAbilityTask_NetworkSyncPoint::WaitNetSync(this, EAbilityTaskNetSyncType::OnlyServerWait);
@@ -301,7 +316,9 @@ void UGenGA_Projectile::StopCasting()
 	bIsFeeding = false;
 	EndFeedTasks();
 
-	if (FedVisualCount > 0)
+	// Le serveur a pu recevoir le compte du client (ServerReportFedResource) sans avoir lui-même rien affiché
+	const AGenCharacterBase* Character = GetGenCharacterFromActorInfo();
+	if (FedVisualCount > 0 || (bFeedable && Character && Character->GetFedResource() > 0))
 	{
 		SetFedVisual(0);
 	}

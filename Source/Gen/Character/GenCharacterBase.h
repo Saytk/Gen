@@ -106,6 +106,15 @@ public:
 	void SetFedResource(uint8 Count) { FedResource = Count; }
 
 	/**
+	 * Client propriétaire -> serveur : nombre exact d'unités nourries par Ability à la fin du nourrissage.
+	 * Purement visuel (les autres joueurs voient les flammes quitter l'orbite) : sans cela le serveur
+	 * n'affiche que sa propre estimation, qui peut avoir un tick de retard. Le nombre qui compte pour
+	 * le tir arrive avec la visée et y est validé.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerReportFedResource(UClass* Ability, uint8 Count);
+
+	/**
 	 * Serveur : repousse le personnage de Distance (cm) dans Direction (aplatie à l'horizontale).
 	 * Le client propriétaire reçoit le même lancement pour éviter une correction brutale.
 	 */

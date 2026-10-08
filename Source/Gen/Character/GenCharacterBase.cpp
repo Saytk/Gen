@@ -74,6 +74,19 @@ void AGenCharacterBase::StopCast(UClass* Ability)
 	}
 }
 
+void AGenCharacterBase::ServerReportFedResource_Implementation(UClass* Ability, uint8 Count)
+{
+	// Message en retard (incantation finie, ou d'un autre sort) : ignoré
+	if (!CastInfo.IsCasting() || CastInfo.Ability != Ability)
+	{
+		return;
+	}
+
+	// Borné aux unités disponibles ; jamais en dessous de ce que l'estimation du serveur affiche déjà
+	const int32 Available = FMath::Max(FMath::FloorToInt32(GetResource()), 0);
+	FedResource = static_cast<uint8>(FMath::Clamp(FMath::Max<int32>(FedResource, FMath::Min<int32>(Count, Available)), 0, 255));
+}
+
 void AGenCharacterBase::OnRep_CastInfo()
 {
 	// Autres clients : la rotation arrive déjà par le mouvement répliqué, seul l'effet est à gérer
