@@ -6,14 +6,17 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "GenGA_Cast.generated.h"
 
+class AGenGroundArea;
 class AGenProjectile;
 class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitDelay;
 class UAbilityTask_WaitInputRelease;
+class UGenAbilityTask_TargetDataUnderCursor;
 class UAnimMontage;
 class UGameplayEffect;
 class UNiagaraSystem;
 struct FGameplayAbilityTargetData;
+struct FGenAreaParams;
 struct FGenProjectileSalvo;
 struct FGenProjectileShotParams;
 
@@ -97,7 +100,7 @@ protected:
 	 */
 	void SetCastLock(bool bLocked, float MinLockDuration = 0.f);
 
-	/** Spec du GE de dégâts (SetByCaller.Damage = Amount). Invalide si rien à infliger. */
+	/** Spec du GE de dégâts (SetByCaller.Damage = Amount, même 0 : tags et cues de l'effet). Invalide seulement sans EffectClass. */
 	FGameplayEffectSpecHandle MakeDamageSpec(TSubclassOf<UGameplayEffect> EffectClass, float Amount, UObject* SourceObject) const;
 
 	/** Spec des gains du lanceur (UGenGE_Gain). Invalide si rien à gagner. */
@@ -106,6 +109,10 @@ protected:
 	/** Serveur : projectile tiré depuis Origin vers Direction, porteur des dégâts et des gains. */
 	AGenProjectile* SpawnProjectileShot(TSubclassOf<AGenProjectile> ShotClass, const FVector& Origin, const FVector& Direction, const FGenProjectileShotParams& ShotParams,
 		TSubclassOf<UGameplayEffect> DamageClass, float DamageAmount, float EnergyGain, float ResourceGain, const TSharedPtr<FGenProjectileSalvo>& Salvo = nullptr);
+
+	/** Serveur : zone au sol posée au sol sous Center, porteuse des dégâts et des gains (énergie si elle touche). */
+	AGenGroundArea* SpawnGroundArea(TSubclassOf<AGenGroundArea> AreaClass, const FVector& Center, const FGenAreaParams& Params,
+		TSubclassOf<UGameplayEffect> DamageClass, float DamageAmount, float EnergyGain);
 
 	/** Fin de l'incantation (ou tout de suite si CastTime = 0) : on récupère la visée. */
 	UFUNCTION()
@@ -279,6 +286,15 @@ private:
 	 */
 	void StopClientCastMontages();
 
+	/**
+	 * Échec ou abandon d'un lancer (visée invalide, commit refusé, contrôle dur ou mort pendant le départ différé) :
+	 * coupe le geste chez le client propriétaire ET, sur le serveur, le montage répliqué aux autres joueurs.
+	 */
+	void AbortCastMontages();
+
+	/** Arrête d'écouter la visée (après la première : les suivantes sont ignorées). */
+	void EndAimTask();
+
 	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
 	bool IsServerForRemoteClient() const;
 
@@ -316,6 +332,9 @@ private:
 	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
 	bool bWarnedPhaseSlotGroups = false;
 #endif
+	/** Tâche de visée en cours (serveur pour un client distant : attend la visée). */
+	UPROPERTY(Transient)
+	TObjectPtr<UGenAbilityTask_TargetDataUnderCursor> AimTask;
 
 	int32 FedCount = 0;
 	int32 FedVisualCount = 0;

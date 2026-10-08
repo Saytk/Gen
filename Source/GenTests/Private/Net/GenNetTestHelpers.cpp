@@ -7,6 +7,8 @@
 #include "AbilitySystemComponent.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/NetConnection.h"
+#include "EngineUtils.h"
+#include "Net/GenNetTestFloor.h"
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/GameStateBase.h"
@@ -153,6 +155,26 @@ namespace GenNetTest
 			}
 		}
 		return nullptr;
+	}
+
+	AActor* SpawnTestFloor(UWorld* ServerWorld)
+	{
+		if (!ServerWorld)
+		{
+			return nullptr;
+		}
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		return ServerWorld->SpawnActor<AGenNetTestFloor>(FVector(0.f, 0.f, AGenNetTestFloor::TopZ - 50.f), FRotator::ZeroRotator, Params);
+	}
+
+	bool HasTestFloor(const UWorld* World)
+	{
+		for (TActorIterator<AGenNetTestFloor> It(World); It; ++It)
+		{
+			return true;
+		}
+		return false;
 	}
 }
 

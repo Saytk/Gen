@@ -28,6 +28,8 @@ public:
 
 protected:
 	virtual void Activate() override;
+	/** Serveur : ne plus écouter la visée du client une fois la tâche terminée (visée en double ignorée). */
+	virtual void OnDestroy(bool bInOwnerFinished) override;
 
 private:
 	/** Unités nourries par le sort, transmises au serveur avec la visée. */

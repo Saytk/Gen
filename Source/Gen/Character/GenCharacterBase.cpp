@@ -58,6 +58,7 @@ void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AGenCharacterBase, bIsDead);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, CastInfo, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedResource, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AGenCharacterBase, LeapTarget, COND_SkipOwner);
 }
 
 float AGenCharacterBase::GetCastClockSeconds() const
@@ -126,6 +127,20 @@ void AGenCharacterBase::StartChannel(UClass* Ability, float Duration)
 float AGenCharacterBase::GetCastElapsedFraction() const
 {
 	return CastInfo.IsCasting() ? GenCastBar::GetElapsedFraction(CastInfo.StartTime, CastInfo.Duration, GetCastClockSeconds()) : 0.f;
+}
+
+void AGenCharacterBase::SetLeapTarget(const FGenLeapTarget& Target)
+{
+	LeapTarget = Target;
+	LeapTarget.StartTime = GetCastClockSeconds();
+}
+
+void AGenCharacterBase::ClearLeapTarget(UClass* Ability)
+{
+	if (LeapTarget.Ability == Ability)
+	{
+		LeapTarget = FGenLeapTarget();
+	}
 }
 
 void AGenCharacterBase::StopCast(UClass* Ability)

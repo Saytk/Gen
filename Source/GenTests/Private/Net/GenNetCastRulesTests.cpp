@@ -22,7 +22,8 @@
 using namespace GenNetTest;
 
 /**
- * Gen.Net.CastRules : règles serveur des sorts de projectile de Curffe (contrat réseau du GenGA_Projectile),
+ * Gen.Net.CastRules : règles serveur des sorts de projectile de Curffe (contrat réseau de UGenGA_Cast, vu à travers
+ * GA_Fireball et GA_GreatFireball),
  * serveur dédié + 2 clients, le client 0 lance, le client 1 observe.
  * - Coût et cooldown seulement au lancer : nourri à 2 -> exactement 2 flammes et le cooldown ; annulé, étourdi -> rien.
  * - Visée en avance : le serveur garde l'incantation (barre vue par les autres) jusqu'à sa propre fin, un seul tir
@@ -356,7 +357,11 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 		QueueAssertNoCost();
 	}
 
-	/** Annulé par un appui sur la boule de feu (CancelAbilitiesWithTag) pendant l'incantation : rien de payé pour la grande. */
+	/**
+	 * Annulé par un appui sur la boule de feu pendant l'incantation : rien de payé pour la grande. Deux chemins y mènent
+	 * (CancelAbilitiesWithTag de l'asset et UGenGA_Cast::CancelOtherPendingCasts) ; la règle du code seule est épinglée
+	 * par Gen.Net.PendingCast (sorts C++ sans tag d'annulation).
+	 */
 	TEST_METHOD(GreatFireball_CancelledByFireballPress_NoCost)
 	{
 		QueueSetup();
@@ -651,9 +656,49 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 			});
 	}
 
+	/**
+	 * Visée en avance, puis appui sur la boule de feu pendant l'attente du serveur (revue de la Task 5, I-4) : le nouveau
+	 * sort essaie d'annuler la grande (CancelOtherPendingCasts et le tag de l'asset la voient encore « en incantation »),
+	 * mais le serveur la garde (CanBeCanceled faux : le client a déjà lancé). Un seul tir de la grande, payé au départ,
+	 * et la boule de feu part aussi.
+	 */
+	TEST_METHOD(GreatFireball_EarlyAimThenFireballPress_SingleShot)
+	{
+		QueueSetup();
+		QueueEarlyAim();
+		Network
+			.ThenClient(TEXT("Client 0 : appuie sur la boule de feu pendant l'attente du serveur"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				SendInput(Client, FireballClass, true);
+				SendInput(Client, FireballClass, false);
+			})
+			.UntilServer(TEXT("Serveur : la grande boule de feu et la boule de feu sont parties"), [this](FBasePIENetworkComponentState&)
+			{
+				return ProjectileCount >= 2;
+			}, DefaultWait());
+		QueueServerWait(TEXT("Serveur : 0.8 s après"), 0.8f);
+		Network
+			.ThenServer(TEXT("Serveur : un tir de chaque, grande boule de feu payée au départ"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(2, ProjectileCount, TEXT("Un projectile de la grande boule de feu et un de la boule de feu, pas plus")));
+				ASSERT_THAT(IsTrue(HasCooldown(ServerCasterASC.Get(), GreatFireballClass), TEXT("La grande boule de feu a été lancée (cooldown payé au départ)")));
+				ASSERT_THAT(IsFalse(IsAbilityActive(ServerCasterASC.Get(), GreatFireballClass)));
+				ASSERT_THAT(IsNear(MaxFlames, GetAttribute(ServerCasterASC.Get(), UGenAttributeSet::GetResourceAttribute()), 0.01f, TEXT("0 flamme nourrie : rien dépensé")));
+			})
+			.UntilClient(TEXT("Client 0 : cooldown de la grande boule de feu reçu du serveur"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				return !IsAbilityActive(ASC, GreatFireballClass) && HasCooldown(ASC, GreatFireballClass);
+			}, DefaultWait());
+	}
+
 	// --- Répétition automatique ------------------------------------------------------------------------
 
-	/** M1 maintenu pendant l'incantation de la grande boule de feu : aucune relance ; elle reprend après. */
+	/**
+	 * M1 maintenu pendant l'incantation de la grande boule de feu : aucune relance ; elle reprend après.
+	 * M1 et M2 dans la même image : ProcessAbilityInput active la boule de feu puis la grande, qui annule toujours une
+	 * boule de feu encore en incantation (CancelOtherPendingCasts, voulu). bFireballWasActive n'est qu'un point de départ.
+	 */
 	TEST_METHOD(AutoRepeat_HeldPrimaryBlockedWhileGreatFireballCasts)
 	{
 		QueueSetup();

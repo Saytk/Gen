@@ -148,6 +148,15 @@ in the next server step **and** in `AFTER_EACH` (test may fail before).
 8. Iris is off in this project (`iris="0"` in the log, generic replication). The component supports both.
 9. Startup noise `LogAutomationTest: Error: Condition failed` (x20, frame 0) comes from engine self-tests at boot and is
    not attributed to any Gen test; ignore it.
+10. **Ground**: `SpawnTestFloor(ServerWorld)` spawns a replicated 100 x 100 m floor (`AGenNetTestFloor`, top at Z = 0);
+    wait for `HasTestFloor(Client.World)` on every client, then place pawns with `TeleportTo` at `StandingHeight`.
+    Never spawn a floor locally in each world: the server names it as the movement base in its corrections and the
+    clients can't resolve an unreplicated actor (`Invalid LongPackageName "StaticMeshActor_0"` errors fail the test).
+11. **Test-only abilities** live in `Net/GenNetTestAbilities.h` and `Net/GenNetCurffeTestAbilities.h` (C++ classes set up in
+    their constructors, `HideDropdown`), granted on the server with `UGenAbilitySystemComponent::GrantAbilities`.
+    Don't configure them by editing their CDO at runtime: a native CDO changed after start-up is **not** copied into new
+    instances (only properties that differ from the constructor are). `GrantAbilities` reads `InputTag` from the CDO, so
+    that one works; anything the instance reads (cooldown tags...) must be set on the instance (see `TestCooldownTags`).
 
 ## Running
 
