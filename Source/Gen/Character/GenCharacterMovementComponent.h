@@ -2,7 +2,54 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/CharacterMovementReplication.h"
 #include "GenCharacterMovementComponent.generated.h"
+
+class AGenCharacterBase;
+
+/**
+ * Revue PIE finale, C-1 : données d'un mouvement envoyé au serveur, avec le multiplicateur local de vitesse du client
+ * (AGenCharacterBase::GetLocalMoveSpeedMultiplier) pendant ce mouvement. Un bit quand il vaut 1, sinon le flottant.
+ */
+struct FGenCharacterNetworkMoveData : public FCharacterNetworkMoveData
+{
+	float LocalSpeedMultiplier = 1.f;
+
+	virtual void ClientFillNetworkMoveData(const FSavedMove_Character& ClientMove, ENetworkMoveType MoveType) override;
+	virtual bool Serialize(UCharacterMovementComponent& CharacterMovement, FArchive& Ar, UPackageMap* PackageMap, ENetworkMoveType MoveType) override;
+};
+
+/** Conteneur des trois mouvements d'un envoi (nouveau, en attente, ancien important), à nos données. */
+struct FGenCharacterNetworkMoveDataContainer : public FCharacterNetworkMoveDataContainer
+{
+	FGenCharacterNetworkMoveDataContainer();
+
+	FGenCharacterNetworkMoveData GenMoveData[3];
+};
+
+/** Mouvement sauvegardé du client : retient le multiplicateur local, rejoué tel quel, jamais combiné à un autre. */
+class FGenSavedMove : public FSavedMove_Character
+{
+public:
+	typedef FSavedMove_Character Super;
+
+	float LocalSpeedMultiplier = 1.f;
+
+	virtual void Clear() override;
+	virtual void SetMoveFor(ACharacter* C, float InDeltaTime, FVector const& NewAccel, FNetworkPredictionData_Client_Character& ClientData) override;
+	virtual bool CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* InCharacter, float MaxDelta) const override;
+	virtual bool IsImportantMove(const FSavedMovePtr& LastAckedMove) const override;
+};
+
+class FGenNetworkPredictionData_Client : public FNetworkPredictionData_Client_Character
+{
+public:
+	typedef FNetworkPredictionData_Client_Character Super;
+
+	explicit FGenNetworkPredictionData_Client(const UCharacterMovementComponent& ClientMovement) : Super(ClientMovement) {}
+
+	virtual FSavedMovePtr AllocateNewMove() override;
+};
 
 /**
  * Mouvement des personnages de Gen (revue V6-V8, I-2).
@@ -24,6 +71,13 @@
  * Chaque changement de ralenti rouvre une fenêtre et remet le budget à plein ; un écart qui dépasse le reste du budget
  * est corrigé et ferme la fenêtre. Gain maximal d'un tricheur : 10 cm par changement de ralenti (deux par boule de feu
  * de 0.40 s : ~50 cm/s, contre ~6 m/s avant).
+ *
+ * Revue PIE finale, C-1 : sous 60 ms de latence, la fin d'un ralenti minuté (fenêtre de contre) tombait encore entre deux
+ * mouvements de part et d'autre : 11 à 17 cm d'écart, au-delà du budget. Chaque mouvement porte maintenant le
+ * multiplicateur local du client (FGenSavedMove, FGenCharacterNetworkMoveData) : le serveur simule ce mouvement à cette
+ * vitesse, comme le client. Il ne croit pas le client sur parole : l'annonce est bornée par ce que son propre état
+ * permet à SpeedChangeCorrectionGrace près (AGenCharacterBase::GetMaxClaimableLocalMoveSpeedMultiplier) ; au-delà, il
+ * prend son plafond et l'écart est corrigé comme avant. La grâce bornée par un budget reste le filet de sécurité.
  */
 UCLASS()
 class GEN_API UGenCharacterMovementComponent : public UCharacterMovementComponent
@@ -31,6 +85,13 @@ class GEN_API UGenCharacterMovementComponent : public UCharacterMovementComponen
 	GENERATED_BODY()
 
 public:
+	UGenCharacterMovementComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
+
+	/** Serveur : mouvements dont le multiplicateur annoncé dépassait le plafond permis (ramené au plafond ; tests). */
+	int32 GetClampedSpeedClaimCount() const { return ClampedSpeedClaimCount; }
+
 	/** Serveur : un ralenti local vient de changer ; ouvre la fenêtre de grâce des corrections. */
 	void NoteLocalSpeedChange();
 
@@ -50,6 +111,9 @@ public:
 	float GetSpeedChangeErrorBudget() const { return SpeedChangeErrorTolerance; }
 
 protected:
+	/** Mouvement du client simulé par le serveur (ou rejoué par le client) : à la vitesse du multiplicateur annoncé. */
+	virtual void MoveAutonomous(float ClientTimeStamp, float DeltaTime, uint8 CompressedFlags, const FVector& NewAccel) override;
+
 	virtual bool ServerCheckClientError(float ClientTimeStamp, float DeltaTime, const FVector& Accel, const FVector& ClientWorldLocation, const FVector& RelativeClientLocation,
 		FMovementBaseInterfaceData* ClientMovementBaseInterfaceData, FName ClientBaseBoneName, uint8 ClientMovementMode) override;
 
@@ -71,6 +135,9 @@ protected:
 	float SpeedChangeErrorTolerance = 10.f;
 
 private:
+	FGenCharacterNetworkMoveDataContainer GenMoveDataContainer;
+	int32 ClampedSpeedClaimCount = 0;
+
 	double GraceEndTime = -1.0;
 	/** Reste du budget d'écart de la fenêtre en cours (remis à SpeedChangeErrorTolerance à chaque changement de ralenti). */
 	float GraceErrorBudget = 0.f;

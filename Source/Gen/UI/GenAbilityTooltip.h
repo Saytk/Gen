@@ -2,12 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "GenAbilityTooltip.generated.h"
 
 class UBorder;
 class UGenTextBlock;
 class USizeBox;
-struct FGenAbilityTooltipData;
 
 /**
  * Infobulle d'un sort de la barre (UI_Guidelines §4.1, infobulle). Logique en C++, disposition et styles dans
@@ -23,6 +23,15 @@ class GEN_API UGenAbilityTooltip : public UCommonUserWidget
 public:
 	/** Remplit l'infobulle (contenu généré par GenAbilityTooltip::Build) et le libellé de touche de l'emplacement. */
 	void SetContent(const FGenAbilityTooltipData& Data, const FText& KeyLabel);
+
+	/**
+	 * Revue PIE finale, C-2 : carte compacte du panneau des détails (Alt maintenu) : en-tête, statistiques et lignes par
+	 * flamme (FGenAbilityTooltipData::GetCompactLinesText), sans description ; largeur fixe TooltipCompactWidth pour
+	 * DetailsColumns cartes par rangée. Le survol garde la carte complète. Avant ou après SetContent.
+	 */
+	void SetCompact(bool bInCompact);
+
+	bool IsCompact() const { return bCompact; }
 
 	/** Fondu d'entrée (motion.fast) après Delay secondes. */
 	void Show(float Delay);
@@ -61,6 +70,8 @@ protected:
 
 private:
 	void ApplyStyle();
+	/** Affiche Content selon le mode (complet ou compact). */
+	void ApplyContent();
 	void StartFade();
 	void StepFade();
 	void ApplyOpacity();
@@ -71,4 +82,10 @@ private:
 	float Opacity = 0.f;
 	/** Texte posé avant NativeConstruct (création puis remplissage dans la même image). */
 	bool bStyled = false;
+
+	/** Revue PIE finale, C-2 : contenu retenu (le mode peut changer après SetContent). */
+	FGenAbilityTooltipData Content;
+	FText ContentKeyLabel;
+	bool bHasContent = false;
+	bool bCompact = false;
 };

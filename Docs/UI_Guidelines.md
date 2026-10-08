@@ -557,6 +557,7 @@ x=0                                                                   x=1920
   - Numbers use the current culture (`FText::AsNumber`); distances in metres, durations in seconds.
 - **Look:** `Common/WBP_Tooltip` (C++ base `UGenAbilityTooltip`). `bg.panelRaised` panel, `radius.panel` corners, 1 px `line.bronze` edge, 8 px padding (HUD panel), text in `TS_Body` (sentence case, left-aligned, wraps at `TooltipMaxWidth`, 480 px at text size 100%: about 80 characters). Tooltips scale fully with the text-size setting (§7.2).
 - **Placement:** above the hovered slot's disc, centred, 8 px gap, in a zero-size canvas inside `WBP_AbilitySlot` (it never changes the bar's layout and is never added to the viewport). With the details key, one card per ability in the bar's `DetailsPanel` (a wrap box above the row).
+- **Compact cards (details key):** the held-key view uses compact cards so all seven fit on screen. A compact card keeps the header (name, key, stats) and the per-flame lines, with no description and no extra effect lines. A spell without thresholds keeps its first effect line. Each card has a fixed width (`TooltipCompactWidth`, 340 px at text size 100%). The cards sit `DetailsColumns` (4) per row: 7 abilities take 2 rows, at most about 45% of a 1080p screen. The bar sets the wrap box's wrap size from these tokens. Hovering a slot still shows the full card.
 
 ### 4.2 Own health and energy (bottom bar, left block)
 
@@ -1624,6 +1625,7 @@ Copy this into the PR description and tick each item.
 
 | Date | Section | Change |
 |---|---|---|
+| 2026-10-08 | §4.1 Ability tooltip | Added: compact cards for the held details key (header, stats, per-flame lines; no description), fixed width, 4 per row. New `DA_UIMetrics` values `TooltipCompactWidth`, `DetailsColumns` (final PIE matrix, C-2) |
 | 2026-10-08 | §4.1 Shared input | Added: a slot shared by several abilities shows the one its input would activate now (Pyroblast on LMB while ablaze), following the tag event (final integration review, M-9) |
 | 2026-10-08 | §4.1 Ready flash | Clarified: the flash fires on the change into Ready from Cooldown or Not enough energy, never from Cooldown into Not enough energy (review of Plan 3 Tasks 8–10, M4) |
 | 2026-10-08 | §4.1 Ability tooltip | Added: hover (0.3 s) and held "show details" key, content generated from the ability's live data, `bg.panelRaised` / `TS_Body` / `radius.panel` / `motion.fast`. New `DA_UIPalette` tokens `Bg_PanelRaised`, `Accent_Brass` and `DA_UIMetrics` values `TooltipHoverDelay`, `MotionFast`, `HudPanelPadding`, `RadiusPanel`, `PanelOutlineWidth`, `TooltipMaxWidth`, `TooltipGap` |

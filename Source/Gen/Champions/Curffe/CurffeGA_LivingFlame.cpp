@@ -1,6 +1,7 @@
 #include "Champions/Curffe/CurffeGA_LivingFlame.h"
 
 #include "AbilitySystem/GenAbilityTooltipData.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
@@ -73,11 +74,23 @@ void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 	// Sans sort pendant la forme : verrou de lancement, seul point d'entrée du tag (State.CastLocked local + fenêtre
 	// du serveur : la forme du serveur commence ~½ RTT après celle du client, il ne refuse ses sorts qu'au début)
 	SetCastLock(true, FormDuration);
+	// Revue PIE finale, C-5 : fin prévue de la forme (tampon des appuis du client)
+	if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+	{
+		GenASC->NoteLocalCastLockDuration(FormDuration);
+	}
 
 	// Plan Visuals V4 : la forme se lit comme une canalisation (barre qui se vide, télégraphe de l'anneau)
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
 		Character->StartChannel(GetClass(), FormDuration);
+	}
+
+	// Revue PIE finale, C-1 : la hâte commencera à la fin de la forme (minuteur de chaque machine) ; le serveur accepte
+	// les mouvements hâtés du client un peu avant la sienne
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo(); Character && HasteMultiplier > 1.f && HasteDuration > 0.f)
+	{
+		Character->ExpectLocalMoveSpeedMultiplier(GetClass(), CurffeLivingFlamePrivate::HasteReason, HasteMultiplier, FormDuration);
 	}
 
 	UAbilityTask_WaitDelay* FormTask = UAbilityTask_WaitDelay::WaitDelay(this, FormDuration);
@@ -109,7 +122,7 @@ void UCurffeGA_LivingFlame::OnFormEnded()
 	{
 		const FName HasteReason = CurffeLivingFlamePrivate::HasteReason;
 		const UClass* HasteSource = GetClass();
-		HasteCharacter->SetLocalMoveSpeedMultiplier(HasteSource, HasteReason, HasteMultiplier);
+		HasteCharacter->SetLocalMoveSpeedMultiplier(HasteSource, HasteReason, HasteMultiplier, HasteDuration);
 		GetWorld()->GetTimerManager().SetTimer(HasteTimer, FTimerDelegate::CreateWeakLambda(HasteCharacter, [HasteCharacter, HasteSource, HasteReason]()
 		{
 			HasteCharacter->ClearLocalMoveSpeedMultiplier(HasteSource, HasteReason);

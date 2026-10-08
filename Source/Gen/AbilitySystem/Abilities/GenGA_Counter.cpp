@@ -155,7 +155,8 @@ void UGenGA_Counter::SetWindowState(bool bActive)
 		static const FName WindowReason(TEXT("CounterWindow"));
 		if (bActive)
 		{
-			Character->SetLocalMoveSpeedMultiplier(this, WindowReason, WindowMoveSpeedMultiplier);
+			// Revue PIE finale, C-1 : fin prévue au bout de la fenêtre (le serveur accepte la vitesse d'après à la grâce près)
+			Character->SetLocalMoveSpeedMultiplier(this, WindowReason, WindowMoveSpeedMultiplier, CounterWindow);
 		}
 		else
 		{

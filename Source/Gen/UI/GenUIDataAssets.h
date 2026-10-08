@@ -77,6 +77,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip") float TooltipMaxWidth = 480.f;
 	/** Écart entre l'infobulle et le haut de l'emplacement (§2.7, entre groupes : 8 px). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip") float TooltipGap = 8.f;
+	/**
+	 * Revue PIE finale, C-2 : largeur fixe d'une carte compacte du panneau des détails (Alt maintenu), à l'échelle de texte
+	 * 100 %. DetailsColumns cartes par rangée : 7 sorts en 2 rangées, sous ~45 % de la hauteur d'un écran 1080p.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip") float TooltipCompactWidth = 340.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip", meta = (ClampMin = "1")) int32 DetailsColumns = 4;
 	/** Sondage du survol des emplacements et pas du fondu (pas de NativeTick, §8.4). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip", meta = (Units = "s")) float TooltipPollInterval = 0.05f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tooltip", meta = (Units = "s")) float TooltipFadeStep = 0.016f;

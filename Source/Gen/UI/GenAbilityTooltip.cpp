@@ -73,7 +73,17 @@ void UGenAbilityTooltip::ApplyStyle()
 	}
 	if (ContentBox)
 	{
-		ContentBox->SetMaxDesiredWidth(Metrics->TooltipMaxWidth);
+		// Revue PIE finale, C-2 : carte compacte à largeur fixe (DetailsColumns cartes par rangée du panneau des détails)
+		if (bCompact)
+		{
+			ContentBox->SetWidthOverride(Metrics->TooltipCompactWidth);
+			ContentBox->SetMaxDesiredWidth(Metrics->TooltipCompactWidth);
+		}
+		else
+		{
+			ContentBox->ClearWidthOverride();
+			ContentBox->SetMaxDesiredWidth(Metrics->TooltipMaxWidth);
+		}
 	}
 	if (KeyText)
 	{
@@ -96,12 +106,39 @@ void UGenAbilityTooltip::SetContent(const FGenAbilityTooltipData& Data, const FT
 	{
 		ApplyStyle();
 	}
-	NameText->SetText(Data.Name);
-	SetOptionalText(KeyText, KeyLabel);
-	SetOptionalText(StatsText, Data.GetStatsText());
-	DescriptionText->SetText(Data.Description);
-	DescriptionText->SetVisibility(Data.Description.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	SetOptionalText(LinesText, Data.GetLinesText());
+	Content = Data;
+	ContentKeyLabel = KeyLabel;
+	bHasContent = true;
+	ApplyContent();
+}
+
+void UGenAbilityTooltip::SetCompact(bool bInCompact)
+{
+	if (bCompact == bInCompact)
+	{
+		return;
+	}
+	bCompact = bInCompact;
+	if (bStyled)
+	{
+		ApplyStyle();
+	}
+	if (bHasContent)
+	{
+		ApplyContent();
+	}
+}
+
+void UGenAbilityTooltip::ApplyContent()
+{
+	NameText->SetText(Content.Name);
+	SetOptionalText(KeyText, ContentKeyLabel);
+	SetOptionalText(StatsText, Content.GetStatsText());
+	// Revue PIE finale, C-2 : la carte compacte n'a pas de description, et seulement les lignes par flamme
+	const FText Description = bCompact ? FText::GetEmpty() : Content.Description;
+	DescriptionText->SetText(Description);
+	DescriptionText->SetVisibility(Description.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	SetOptionalText(LinesText, bCompact ? Content.GetCompactLinesText() : Content.GetLinesText());
 }
 
 FText UGenAbilityTooltip::GetNameText() const

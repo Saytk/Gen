@@ -14,6 +14,13 @@ FText FGenAbilityTooltipData::GetLinesText() const
 	return GenAbilityTooltip::Join(Lines, FText::FromString(TEXT("\n")));
 }
 
+FText FGenAbilityTooltipData::GetCompactLinesText() const
+{
+	const int32 Count = CoreLineCount > 0 ? FMath::Min(CoreLineCount, Lines.Num()) : FMath::Min(1, Lines.Num());
+	TArray<FText> Compact(Lines.GetData(), Count);
+	return GenAbilityTooltip::Join(Compact, FText::FromString(TEXT("\n")));
+}
+
 FString FGenAbilityTooltipData::ToString() const
 {
 	return FString::Printf(TEXT("%s\n%s\n%s\n%s"), *Name.ToString(), *GetStatsText().ToString(), *Description.ToString(), *GetLinesText().ToString());
@@ -140,6 +147,7 @@ namespace GenAbilityTooltip
 				Out.Lines.Add(Effect);
 			}
 		}
+		Out.CoreLineCount = Out.Lines.Num();
 		Ability.GetTooltipEffectLines(Out.Lines);
 	}
 }

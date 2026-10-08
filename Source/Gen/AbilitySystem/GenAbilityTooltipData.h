@@ -22,11 +22,23 @@ struct GEN_API FGenAbilityTooltipData
 	/** Un seuil de nourrissage par ligne (0 à MaxFeed), puis les lignes d'effet (fenêtres, durées, états). */
 	TArray<FText> Lines;
 
+	/**
+	 * Revue PIE finale, C-2 : nombre de lignes « par flamme » en tête de Lines (un seuil par ligne, ou l'effet unique d'un
+	 * sort non nourri), avant les lignes d'effet. La carte compacte n'affiche qu'elles.
+	 */
+	int32 CoreLineCount = 0;
+
 	/** En-tête sur une ligne (« Incantation 0,4 s · Recharge 8 s »). */
 	FText GetStatsText() const;
 
 	/** Lignes d'effet, une par ligne. */
 	FText GetLinesText() const;
+
+	/**
+	 * Revue PIE finale, C-2 : lignes de la carte compacte (détails, Alt maintenu) : les lignes par flamme seulement ; un sort
+	 * qui n'en a pas garde sa première ligne d'effet (la carte dit toujours ce que fait le sort).
+	 */
+	FText GetCompactLinesText() const;
 
 	/** Tout le texte (tests, journal). */
 	FString ToString() const;

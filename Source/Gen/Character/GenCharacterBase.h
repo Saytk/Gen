@@ -233,8 +233,30 @@ public:
 	 * Tasks 7-8, I-4 : un GE prédit restait ~1 RTT de trop chez le client (le retrait du serveur) => correction du
 	 * mouvement à chaque fin de phase. Les autres clients n'en ont pas besoin (mouvement répliqué).
 	 */
-	void SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier);
+	void SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier, float ExpectedDuration = 0.f);
 	void ClearLocalMoveSpeedMultiplier(const UObject* Source, FName Reason);
+
+	/**
+	 * Revue PIE finale, C-1 : ExpectedDuration (> 0) = fin prévue par le minuteur de CETTE machine (fenêtre de contre,
+	 * hâte). Le serveur s'en sert pour accepter qu'un client annonce déjà la vitesse d'après, la fin du client précédant
+	 * souvent la sienne de quelques images (GetMaxClaimableLocalMoveSpeedMultiplier). ExpectLocalMoveSpeedMultiplier :
+	 * même chose pour un multiplicateur qui COMMENCERA dans Delay s (hâte posée à la fin de la forme de feu) ; oublié
+	 * quand il est posé (SetLocalMoveSpeedMultiplier) ou retiré.
+	 */
+	void ExpectLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier, float Delay);
+
+	/**
+	 * Revue PIE finale, C-1 : serveur, plus grand multiplicateur local qu'un mouvement du client peut annoncer maintenant
+	 * (UGenCharacterMovementComponent::MoveAutonomous). Le sien, ou une valeur qu'il a eue ou aura à Window s près :
+	 * celle d'avant un changement récent, celle d'après une fin prévue, celle d'un début prévu.
+	 */
+	float GetMaxClaimableLocalMoveSpeedMultiplier(float Window) const;
+
+	/** Vitesse de base (attribut MoveSpeed, hors multiplicateurs locaux), < 0 tant que l'ASC n'est pas initialisé. */
+	float GetBaseMoveSpeed() const;
+
+	/** Vitesse de marche du CMC = MoveSpeed × GetLocalMoveSpeedMultiplier() (le CMC la reprend après un mouvement rejoué). */
+	void RefreshMaxWalkSpeed();
 
 	/**
 	 * Revue V6-V8, I-2 : client propriétaire, envoie tout de suite le mouvement en attente au serveur. Appelé juste avant
@@ -489,16 +511,27 @@ private:
 	void RemoveStartupAbilitiesAndEffects();
 	void OnMoveSpeedChanged(const FOnAttributeChangeData& Data);
 
-	/** Vitesse de marche du CMC = MoveSpeed × GetLocalMoveSpeedMultiplier(). */
-	void RefreshMaxWalkSpeed();
-
 	struct FLocalMoveSpeedMultiplier
 	{
 		FObjectKey Source;
 		FName Reason;
 		float Multiplier = 1.f;
+		/** Revue PIE finale, C-1 : fin prévue (temps du monde), < 0 = inconnue (fin décidée par une RPC du joueur). */
+		double ExpectedEndTime = -1.0;
 	};
 	TArray<FLocalMoveSpeedMultiplier, TInlineAllocator<2>> LocalMoveSpeedMultipliers;
+
+	/** Revue PIE finale, C-1 : multiplicateurs annoncés (ExpectLocalMoveSpeedMultiplier) ; ExpectedEndTime = début prévu. */
+	TArray<FLocalMoveSpeedMultiplier, TInlineAllocator<1>> ExpectedLocalMoveSpeedMultipliers;
+
+	/** Revue PIE finale, C-1 : produit des multiplicateurs AVANT chacun des derniers changements (temps du monde). */
+	struct FLocalMoveSpeedChange
+	{
+		double Time = 0.0;
+		float ProductBefore = 1.f;
+	};
+	TArray<FLocalMoveSpeedChange, TInlineAllocator<4>> RecentLocalMoveSpeedChanges;
+	void RecordLocalMoveSpeedChange(float ProductBefore);
 
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 	TArray<FActiveGameplayEffectHandle> GrantedEffectHandles;
