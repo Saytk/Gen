@@ -44,6 +44,24 @@ namespace GenMontageTiming
 		return bScaleChargeToCastTime && bHasCastMontage && CastTime > KINDA_SMALL_NUMBER;
 	}
 
+	/** Sections de FedChargeMontage : Fed_1..Fed_3 (une par nombre d'unités nourries, non enchaînées). */
+	inline constexpr int32 MaxFedChargeSection = 3;
+
+	/**
+	 * Section de la charge nourrie (UGenGA_Cast::FedChargeMontage) pour Fed unités nourries : Fed_<clamp(Fed, 1, 3)>,
+	 * NAME_None sans nourrissage (ChargeMontage normal).
+	 */
+	inline FName GetFedChargeSection(int32 Fed)
+	{
+		return Fed > 0 ? FName(*FString::Printf(TEXT("Fed_%d"), FMath::Clamp(Fed, 1, MaxFedChargeSection))) : FName(NAME_None);
+	}
+
+	/** Vitesse de la section de charge nourrie : SA longueur (jamais celle du montage entier) / CastTime. */
+	inline float GetFedChargeRate(float SectionLength, float CastTime)
+	{
+		return GetPlayRate(SectionLength, CastTime);
+	}
+
 	/** Vrai si PlayRate s'écarte trop de la vitesse attendue (1, ou 2 pour le nourrissage rapide voulu). */
 	inline bool ShouldWarn(float PlayRate, float ExpectedRate = 1.f)
 	{

@@ -475,7 +475,8 @@ void UGenGA_Cast::OnFeedSynced()
 	// on l'arrête explicitement, sinon il continuerait jusqu'au lancer ou à la fin du sort
 	if (FeedMontage)
 	{
-		const UAnimMontage* NextPhase = CastTime > 0.f ? ChargeMontage.Get() : nullptr;
+		FName ChargeSection;
+		const UAnimMontage* NextPhase = CastTime > 0.f ? GetChargePhaseMontage(ChargeSection) : nullptr;
 		if (!NextPhase || NextPhase->GetGroupName() != FeedMontage->GetGroupName())
 		{
 			StopFeedMontage();
@@ -576,12 +577,21 @@ void UGenGA_Cast::StartCasting()
 	// Le geste continue après la fin normale du sort (le lancer tombe à la fin de l'incantation).
 	// Une annulation (contrôle dur, mort) le coupe quand même : la tâche écoute OnGameplayAbilityCancelled.
 	// V3 : calé sur CastTime quand le lancer est un CastMontage à part ; montage unique du Plan 1 : vitesse 1.
-	if (ChargeMontage)
+	// Charge nourrie (FedChargeMontage) : la section du compte affiché, calée sur CastTime par SA longueur
+	FName ChargeSection;
+	UAnimMontage* ChargePhase = GetChargePhaseMontage(ChargeSection);
+	if (ChargePhase && ChargeSection != NAME_None)
+	{
+		const float SectionLength = ChargePhase->GetSectionLength(ChargePhase->GetSectionIndex(ChargeSection));
+		GetPhaseRate(ChargePhase, SectionLength, CastTime, 1.f); // avertissement seulement (clip à recaler)
+		PlayPhaseMontage(ChargePhase, GenMontageTiming::GetFedChargeRate(SectionLength, CastTime), /*bStopWhenAbilityEnds*/ false, ChargeSection);
+	}
+	else if (ChargePhase)
 	{
 		const float Rate = GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, CastMontage != nullptr, CastTime)
-			? GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), CastTime, 1.f)
+			? GetPhaseRate(ChargePhase, ChargePhase->GetPlayLength(), CastTime, 1.f)
 			: 1.f;
-		PlayPhaseMontage(ChargeMontage, Rate, /*bStopWhenAbilityEnds*/ false);
+		PlayPhaseMontage(ChargePhase, Rate, /*bStopWhenAbilityEnds*/ false);
 	}
 
 	CastStartTime = GetWorld()->GetTimeSeconds();
@@ -989,7 +999,23 @@ float UGenGA_Cast::GetPhaseRate(const UAnimMontage* Montage, float AuthoredLengt
 	return Rate;
 }
 
-UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds)
+UAnimMontage* UGenGA_Cast::GetChargePhaseMontage(FName& OutSection) const
+{
+	OutSection = NAME_None;
+	if (FedChargeMontage && FedVisualCount > 0)
+	{
+		const FName Section = GenMontageTiming::GetFedChargeSection(FedVisualCount);
+		if (FedChargeMontage->GetSectionIndex(Section) != INDEX_NONE)
+		{
+			OutSection = Section;
+			return FedChargeMontage;
+		}
+		GEN_CAST_LOG(Warning, "%s : section %s absente, ChargeMontage joué à la place", *GetNameSafe(FedChargeMontage), *Section.ToString());
+	}
+	return ChargeMontage;
+}
+
+UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds, FName StartSection)
 {
 	if (!Montage)
 	{
@@ -1001,7 +1027,7 @@ UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Mon
 	// que dans le même groupe de slots. Les assets doivent le respecter (vérifié aussi par le script des montages).
 	if (!bWarnedPhaseSlotGroups)
 	{
-		for (const UAnimMontage* Other : { FeedMontage.Get(), ChargeMontage.Get(), CastMontage.Get() })
+		for (const UAnimMontage* Other : { FeedMontage.Get(), ChargeMontage.Get(), FedChargeMontage.Get(), CastMontage.Get() })
 		{
 			if (Other && Other != Montage && Other->GetGroupName() != Montage->GetGroupName())
 			{
@@ -1015,7 +1041,7 @@ UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Mon
 #endif
 
 	UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-		this, NAME_None, Montage, Rate, NAME_None, bStopWhenAbilityEnds, CastMontageRootMotionScale);
+		this, NAME_None, Montage, Rate, StartSection, bStopWhenAbilityEnds, CastMontageRootMotionScale);
 	Task->ReadyForActivation();
 	return Task;
 }
@@ -1029,7 +1055,7 @@ void UGenGA_Cast::StopClientCastMontages()
 		return;
 	}
 
-	for (UAnimMontage* Montage : { FeedMontage.Get(), ChargeMontage.Get(), CastMontage.Get() })
+	for (UAnimMontage* Montage : { FeedMontage.Get(), ChargeMontage.Get(), FedChargeMontage.Get(), CastMontage.Get() })
 	{
 		if (Montage)
 		{
@@ -1048,7 +1074,7 @@ void UGenGA_Cast::AbortCastMontages()
 	{
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 		{
-			for (const UAnimMontage* Montage : { ChargeMontage.Get(), CastMontage.Get() })
+			for (const UAnimMontage* Montage : { ChargeMontage.Get(), FedChargeMontage.Get(), CastMontage.Get() })
 			{
 				if (Montage)
 				{

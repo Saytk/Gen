@@ -198,6 +198,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "CastTime > 0"))
 	TObjectPtr<UAnimMontage> ChargeMontage;
 
+	/**
+	 * Charge nourrie (optionnel, ex : AM_FlamePillar_Charge_Fed) : remplace ChargeMontage quand l'incantation commence avec
+	 * au moins une unité nourrie (compte AFFICHÉ). Sections Fed_1, Fed_2, Fed_3 non enchaînées ; la section
+	 * Fed_<clamp(N, 1, 3)> est jouée seule, calée sur CastTime (longueur de la section / CastTime). Section absente :
+	 * ChargeMontage. Même groupe de slots que les autres phases. Python : fed_charge_montage.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "bFeedable && CastTime > 0"))
+	TObjectPtr<UAnimMontage> FedChargeMontage;
+
 	/** Montage de lancer (optionnel, répliqué aux autres joueurs par le GAS). Joué au lancer. */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation")
 	TObjectPtr<UAnimMontage> CastMontage;
@@ -247,7 +256,13 @@ protected:
 	 * Joue un montage de phase à Rate (répliqué aux autres joueurs par le GAS), avec CastMontageRootMotionScale.
 	 * nullptr si Montage est nul (asset pas encore créé) : l'appelant n'a rien d'autre à faire.
 	 */
-	UAbilityTask_PlayMontageAndWait* PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds);
+	UAbilityTask_PlayMontageAndWait* PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds, FName StartSection = NAME_None);
+
+	/**
+	 * Montage de la phase de charge (après le nourrissage) : FedChargeMontage et sa section Fed_<N> si l'incantation
+	 * commence avec FedVisualCount > 0 et que la section existe, sinon ChargeMontage (OutSection = NAME_None).
+	 */
+	UAnimMontage* GetChargePhaseMontage(FName& OutSection) const;
 
 	/** Vitesse calée sur TargetDuration ; avertit si le clip devrait être recalé (hors Shipping). */
 	float GetPhaseRate(const UAnimMontage* Montage, float AuthoredLength, float TargetDuration, float ExpectedRate) const;

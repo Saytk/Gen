@@ -8,6 +8,24 @@
 #include "Champions/Curffe/CurffeHearthRules.h"
 #include "Champions/Curffe/CurffeTuning.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFedChargeSectionTest, "Gen.Visuals.FedChargeSection",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenFedChargeSectionTest::RunTest(const FString& Parameters)
+{
+	// UGenGA_Cast::FedChargeMontage (AM_FlamePillar_Charge_Fed : Fed_1@0, Fed_2@0.4, Fed_3@0.8, 0.4 s chacune)
+	TestEqual(TEXT("sans nourrissage : ChargeMontage"), GenMontageTiming::GetFedChargeSection(0), FName(NAME_None));
+	TestEqual(TEXT("1 unité"), GenMontageTiming::GetFedChargeSection(1), FName(TEXT("Fed_1")));
+	TestEqual(TEXT("2 unités"), GenMontageTiming::GetFedChargeSection(2), FName(TEXT("Fed_2")));
+	TestEqual(TEXT("3 unités"), GenMontageTiming::GetFedChargeSection(3), FName(TEXT("Fed_3")));
+	TestEqual(TEXT("au-delà : bornée à Fed_3"), GenMontageTiming::GetFedChargeSection(5), FName(TEXT("Fed_3")));
+	// Longueur de la SECTION (0.4 s), jamais celle du montage (1.2 s) : calée sur CastTime
+	TestEqual(TEXT("0.4 s sur 0.4 s : vitesse 1"), GenMontageTiming::GetFedChargeRate(0.4f, 0.4f), 1.f, 0.0001f);
+	TestEqual(TEXT("0.4 s sur 0.5 s : 0.8"), GenMontageTiming::GetFedChargeRate(0.4f, 0.5f), 0.8f, 0.0001f);
+	TestTrue(TEXT("pas la longueur du montage"), !FMath::IsNearlyEqual(GenMontageTiming::GetFedChargeRate(0.4f, 0.5f), GenMontageTiming::GetPlayRate(1.2f, 0.5f)));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenMontageTimingTest, "Gen.Visuals.MontageTiming",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
