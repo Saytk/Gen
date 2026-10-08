@@ -127,6 +127,9 @@ tout le reste avance sans cérémonie.
   Lire ensuite `index.json` dans le dossier du rapport, pas le log. `Tools/RunGenTests.ps1` fait les deux.
 
 **Moins d'allers-retours MCP** (détails et sources : `.superpowers/sdd/research-mcp-speed.md`)
+- `.mcp.json` porte `"timeout": 900000` (15 min) : sans lui, Claude Code coupe un appel long (tests, Live Coding)
+  au bout de 60 s sans premier octet ou 5 min sans réponse, puis peut le relancer pendant que le premier tourne
+  encore. `ModelContextProtocol.GenerateClientConfig` réécrit le fichier : remettre ce champ après.
 - `RunTestsByFilter` renvoie déjà le JSON complet par test : ne pas appeler `GetTestResults` ensuite.
 - Enchaîner plusieurs outils asynchrones en un seul appel avec `ProgrammaticToolset.execute_tool_script`
   (ex. `CompileLiveCoding` → `RunTestsByFilter` → verdict compact) : l'éditeur continue de tourner entre les
