@@ -255,7 +255,22 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 			})
 			.UntilClient(TEXT("Client 0 : touche tenue 0.55 s (1 flamme)"), 0, [this](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + 0.55f; }, DefaultWait())
 			.ThenClient(TEXT("Client 0 : relâche (lancer)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
-			.UntilClients(TEXT("Clients : annulation puis lancer vus"), [this](FBasePIENetworkComponentState& Client) { return CountReturnsToZero(Client.ClientIndex) >= 2; }, DefaultWait())
+			.UntilServer(TEXT("Serveur : second sort terminé"), [this](FBasePIENetworkComponentState& Server)
+			{
+				const AGenCharacterBase* Caster = FindCaster(Server.World);
+				return Caster && !Caster->GetCastInfo().IsCasting();
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : départ de l'attente"), [this](FBasePIENetworkComponentState& Server) { ClientMark = Server.World->GetTimeSeconds(); })
+			.UntilServer(TEXT("Serveur : 1 s après"), [this](FBasePIENetworkComponentState& Server) { return Server.World->GetTimeSeconds() >= ClientMark + 1.f; }, DefaultWait())
+			.ThenClients(TEXT("Clients : annulation puis lancer vus"), [this](FBasePIENetworkComponentState& Client)
+			{
+				FString Seen;
+				for (const FFedRecord& Record : Records.FindOrAdd(Client.ClientIndex))
+				{
+					Seen += FString::Printf(TEXT("%d->%d%s "), Record.Old, Record.New, Record.bPop ? TEXT("*") : TEXT(""));
+				}
+				ASSERT_THAT(IsTrue(CountReturnsToZero(Client.ClientIndex) >= 2, *FString::Printf(TEXT("Client %d : %s"), Client.ClientIndex, *Seen)));
+			})
 			.ThenServer(TEXT("Serveur dédié : aucun événement cosmétique"), [this](FBasePIENetworkComponentState&)
 			{
 				ASSERT_THAT(AreEqual(0, Records.FindOrAdd(ServerKey).Num(), TEXT("Rien sur le serveur dédié")));

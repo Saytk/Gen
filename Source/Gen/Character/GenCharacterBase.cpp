@@ -350,11 +350,12 @@ void AGenCharacterBase::ResetFedResource()
 
 void AGenCharacterBase::OnRep_FedResource(uint8 OldValue)
 {
-	// Revue V2-V4, M1 : compte d'une autre incantation que la dernière fois (un sort a pris l'affichage d'un sort encore
-	// affiché) => il repart de 0, le premier seuil du nouveau sort fait son pop
+	// Revue V2-V4, M1 : compte (non nul) d'une autre incantation que la dernière fois (un sort a pris l'affichage d'un
+	// sort encore affiché) => il repart de 0, le premier seuil du nouveau sort fait son pop. Un retour à 0 reçu avec la
+	// nouvelle incantation (annulation puis nouvel appui dans la même image du serveur) reste un retour à 0.
 	const bool bCasting = CastInfo.IsCasting();
 	const bool bNewCast = bCasting && CastInfo.StartTime != FedRepCastStartTime;
-	const int32 Old = bNewCast ? 0 : OldValue;
+	const int32 Old = bNewCast && FedResource > 0 ? 0 : OldValue;
 	FedRepCastStartTime = bCasting ? CastInfo.StartTime : -1.f;
 
 	// Revue V2-V4, M2 : pop seulement pour une hausse vue APRÈS l'incantation (reçue dans une image précédente). Reçus
