@@ -44,7 +44,7 @@ class GEN_API UGenGA_Projectile : public UGenGameplayAbility
 public:
 	UGenGA_Projectile();
 
-	/** Serveur : compte exact annoncé par le client distant à la fin de son nourrissage (affichage seulement). */
+	/** Serveur : compte exact annoncé par le client distant à la fin de son nourrissage (affichage seulement, borné par le temps). */
 	void ApplyReportedFedCount(int32 Reported);
 
 	//~ UGameplayAbility
@@ -189,8 +189,13 @@ private:
 	void StopFeedingLocal();
 	void EndFeedTasks();
 	void SetFedVisual(int32 Count);
-	/** Barre de cast : fin du nourrissage avec Count flammes (rappelable pour corriger le compte). */
-	void MarkFeedEnded(int32 Count);
+	/**
+	 * Serveur pour un client distant : recalcule l'affichage (estimation ou annonce du client bornée par le temps,
+	 * jamais en recul, GenFeeding::ReconcileDisplayedFed), l'applique et le renvoie.
+	 */
+	int32 ReconcileFedVisual();
+	/** Barre de cast : fin du nourrissage avec Count flammes (rappelable pour corriger le compte, sans recul sauf bFinal). */
+	void MarkFeedEnded(int32 Count, bool bFinal = false);
 	int32 GetAvailableFeed() const;
 
 	void StartCasting();

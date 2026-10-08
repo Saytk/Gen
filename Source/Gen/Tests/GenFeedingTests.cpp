@@ -73,15 +73,40 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFeedingReportTest, "Gen.Feeding.ReportedCou
 
 bool FGenFeedingReportTest::RunTest(const FString& Parameters)
 {
-	// ClampReportedFed(Reported, ServerEstimate, MaxFeed, Available) : 3 seuils
-	TestEqual(TEXT("annonce égale à l'estimation"), GenFeeding::ClampReportedFed(2, 2, 3, 5.f), 2);
-	TestEqual(TEXT("estimation en retard d'un tick (3 contre 2)"), GenFeeding::ClampReportedFed(3, 2, 3, 5.f), 3);
-	TestEqual(TEXT("estimation en avance d'un tick"), GenFeeding::ClampReportedFed(1, 2, 3, 5.f), 1);
-	TestEqual(TEXT("bluff de 3 flammes dès l'activation"), GenFeeding::ClampReportedFed(3, 0, 3, 5.f), 1);
-	TestEqual(TEXT("annonce trop basse"), GenFeeding::ClampReportedFed(0, 3, 3, 5.f), 2);
-	TestEqual(TEXT("borné par la ressource"), GenFeeding::ClampReportedFed(3, 2, 3, 2.f), 2);
-	TestEqual(TEXT("borné par le maximum du sort, Foyer plein"), GenFeeding::ClampReportedFed(5, 3, 3, 5.f), 3);
-	TestEqual(TEXT("plus de ressource du tout"), GenFeeding::ClampReportedFed(3, 3, 3, 0.f), 0);
+	// ReconcileDisplayedFed(Displayed, ServerEstimate, Reported, MaxFeed, Available, ElapsedFeedTime, FeedInterval) : 3 seuils, 0.3 s
+	constexpr int32 NoReport = INDEX_NONE;
+
+	// Sans annonce : l'estimation du serveur, bornée à la ressource et au maximum
+	TestEqual(TEXT("estimation seule"), GenFeeding::ReconcileDisplayedFed(1, 2, NoReport, 3, 5.f, 0.7f, 0.3f), 2);
+	TestEqual(TEXT("estimation bornée par la ressource"), GenFeeding::ReconcileDisplayedFed(0, 3, NoReport, 3, 2.f, 1.f, 0.3f), 2);
+
+	// Annonce : elle remplace l'estimation, bornée par le temps comme le tir (floor(écoulé / I) + 1)
+	TestEqual(TEXT("estimation en retard de 2 ticks, corrigée vers le haut"), GenFeeding::ReconcileDisplayedFed(1, 1, 3, 3, 5.f, 0.95f, 0.3f), 3);
+	TestEqual(TEXT("bluff de 3 flammes dès l'activation"), GenFeeding::ReconcileDisplayedFed(0, 0, 3, 3, 5.f, 0.f, 0.3f), 1);
+	TestEqual(TEXT("bluff : la borne monte avec le temps"), GenFeeding::ReconcileDisplayedFed(1, 0, 3, 3, 5.f, 0.35f, 0.3f), 2);
+	TestEqual(TEXT("annonce bornée par la ressource"), GenFeeding::ReconcileDisplayedFed(0, 0, 3, 3, 2.f, 1.f, 0.3f), 2);
+	TestEqual(TEXT("annonce bornée par le maximum du sort, Foyer plein"), GenFeeding::ReconcileDisplayedFed(0, 3, 5, 3, 5.f, 2.f, 0.3f), 3);
+
+	// Jamais de recul pendant le sort (4 -> 3 vu par les autres joueurs, revue M-1)
+	TestEqual(TEXT("annonce plus basse que l'affichage : l'affichage reste"), GenFeeding::ReconcileDisplayedFed(3, 3, 2, 3, 5.f, 0.9f, 0.3f), 3);
+	TestEqual(TEXT("annonce à 0 après un tick du serveur : reste à 1"), GenFeeding::ReconcileDisplayedFed(1, 1, 0, 3, 5.f, 0.31f, 0.3f), 1);
+	TestEqual(TEXT("estimation qui recule : l'affichage reste"), GenFeeding::ReconcileDisplayedFed(2, 1, NoReport, 3, 5.f, 0.6f, 0.3f), 2);
+	TestEqual(TEXT("affichage négatif ignoré"), GenFeeding::ReconcileDisplayedFed(-1, 0, NoReport, 3, 5.f, 0.f, 0.3f), 0);
+
+	// Suite d'appels d'un même sort : affichage monotone
+	int32 Shown = 0;
+	const int32 Estimates[] = { 1, 2, 2, 2 };
+	const int32 Reports[] = { NoReport, NoReport, 1, 1 };
+	const float Times[] = { 0.4f, 0.7f, 0.72f, 0.8f };
+	for (int32 Step = 0; Step < 4; ++Step)
+	{
+		const int32 Next = GenFeeding::ReconcileDisplayedFed(Shown, Estimates[Step], Reports[Step], 3, 5.f, Times[Step], 0.3f);
+		TestTrue(*FString::Printf(TEXT("étape %d : %d -> %d ne recule pas"), Step, Shown, Next), Next >= Shown);
+		Shown = Next;
+	}
+	TestEqual(TEXT("suite : 2 affichées"), Shown, 2);
+
+	TestTrue(TEXT("retard de l'estimation positif et moins d'un demi-intervalle"), GenFeeding::ServerEstimateLag > 0.f && GenFeeding::ServerEstimateLag < CurffeTuning::FeedInterval * 0.5f);
 	return true;
 }
 
@@ -108,6 +133,12 @@ bool FGenCastTimingTest::RunTest(const FString& Parameters)
 	// Client tricheur qui colle la visée à l'activation : l'incantation est imposée à la tolérance près
 	TestEqual(TEXT("visée collée à l'activation"), GenFeeding::GetServerCastWait(0.5f, 0.f, Tolerance), 0.5f - Tolerance, KINDA_SMALL_NUMBER);
 
+	// Signalement d'une visée en avance (Warning) : au-delà de tolérance + 0.25 s avant la fin
+	TestFalse(TEXT("activation renvoyée : pas de signalement"), GenFeeding::IsAimSuspiciouslyEarly(0.5f, 0.3f, Tolerance));
+	TestFalse(TEXT("limite du signalement"), GenFeeding::IsAimSuspiciouslyEarly(0.5f, 0.5f - Tolerance - GenFeeding::EarlyAimWarningMargin, Tolerance));
+	TestTrue(TEXT("visée collée à l'activation : signalée"), GenFeeding::IsAimSuspiciouslyEarly(0.5f, 0.f, Tolerance));
+	TestFalse(TEXT("incantation courte (0.3 s) : jamais signalée"), GenFeeding::IsAimSuspiciouslyEarly(0.3f, 0.f, Tolerance));
+
 	TestTrue(TEXT("tolérance petite devant les incantations"), GenFeeding::CastTimeTolerance > 0.f && GenFeeding::CastTimeTolerance <= 0.1f);
 	return true;
 }
@@ -126,6 +157,9 @@ bool FGenFeedingNextTickTest::RunTest(const FString& Parameters)
 	// Combustion : nourrissage à 0.15 s, les ticks en retard ne dérivent pas
 	TestEqual(TEXT("intervalle court (Combustion) : 3e tick"), GenFeeding::GetNextFeedTickDelay(10.f, 2, CurffeTuning::FastFeedInterval, 10.308f), 0.142f, 1.e-4f);
 	TestEqual(TEXT("intervalle nul"), GenFeeding::GetNextFeedTickDelay(10.f, 2, 0.f, 10.5f), 0.f, KINDA_SMALL_NUMBER);
+	// Serveur pour un client distant : estimation décalée de ServerEstimateLag (début du nourrissage inchangé)
+	TestEqual(TEXT("estimation du serveur : 1re flamme à 0.3 + 0.1 s"), GenFeeding::GetNextFeedTickDelay(10.f + GenFeeding::ServerEstimateLag, 0, 0.3f, 10.f), 0.4f, 1.e-4f);
+	TestEqual(TEXT("estimation du serveur : 3e flamme à 0.9 + 0.1 s"), GenFeeding::GetNextFeedTickDelay(10.f + GenFeeding::ServerEstimateLag, 2, 0.3f, 10.62f), 0.38f, 1.e-4f);
 	return true;
 }
 

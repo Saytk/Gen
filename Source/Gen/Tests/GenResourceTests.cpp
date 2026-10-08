@@ -10,50 +10,11 @@
 #include "Character/GenTrainingDummy.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Tests/GenTestWorld.h"
 
 namespace GenResourceTests
 {
-	/** Monde de jeu minimal (standalone, autorité) pour tester le GAS sans PIE. */
-	struct FScopedTestWorld
-	{
-		UWorld* World = nullptr;
-
-		FScopedTestWorld()
-		{
-			World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("GenResourceTestWorld"));
-			FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
-			Context.SetCurrentWorld(World);
-			World->InitializeActorsForPlay(FURL());
-			World->BeginPlay();
-		}
-
-		~FScopedTestWorld()
-		{
-			GEngine->DestroyWorldContext(World);
-			World->DestroyWorld(false);
-		}
-
-		/** Fait avancer le temps du monde (timers des effets périodiques). */
-		void Advance(float Seconds, float Step = 0.05f)
-		{
-			for (float Elapsed = 0.f; Elapsed < Seconds; Elapsed += Step)
-			{
-				// FTimerManager::Tick ignore un second appel dans la même frame (GFrameCounter) : on simule donc une frame par pas.
-				++GFrameCounter;
-				World->Tick(LEVELTICK_All, Step);
-			}
-		}
-
-		UAbilitySystemComponent* SpawnDummyASC()
-		{
-			AGenTrainingDummy* Dummy = World->SpawnActor<AGenTrainingDummy>();
-			if (Dummy && !Dummy->HasActorBegunPlay())
-			{
-				Dummy->DispatchBeginPlay();
-			}
-			return Dummy ? Dummy->GetAbilitySystemComponent() : nullptr;
-		}
-	};
+	using GenTestWorld::FScopedTestWorld;
 
 	float Get(UAbilitySystemComponent* ASC, const FGameplayAttribute& Attribute)
 	{

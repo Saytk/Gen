@@ -98,31 +98,39 @@ bool UGenGA_Projectile::IsServerForRemoteClient() const
 
 void UGenGA_Projectile::ApplyReportedFedCount(int32 Reported)
 {
-	if (!bFeedable || !IsServerForRemoteClient())
+	// Visée déjà reçue : le compte validé au lancer fait foi, une annonce en retard ne le change plus
+	if (!bFeedable || !IsServerForRemoteClient() || bServerShotLocked)
 	{
 		return;
 	}
 
+	// On garde l'annonce brute : tant que le nourrissage continue, sa borne de temps monte à chaque tick
+	ReportedFedCount = Reported;
+	const int32 Shown = ReconcileFedVisual();
+	if (Shown != Reported)
+	{
+		GEN_ABILITY_LOG(Verbose, "Compte annoncé par le client : %d, affiché %d (estimation %d)", Reported, Shown, FedCount);
+	}
+
+	// L'annonce (RPC du personnage) et le signal de fin (RPC de l'ASC) n'ont pas d'ordre garanti :
+	// arrivée après la fin du nourrissage, elle corrige la barre vue par les autres joueurs (sans la faire reculer)
+	if (!bIsFeeding)
+	{
+		MarkFeedEnded(Shown);
+	}
+}
+
+int32 UGenGA_Projectile::ReconcileFedVisual()
+{
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const float Available = ASC ? ASC->GetNumericAttribute(UGenAttributeSet::GetResourceAttribute()) : 0.f;
 
-	// À ±1 de l'estimation du serveur, borné à la ressource et aux flammes disponibles à l'appui (crans de la barre)
-	const int32 Accepted = GenFeeding::ClampReportedFed(Reported, FedCount, FMath::Min(MaxFeed, FeedSlotsAtPress), Available);
-	if (Accepted != Reported)
-	{
-		GEN_ABILITY_LOG(Verbose, "Compte annoncé par le client borné : %d -> %d (estimation %d, ressource %.0f)", Reported, Accepted, FedCount, Available);
-	}
-
-	// On garde l'annonce brute : si l'estimation avance encore, elle est rebornée au tick suivant
-	ReportedFedCount = Reported;
-	SetFedVisual(Accepted);
-
-	// L'annonce (RPC du personnage) et le signal de fin (RPC de l'ASC) n'ont pas d'ordre garanti :
-	// arrivée après la fin du nourrissage, elle corrige la barre vue par les autres joueurs
-	if (!bIsFeeding)
-	{
-		MarkFeedEnded(Accepted);
-	}
+	// Même borne de temps que le tir : pendant le nourrissage le temps écoulé, ensuite celui mesuré à la synchro
+	const float Elapsed = bIsFeeding ? GetWorld()->GetTimeSeconds() - FeedStartTime : ServerFeedElapsed;
+	const int32 Shown = GenFeeding::ReconcileDisplayedFed(FedVisualCount, FedCount, ReportedFedCount,
+		FMath::Min(MaxFeed, FeedSlotsAtPress), Available, Elapsed, FeedInterval);
+	SetFedVisual(Shown);
+	return Shown;
 }
 
 int32 UGenGA_Projectile::GetAvailableFeed() const
@@ -182,8 +190,10 @@ void UGenGA_Projectile::StartFeeding()
 
 void UGenGA_Projectile::ScheduleFeedTick()
 {
-	// Calé sur le début du nourrissage : les retards des ticks ne s'additionnent pas
-	const float Delay = GenFeeding::GetNextFeedTickDelay(FeedStartTime, FedCount, FeedInterval, GetWorld()->GetTimeSeconds());
+	// Calé sur le début du nourrissage : les retards des ticks ne s'additionnent pas.
+	// Serveur pour un client distant : estimation volontairement en retard (le client la corrige vers le haut).
+	const float EstimateStart = FeedStartTime + (IsServerForRemoteClient() ? GenFeeding::ServerEstimateLag : 0.f);
+	const float Delay = GenFeeding::GetNextFeedTickDelay(EstimateStart, FedCount, FeedInterval, GetWorld()->GetTimeSeconds());
 	FeedTickTask = UAbilityTask_WaitDelay::WaitDelay(this, Delay);
 	FeedTickTask->OnFinish.AddDynamic(this, &ThisClass::OnFeedTick);
 	FeedTickTask->ReadyForActivation();
@@ -201,11 +211,11 @@ void UGenGA_Projectile::OnFeedTick()
 	{
 		++FedCount;
 
-		// Serveur : le compte annoncé par le client (ServerReportFedResource) a pu arriver avant ce
-		// tick de l'estimation : c'est lui qui fait foi pour l'affichage (reborné à la nouvelle estimation)
-		if (ReportedFedCount != INDEX_NONE)
+		// Serveur pour un client distant : estimation, ou annonce du client si elle est déjà arrivée
+		// (sa borne de temps a monté), sans jamais faire reculer l'affichage
+		if (IsServerForRemoteClient())
 		{
-			ApplyReportedFedCount(ReportedFedCount);
+			ReconcileFedVisual();
 		}
 		else
 		{
@@ -238,6 +248,15 @@ void UGenGA_Projectile::StopFeedingLocal()
 	if (!bIsFeeding)
 	{
 		return;
+	}
+
+	// Seuil déjà franchi mais tick pas encore traité (le relâché est lu avant le minuteur de cette image) :
+	// la flamme est acquise, la barre l'a déjà montrée. Le serveur l'accepte (borne de temps + 1).
+	const int32 Limit = FMath::Min(GetAvailableFeed(), FeedSlotsAtPress);
+	if (FedCount < Limit && FeedInterval > 0.f && GetWorld()->GetTimeSeconds() >= FeedStartTime + (FedCount + 1) * FeedInterval)
+	{
+		++FedCount;
+		SetFedVisual(FedCount);
 	}
 
 	EndFeedTasks();
@@ -281,8 +300,12 @@ void UGenGA_Projectile::OnFeedSynced()
 		FedCount, GetWorld()->GetTimeSeconds() - FeedStartTime);
 
 	// Barre : les segments inutilisés se replient. Compte affiché = flammes qui quittent l'orbite
-	// (serveur pour un client distant : son estimation, ou l'annonce du client si elle est déjà arrivée).
-	// L'annonce du client arrivée après coup corrige la barre (ApplyReportedFedCount).
+	// (serveur pour un client distant : son estimation, ou l'annonce du client si elle est déjà arrivée,
+	// rebornée au temps mesuré). L'annonce du client arrivée après coup corrige la barre (ApplyReportedFedCount).
+	if (IsServerForRemoteClient())
+	{
+		ReconcileFedVisual();
+	}
 	MarkFeedEnded(FedVisualCount);
 
 	if (CastTime > 0.f)
@@ -309,11 +332,11 @@ void UGenGA_Projectile::EndFeedTasks()
 	}
 }
 
-void UGenGA_Projectile::MarkFeedEnded(int32 Count)
+void UGenGA_Projectile::MarkFeedEnded(int32 Count, bool bFinal)
 {
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		Character->MarkFeedEnded(GetClass(), Count); // sans effet si la barre n'est plus la nôtre
+		Character->MarkFeedEnded(GetClass(), Count, bFinal); // sans effet si la barre n'est plus la nôtre
 	}
 }
 
