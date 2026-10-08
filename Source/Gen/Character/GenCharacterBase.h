@@ -372,10 +372,11 @@ protected:
 
 	/**
 	 * Échelle de l'effet d'incantation par unité nourrie (Curffe : la charge de la main grandit d'un cran par flamme,
-	 * Curffe-Visuals.md §3.2). 0 = taille fixe. Python : cast_fx_scale_per_fed.
+	 * Curffe-Visuals.md §3.2). 0 = taille fixe. Python : cast_fx_scale_per_fed. 0.25 par défaut : les seuils de
+	 * NS_Curffe_GreatFireballCharge supposent cette valeur (les sorts non nourris restent à l'échelle 1).
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Cast")
-	float CastFXScalePerFed = 0.f;
+	float CastFXScalePerFed = 0.25f;
 
 	/** Autres clients : le compte nourri répliqué change (seuils, échelle de l'effet). */
 	UFUNCTION()
@@ -389,6 +390,9 @@ protected:
 
 	/** Échelle de CastFXComponent pour Count unités nourries (1 + CastFXScalePerFed × Count). */
 	void ApplyCastFXScale(int32 Count);
+
+	/** Point du cue de seuil : socket du sort (CastInfo.FXSocket), sinon l'effet d'incantation, sinon le personnage. */
+	FVector GetFeedCueLocation() const;
 
 	/** Non répliqué au propriétaire : il le prédit lui-même. */
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Gen|Leap")

@@ -78,9 +78,29 @@ void UGenGA_Counter::OnBlocked(FGameplayEventData Payload)
 		}
 	}
 
-	if (BlockCueTag.IsValid())
+	if (BlockCueTag.IsValid() && Self)
 	{
-		K2_ExecuteGameplayCue(BlockCueTag, MakeEffectContext(CurrentSpecHandle, CurrentActorInfo));
+		// Contrat de NS_Curffe_BackfireBlock (non attaché) : Location = point de blocage (la source bloquée, sinon
+		// l'attaquant), Normal = direction lanceur -> point à plat ; l'axe local −X du système pointe vers le lanceur
+		const AActor* SourceActor = Cast<AActor>(Payload.OptionalObject.Get());
+		const AActor* InstigatorActor = Payload.Instigator.Get();
+		const FVector CasterLocation = Self->GetActorLocation();
+		FVector BlockPoint = SourceActor ? SourceActor->GetActorLocation() : (InstigatorActor ? InstigatorActor->GetActorLocation() : CasterLocation);
+		FVector Normal = (BlockPoint - CasterLocation).GetSafeNormal2D();
+		if (Normal.IsNearlyZero())
+		{
+			// Source apparue dans le lanceur (ou inconnue) : devant lui
+			Normal = Self->GetActorForwardVector().GetSafeNormal2D(UE_SMALL_NUMBER, FVector::ForwardVector);
+			BlockPoint = CasterLocation + Normal * 50.f;
+		}
+
+		FGameplayCueParameters CueParams;
+		CueParams.Location = BlockPoint;
+		CueParams.Normal = Normal;
+		CueParams.Instigator = const_cast<AActor*>(InstigatorActor);
+		CueParams.EffectCauser = const_cast<AGenCharacterBase*>(Self);
+		CueParams.SourceObject = Payload.OptionalObject;
+		K2_ExecuteGameplayCueWithParams(BlockCueTag, CueParams);
 	}
 
 	UE_LOG(LogGenCounter, Verbose, TEXT("%s : coup bloqué n°%d (%s, nature %d), +%.0f ressource, +%.0f énergie"), *GetName(), BlockCount,

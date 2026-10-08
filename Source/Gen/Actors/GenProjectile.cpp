@@ -53,6 +53,8 @@ void AGenProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGenProjectile, ImpactLocation);
 	DOREPLIFETIME_CONDITION(AGenProjectile, Speed, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AGenProjectile, ShotScale, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AGenProjectile, ExplosionRadius, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AGenProjectile, KnockbackDistance, COND_InitialOnly);
 }
 
 void AGenProjectile::InitializeShot(const FGenProjectileShotParams& Params)
@@ -351,6 +353,20 @@ void AGenProjectile::PlayImpactEffects()
 	if (ImpactSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, Location);
+	}
+
+	// Éclat de zone (et rayons d'expulsion s'il repousse) au rayon exact du tir, en plus de l'impact. Pool : Art Bible §7.8
+	if (ExplosionRadius > 0.f && GetNetMode() != NM_DedicatedServer)
+	{
+		const FVector SplashScale(ExplosionRadius / FMath::Max(SplashImpactReferenceRadius, 1.f));
+		if (SplashImpactFX)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, SplashImpactFX, Location, GetActorRotation(), SplashScale, true, true, ENCPoolMethod::AutoRelease);
+		}
+		if (KnockbackImpactFX && KnockbackDistance > 0.f)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, KnockbackImpactFX, Location, GetActorRotation(), SplashScale, true, true, ENCPoolMethod::AutoRelease);
+		}
 	}
 
 	// On masque les composants plutôt que l'acteur : un acteur caché sans collision cesse

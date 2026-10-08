@@ -408,7 +408,7 @@ void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New, bool bAll
 		// donne qu'un pop : GCN_Curffe_FeedThreshold se dimensionne sur ce compte, jamais sur "+1"
 		FGameplayCueParameters Params;
 		Params.RawMagnitude = New;
-		Params.Location = CastFXComponent ? CastFXComponent->GetComponentLocation() : GetActorLocation();
+		Params.Location = GetFeedCueLocation();
 		Params.SourceObject = CastInfo.Ability ? CastInfo.Ability->GetDefaultObject() : nullptr;
 		Params.Instigator = this;
 		Params.EffectCauser = this;
@@ -421,6 +421,17 @@ void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New, bool bAll
 		}
 		OnFedThresholdReached.Broadcast(this, New);
 	}
+}
+
+FVector AGenCharacterBase::GetFeedCueLocation() const
+{
+	// Contrat de GCN_Curffe_FeedThreshold : au socket du sort (main, pieds pour le bond), là où les flammes arrivent
+	const USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (MeshComponent && !CastInfo.FXSocket.IsNone() && MeshComponent->DoesSocketExist(CastInfo.FXSocket))
+	{
+		return MeshComponent->GetSocketLocation(CastInfo.FXSocket);
+	}
+	return CastFXComponent ? CastFXComponent->GetComponentLocation() : GetActorLocation();
 }
 
 void AGenCharacterBase::ApplyCastFXScale(int32 Count)

@@ -121,6 +121,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|FX")
 	TObjectPtr<USoundBase> ImpactSound;
 
+	/**
+	 * Éclat de zone à l'impact (NS_Curffe_SplashImpact), seulement si le tir a un rayon d'explosion, en plus d'ImpactFX :
+	 * échelle uniforme ExplosionRadius / SplashImpactReferenceRadius (image 1 au rayon exact). Python : splash_impact_fx.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|FX")
+	TObjectPtr<UNiagaraSystem> SplashImpactFX;
+
+	/** Rayons d'expulsion (NS_Curffe_KnockbackStreaks) : seulement si le tir repousse, même point et même échelle que l'éclat. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|FX")
+	TObjectPtr<UNiagaraSystem> KnockbackImpactFX;
+
+	/** Rayon pour lequel SplashImpactFX et KnockbackImpactFX sont écrits à l'échelle 1. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|FX", meta = (ClampMin = "1.0", Units = "cm"))
+	float SplashImpactReferenceRadius = 150.f;
+
 	UPROPERTY(ReplicatedUsing = OnRep_Exploded)
 	bool bExploded = false;
 
@@ -131,8 +146,12 @@ protected:
 	UPROPERTY(Replicated)
 	float ShotScale = 1.f;
 
-	/** Serveur uniquement. */
+	/** Rayon d'explosion du tir, répliqué à l'apparition (taille de l'éclat chez les clients). */
+	UPROPERTY(Replicated)
 	float ExplosionRadius = 0.f;
+
+	/** Repoussement du tir, répliqué à l'apparition (rayons d'expulsion chez les clients). */
+	UPROPERTY(Replicated)
 	float KnockbackDistance = 0.f;
 
 	bool IsValidTarget(const AGenCharacterBase* Character) const;
