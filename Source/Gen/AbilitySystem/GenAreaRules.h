@@ -31,19 +31,30 @@ namespace GenAreaRules
 		return FVector(Origin.X + Clamped.X, Origin.Y + Clamped.Y, Target.Z);
 	}
 
-	/** Revue Plan 2 Tasks 7-8, I-1 : écart de lacet (degrés) toléré entre le bond annoncé par le client et celui du serveur. */
-	inline constexpr float LeapYawTolerance = 5.f;
+	/**
+	 * Revue V6-V8, I-1 : écart (cm, à plat) toléré entre le point d'atterrissage du bond annoncé par le client, refait
+	 * depuis la position du SERVEUR, et le point d'atterrissage du serveur.
+	 */
+	inline constexpr float LeapLandingTolerance = 150.f;
 
 	/**
-	 * Bond annoncé par le client (distance et lacet mesurés depuis SA position) : le serveur le reprend tel quel s'il ne
-	 * dépasse pas la portée (1 cm de marge d'arrondi) et que son lacet est à YawTolerance près du sien. Les deux machines
-	 * construisent alors la même force de saut (FRootMotionSource_JumpForce::Matches : distance exacte, rotation à 1°),
-	 * le serveur peut synchroniser la source du client pendant les corrections. Refusé : le serveur garde ses valeurs.
+	 * Bond annoncé par le client (distance et lacet mesurés depuis SA position) : le serveur le reprend tel quel si la
+	 * distance ne dépasse pas la portée (1 cm de marge d'arrondi) et si ce bond, refait depuis la position du serveur
+	 * (ServerStart), atterrit à LandingTolerance près du point d'atterrissage du serveur (ServerLanding). Pas de test de
+	 * lacet (revue V6-V8, I-1) : quelques centimètres d'écart entre les positions faisaient refuser les bonds courts, et le
+	 * client choisit de toute façon son curseur ; seule la portée compte, et les murs restent bloqués par le mouvement.
+	 * Les deux machines construisent alors la même force de saut (FRootMotionSource_JumpForce::Matches). Refusé : le
+	 * serveur garde ses valeurs.
 	 */
-	inline bool AcceptClientLeap(float ClientDistance, float ClientYaw, float MaxDistance, float ServerYaw, float YawTolerance = LeapYawTolerance)
+	inline bool AcceptClientLeap(const FVector& ServerStart, float ClientDistance, float ClientYaw, const FVector& ServerLanding, float MaxDistance,
+		float LandingTolerance = LeapLandingTolerance)
 	{
-		return ClientDistance >= 0.f && ClientDistance <= MaxDistance + 1.f
-			&& FMath::Abs(FMath::FindDeltaAngleDegrees(ServerYaw, ClientYaw)) <= YawTolerance;
+		if (!FMath::IsFinite(ClientDistance) || !FMath::IsFinite(ClientYaw) || ClientDistance < 0.f || ClientDistance > MaxDistance + 1.f)
+		{
+			return false;
+		}
+		const FVector ClientLanding = ServerStart + FRotator(0.f, ClientYaw, 0.f).Vector() * FMath::Min(ClientDistance, MaxDistance);
+		return FVector::Dist2D(ClientLanding, ServerLanding) <= LandingTolerance;
 	}
 
 	/**

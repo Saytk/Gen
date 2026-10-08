@@ -4,6 +4,7 @@
 #include "AbilitySystem/Abilities/GenGA_Cast.h"
 #include "GenGA_Leap.generated.h"
 
+class ACharacter;
 class AGenGroundArea;
 class UAbilityTask_ApplyRootMotionJumpForce;
 class UAnimMontage;
@@ -142,4 +143,17 @@ private:
 	bool bAirborne = false;
 	/** Après LeapDuration, en chute : LandedDelegate du personnage écouté. */
 	bool bWaitingForFloor = false;
+
+	/**
+	 * Revue V6-V8, M-2 : contrôle en l'air pendant la chute après LeapDuration (0 = chute à la verticale du point visé,
+	 * dérive de la réplication seulement ; défaut du mouvement 0.05 : jusqu'à ~1.2 m pour 6 m de chute). Python : fall_air_control.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Leap", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FallAirControl = 0.f;
+
+	/** Contrôle en l'air du mouvement avant la chute (rendu à la fin), < 0 = pas modifié. */
+	float SavedAirControl = -1.f;
+
+	/** Passe en chute libre (après LeapDuration ou atterrissage de rejeu fini en l'air) : LandedDelegate et contrôle en l'air. */
+	void WaitForFloor(ACharacter& Character, bool bLimitAirControl);
 };

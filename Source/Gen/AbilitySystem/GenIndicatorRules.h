@@ -42,10 +42,15 @@ struct FGenAimGeometry
 /** Règles pures des indicateurs de visée et des télégraphes. Sans état, testées hors monde. */
 namespace GenIndicatorRules
 {
-	inline FVector FlatDirection(const FVector& Direction)
+	inline FVector FlatDirection(const FVector& Direction, const FVector& Fallback = FVector::ForwardVector)
 	{
 		const FVector Flat = Direction.GetSafeNormal2D();
-		return Flat.IsNearlyZero() ? FVector::ForwardVector : Flat;
+		if (!Flat.IsNearlyZero())
+		{
+			return Flat;
+		}
+		const FVector FlatFallback = Fallback.GetSafeNormal2D();
+		return FlatFallback.IsNearlyZero() ? FVector::ForwardVector : FlatFallback;
 	}
 
 	/** Valeurs du sort et de la classe de projectile (jamais recopiées à la main). */
@@ -132,10 +137,12 @@ namespace GenIndicatorRules
 	 * Bond : arc de portée, point d'atterrissage borné à MaxDistance (ClampToRange, comme le sort), et une amorce par
 	 * unité nourrie selon GetRingDirections(Fed, direction du bond) : les directions exactes de l'anneau (ComputeLeapFlight).
 	 */
-	inline void ComputeLeapAim(const FVector& Origin, const FVector& Cursor, const FLeapAimParams& P, int32 Fed, FGenAimGeometry& Out)
+	inline void ComputeLeapAim(const FVector& Origin, const FVector& Cursor, const FLeapAimParams& P, int32 Fed, FGenAimGeometry& Out,
+		const FVector& FallbackForward = FVector::ForwardVector)
 	{
+		// Revue V6-V8, M-4 : curseur sur le lanceur => son avant, comme le client (FillAimData) et le serveur (AimDirection)
 		const FVector Landing = GenAreaRules::ClampToRange(Origin, Cursor, P.MaxDistance);
-		ComputeLeapFlight(FVector(Landing.X, Landing.Y, Origin.Z), Landing - Origin, P, Fed, Out);
+		ComputeLeapFlight(FVector(Landing.X, Landing.Y, Origin.Z), FlatDirection(Landing - Origin, FallbackForward), P, Fed, Out);
 		Out.Origin = Origin;
 		Out.RangeArcRadius = P.MaxDistance;
 	}

@@ -21,11 +21,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogGenLeap, Log, All);
 
 namespace GenLeapPrivate
 {
-	/** Lacet (degrés) de la direction horizontale Direction, axe X si elle est nulle. */
-	float FlatYaw(const FVector& Direction)
+	/** Lacet (degrés) de la direction horizontale Direction ; nulle : Fallback (l'avant du lanceur, revue V6-V8, M-4). */
+	float FlatYaw(const FVector& Direction, const FVector& Fallback)
 	{
-		const FVector Flat = Direction.GetSafeNormal2D();
-		return (Flat.IsNearlyZero() ? FVector::ForwardVector : Flat).Rotation().Yaw;
+		return GenIndicatorRules::FlatDirection(Direction, Fallback).Rotation().Yaw;
 	}
 }
 
@@ -46,7 +45,7 @@ void UGenGA_Leap::FillAimData(FGenTargetData_Aim& Data) const
 	const FVector Start = Avatar->GetActorLocation();
 	const FVector Cursor = Data.HitResult.Location;
 	Data.LeapDistance = FVector::Dist2D(Start, GenAreaRules::ClampToRange(Start, Cursor, MaxDistance));
-	Data.LeapYaw = GenLeapPrivate::FlatYaw(Cursor - Start);
+	Data.LeapYaw = GenLeapPrivate::FlatYaw(Cursor - Start, Avatar->GetActorForwardVector());
 }
 
 bool UGenGA_Leap::GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const
@@ -56,7 +55,7 @@ bool UGenGA_Leap::GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, con
 	Params.MaxDistance = MaxDistance;
 	Params.LandingRadius = LandingRadius;
 	Params.RingProjectileRadius = GetRingProjectileRadius();
-	GenIndicatorRules::ComputeLeapAim(Caster.GetActorLocation(), Cursor, Params, Fed, Out);
+	GenIndicatorRules::ComputeLeapAim(Caster.GetActorLocation(), Cursor, Params, Fed, Out, Caster.GetActorForwardVector());
 	return true;
 }
 
@@ -71,8 +70,10 @@ void UGenGA_Leap::GetFlightGeometry(const FGenLeapTarget& Target, FGenAimGeometr
 
 void UGenGA_Leap::ResolveLeap(const FGenCastRelease& Release, const FVector& Start, float& OutDistance, float& OutYaw) const
 {
-	const float OwnDistance = FVector::Dist2D(Start, GenAreaRules::ClampToRange(Start, Release.AimLocation, MaxDistance));
-	const float OwnYaw = GenLeapPrivate::FlatYaw(Release.AimDirection);
+	const FVector OwnLanding = GenAreaRules::ClampToRange(Start, Release.AimLocation, MaxDistance);
+	const float OwnDistance = FVector::Dist2D(Start, OwnLanding);
+	// AimDirection n'est jamais nulle (avant du lanceur si le curseur est sur lui) : même repli que le client
+	const float OwnYaw = GenLeapPrivate::FlatYaw(Release.AimDirection, Release.AimDirection);
 	OutDistance = OwnDistance;
 	OutYaw = OwnYaw;
 
@@ -89,8 +90,8 @@ void UGenGA_Leap::ResolveLeap(const FGenCastRelease& Release, const FVector& Sta
 		return;
 	}
 
-	// Serveur : valeurs du client si elles sont plausibles depuis la position du serveur (sinon, les siennes)
-	if (GenAreaRules::AcceptClientLeap(Release.ClientLeapDistance, Release.ClientLeapYaw, MaxDistance, OwnYaw))
+	// Serveur : valeurs du client si son bond, refait depuis la position du serveur, atterrit près du sien (sinon, les siennes)
+	if (GenAreaRules::AcceptClientLeap(Start, Release.ClientLeapDistance, Release.ClientLeapYaw, OwnLanding, MaxDistance))
 	{
 		OutDistance = FMath::Min(Release.ClientLeapDistance, MaxDistance);
 		OutYaw = Release.ClientLeapYaw;
@@ -150,9 +151,11 @@ void UGenGA_Leap::OnCastLaunched(const FGenCastRelease& Release)
 	// I-2 : la force a son délai propre (bFinishOnLanded faux) et finit à LeapDuration en temps de simulation du
 	// mouvement ; au-delà, elle continuerait à ~15 m/s à l'horizontale. Vitesse finale nulle : la chute éventuelle
 	// part à la verticale du point visé (rebord, marche descendante).
+	// Revue V6-V8, M-1 : MinimumLandedTriggerTime est une FRACTION de la durée (le moteur la multiplie par Duration) :
+	// 0.5 => atterrissage précoce au plus tôt à LeapDuration × 0.5, comme le verrou ci-dessus
 	JumpTask = UAbilityTask_ApplyRootMotionJumpForce::ApplyRootMotionJumpForce(
 		this, NAME_None, LeapRotation, Distance, LeapHeight, LeapDuration,
-		/*MinimumLandedTriggerTime*/ MinimumLandedTime, /*bFinishOnLanded*/ false,
+		/*MinimumLandedTriggerTime*/ 0.5f, /*bFinishOnLanded*/ false,
 		ERootMotionFinishVelocityMode::SetVelocity, FVector::ZeroVector, 0.f, nullptr, nullptr);
 	JumpTask->OnLanded.AddDynamic(this, &ThisClass::OnJumpLanded);
 	JumpTask->OnFinish.AddDynamic(this, &ThisClass::OnJumpForceEnded);
@@ -168,8 +171,49 @@ void UGenGA_Leap::OnCastLaunched(const FGenCastRelease& Release)
 
 void UGenGA_Leap::OnJumpLanded()
 {
-	// Posé avant LeapDuration (marche montante, obstacle) : la force s'arrête là
-	Land(/*bSafetyNet*/ false);
+	// Revue V6-V8, M-3 : la tâche retient un atterrissage vu pendant un rejeu de mouvements et le signale à l'image
+	// suivante, même si le rejeu a fini en l'air ; un vrai atterrissage, lui, arrive pendant ProcessLanded (encore « en
+	// chute » à cet instant). On n'écoute plus la tâche (elle resignalerait à chaque image) et on revérifie le sol à
+	// l'image suivante : posé => atterrissage ; encore en l'air => on attend un vrai sol, la force continue jusqu'à sa fin
+	if (JumpTask)
+	{
+		JumpTask->OnLanded.RemoveDynamic(this, &ThisClass::OnJumpLanded);
+	}
+	TWeakObjectPtr<UGenGA_Leap> WeakThis(this);
+	GetWorld()->GetTimerManager().SetTimerForNextTick([WeakThis]()
+	{
+		UGenGA_Leap* Leap = WeakThis.Get();
+		if (!Leap || !Leap->bAirborne)
+		{
+			return;
+		}
+		ACharacter* Avatar = Cast<ACharacter>(Leap->GetAvatarActorFromActorInfo());
+		if (Avatar && Avatar->GetCharacterMovement() && Avatar->GetCharacterMovement()->IsFalling())
+		{
+			Leap->WaitForFloor(*Avatar, /*bLimitAirControl*/ false);
+			return;
+		}
+
+		// Posé avant LeapDuration (marche montante, obstacle) : la force s'arrête là
+		Leap->Land(/*bSafetyNet*/ false);
+	});
+}
+
+void UGenGA_Leap::WaitForFloor(ACharacter& Character, bool bLimitAirControl)
+{
+	if (!bWaitingForFloor)
+	{
+		bWaitingForFloor = true;
+		Character.LandedDelegate.AddUniqueDynamic(this, &ThisClass::OnCharacterLanded);
+	}
+
+	// Revue V6-V8, M-2 : chute après LeapDuration presque à la verticale du point visé (même règle sur les deux machines)
+	UCharacterMovementComponent* Movement = Character.GetCharacterMovement();
+	if (bLimitAirControl && Movement && SavedAirControl < 0.f)
+	{
+		SavedAirControl = Movement->AirControl;
+		Movement->AirControl = FMath::Min(Movement->AirControl, FallAirControl);
+	}
 }
 
 void UGenGA_Leap::OnJumpForceEnded()
@@ -188,10 +232,9 @@ void UGenGA_Leap::OnJumpForceEnded()
 	}
 
 	// Encore en l'air à LeapDuration (rebord, pente descendante) : la force est retirée (vitesse nulle), la gravité finit
-	// la chute à la verticale du point visé
+	// la chute à la verticale du point visé (contrôle en l'air limité, FallAirControl)
 	JumpTask = nullptr;
-	bWaitingForFloor = true;
-	Character->LandedDelegate.AddUniqueDynamic(this, &ThisClass::OnCharacterLanded);
+	WaitForFloor(*Character, /*bLimitAirControl*/ true);
 }
 
 void UGenGA_Leap::OnCharacterLanded(const FHitResult& Hit)
@@ -230,13 +273,23 @@ void UGenGA_Leap::StopJumpForce()
 		Task->EndTask(); // retire la source de mouvement racine (vitesse finale nulle)
 	}
 
+	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
 	if (bWaitingForFloor)
 	{
 		bWaitingForFloor = false;
-		if (ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo()))
+		if (Character)
 		{
 			Character->LandedDelegate.RemoveDynamic(this, &ThisClass::OnCharacterLanded);
 		}
+	}
+
+	if (SavedAirControl >= 0.f)
+	{
+		if (Character && Character->GetCharacterMovement())
+		{
+			Character->GetCharacterMovement()->AirControl = SavedAirControl;
+		}
+		SavedAirControl = -1.f;
 	}
 }
 
