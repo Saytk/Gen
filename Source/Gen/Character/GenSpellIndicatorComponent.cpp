@@ -1,5 +1,6 @@
 #include "Character/GenSpellIndicatorComponent.h"
 
+#include "AbilitySystem/Abilities/GenGA_Leap.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "Character/GenCharacterBase.h"
 #include "Components/CapsuleComponent.h"
@@ -128,6 +129,7 @@ void UGenSpellIndicatorComponent::TickComponent(float DeltaTime, ELevelTick Tick
 			DrawAim(*Caster);
 		}
 		DrawSelfTelegraph(*Caster);
+		DrawLeapTarget(*Caster);
 	}
 	HideUnshownParts();
 }
@@ -171,9 +173,16 @@ void UGenSpellIndicatorComponent::DrawAim(const AGenCharacterBase& Caster)
 			ShowPart(EGenIndicatorSlot::Spokes, SpokesMaterial, OnFloor(G.CapCenter), 0.f, G.CapRadius, G.CapRadius, Self, 1.f, G.CapRadius, true);
 		}
 	}
+	ShowTargetAndStubs(G, Z, Self, 1.f);
+}
+
+void UGenSpellIndicatorComponent::ShowTargetAndStubs(const FGenAimGeometry& G, float Z, EGenViewerRelation Relation, float Fill)
+{
+	auto OnFloor = [Z](const FVector& Point) { return FVector(Point.X, Point.Y, Z); };
+
 	if (G.TargetRadius > 0.f)
 	{
-		ShowPart(EGenIndicatorSlot::Target, DiscMaterial, OnFloor(G.TargetCenter), 0.f, G.TargetRadius, G.TargetRadius, Self, 1.f, G.TargetRadius, true);
+		ShowPart(EGenIndicatorSlot::Target, DiscMaterial, OnFloor(G.TargetCenter), 0.f, G.TargetRadius, G.TargetRadius, Relation, Fill, G.TargetRadius, true);
 	}
 
 	const int32 StubCount = FMath::Min(G.StubDirections.Num(), MaxStubs);
@@ -183,9 +192,45 @@ void UGenSpellIndicatorComponent::DrawAim(const AGenCharacterBase& Caster)
 		const FVector& Dir = G.StubDirections[Index];
 		const FVector Start = G.TargetCenter + Dir * G.TargetRadius;
 		ShowPart(StubSlot(Index), StubMaterial, OnFloor(Start + Dir * (G.StubLength * 0.5f)), Dir.Rotation().Yaw,
-			G.StubLength * 0.5f, G.StubWidth * 0.5f, Self, 1.f, G.StubWidth, false, G.StubLength);
+			G.StubLength * 0.5f, G.StubWidth * 0.5f, Relation, 1.f, G.StubWidth, false, G.StubLength);
 	}
 }
+
+void UGenSpellIndicatorComponent::DrawLeapTarget(const AGenCharacterBase& Caster)
+{
+	// Décision du 2026-10-08 : tous les clients voient le cercle d'atterrissage pendant le vol (le propriétaire le pose
+	// lui-même, les autres le reçoivent), avec une amorce par boule de l'anneau à venir
+	const FGenLeapTarget& Target = Caster.GetLeapTarget();
+	if (!Target.IsActive())
+	{
+		return;
+	}
+
+	const UGenGA_Leap* Leap = Cast<UGenGA_Leap>(Target.Ability->GetDefaultObject());
+	if (!Leap)
+	{
+		return;
+	}
+
+	FGenAimGeometry G;
+	Leap->GetFlightGeometry(Target, G);
+
+	// Remplissage du centre vers le bord sur la durée du vol (horloge serveur, comme les télégraphes)
+	const float Duration = Leap->GetLeapDuration();
+	const float Fill = Duration > 0.f ? FMath::Clamp((Caster.GetCastClockSeconds() - Target.StartTime) / Duration, 0.f, 1.f) : 1.f;
+	ShowTargetAndStubs(G, GetFloorZ(Caster, Target.Location.Z), GetLocalRelation(Caster), Fill);
+}
+
+#if WITH_DEV_AUTOMATION_TESTS
+void UGenSpellIndicatorComponent::SetAllMaterialsForTests(UMaterialInterface* Material)
+{
+	DiscMaterial = Material;
+	LaneMaterial = Material;
+	ArcMaterial = Material;
+	StubMaterial = Material;
+	SpokesMaterial = Material;
+}
+#endif
 
 void UGenSpellIndicatorComponent::DrawSelfTelegraph(const AGenCharacterBase& Caster)
 {
@@ -356,10 +401,16 @@ float UGenSpellIndicatorComponent::GetShownSize(FName Part) const
 
 float UGenSpellIndicatorComponent::GetFloorZ(const AGenCharacterBase& Caster) const
 {
-	// Arènes plates (Art Bible §6.1) : le bas de la capsule est le sol
+	return GetFloorZ(Caster, Caster.GetActorLocation().Z);
+}
+
+float UGenSpellIndicatorComponent::GetFloorZ(const AGenCharacterBase& Caster, float CapsuleCentreZ) const
+{
+	// Arènes plates (Art Bible §6.1) : le bas de la capsule est le sol. En vol, le centre de capsule du point visé
+	// (au niveau du départ), pas la position courante en l'air
 	const UCapsuleComponent* Capsule = Caster.GetCapsuleComponent();
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.f;
-	return Caster.GetActorLocation().Z - HalfHeight + FloorOffset;
+	return CapsuleCentreZ - HalfHeight + FloorOffset;
 }
 
 EGenViewerRelation UGenSpellIndicatorComponent::GetLocalRelation(const AGenCharacterBase& Caster) const

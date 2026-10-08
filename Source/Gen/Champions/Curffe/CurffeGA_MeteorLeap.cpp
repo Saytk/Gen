@@ -11,6 +11,12 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCurffeMeteorLeap, Log, All);
 
+float UCurffeGA_MeteorLeap::GetRingProjectileRadius() const
+{
+	// Les boules de l'anneau partent sans échelle (FGenProjectileShotParams par défaut) : rayon de la classe
+	return RingProjectileClass ? RingProjectileClass->GetDefaultObject<AGenProjectile>()->GetCollisionRadius() : 0.f;
+}
+
 void UCurffeGA_MeteorLeap::OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation)
 {
 	// Zone d'atterrissage d'abord (base), puis l'anneau, dans le même appel serveur (l'anneau part même si la zone n'a

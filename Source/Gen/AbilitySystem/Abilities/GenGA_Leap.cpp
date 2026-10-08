@@ -5,6 +5,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/GenAreaRules.h"
+#include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenTargetData.h"
 #include "AbilitySystem/GenWorldQueries.h"
 #include "Actors/GenGroundArea.h"
@@ -46,6 +47,26 @@ void UGenGA_Leap::FillAimData(FGenTargetData_Aim& Data) const
 	const FVector Cursor = Data.HitResult.Location;
 	Data.LeapDistance = FVector::Dist2D(Start, GenAreaRules::ClampToRange(Start, Cursor, MaxDistance));
 	Data.LeapYaw = GenLeapPrivate::FlatYaw(Cursor - Start);
+}
+
+bool UGenGA_Leap::GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const
+{
+	// Mêmes valeurs que le bond (MaxDistance, ClampToRange) et la zone d'atterrissage (LandingRadius) : le dessin = la hitbox
+	GenIndicatorRules::FLeapAimParams Params;
+	Params.MaxDistance = MaxDistance;
+	Params.LandingRadius = LandingRadius;
+	Params.RingProjectileRadius = GetRingProjectileRadius();
+	GenIndicatorRules::ComputeLeapAim(Caster.GetActorLocation(), Cursor, Params, Fed, Out);
+	return true;
+}
+
+void UGenGA_Leap::GetFlightGeometry(const FGenLeapTarget& Target, FGenAimGeometry& Out) const
+{
+	GenIndicatorRules::FLeapAimParams Params;
+	Params.MaxDistance = MaxDistance;
+	Params.LandingRadius = Target.Radius; // rayon répliqué avec le point (celui de la zone d'atterrissage)
+	Params.RingProjectileRadius = GetRingProjectileRadius();
+	GenIndicatorRules::ComputeLeapFlight(Target.Location, Target.Direction, Params, Target.Fed, Out);
 }
 
 void UGenGA_Leap::ResolveLeap(const FGenCastRelease& Release, const FVector& Start, float& OutDistance, float& OutYaw) const

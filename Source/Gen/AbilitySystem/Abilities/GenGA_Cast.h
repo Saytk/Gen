@@ -180,6 +180,16 @@ protected:
 	bool bTurnToAim = true;
 
 	/**
+	 * Indicateur de visée (UGenSpellIndicatorComponent, client propriétaire seulement) de l'appui au verrouillage de la
+	 * visée (ReleaseCast), si le sort a une géométrie (GetAimGeometry). Python : show_aim_indicator.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Indicator")
+	bool bShowAimIndicator = true;
+
+	/** Ce sort ouvre-t-il l'indicateur de visée maintenant (lu à l'activation) ? Par défaut : bShowAimIndicator. */
+	virtual bool WantsAimIndicator() const { return bShowAimIndicator; }
+
+	/**
 	 * Montage d'incantation (optionnel, répliqué par le GAS) : joué dès le début de l'incantation (après le nourrissage).
 	 * Avec un CastMontage : préparation seule, calée sur CastTime (bScaleChargeMontageToCastTime).
 	 * Sans CastMontage (montage unique du Plan 1) : préparation puis geste de lancer, à vitesse 1 ; le régler pour que
@@ -310,6 +320,10 @@ private:
 
 	/** Arrête d'écouter la visée (après la première : les suivantes sont ignorées). */
 	void EndAimTask();
+
+	/** Plan Visuals V6 : ouvre (client propriétaire, WantsAimIndicator) ou ferme l'indicateur de visée de ce sort. */
+	void BeginAimIndicator();
+	void EndAimIndicator();
 
 	/**
 	 * Lancer : borne le nourrissage, CommitAbility (cooldown, coût), dépense la ressource, tourne le lanceur,

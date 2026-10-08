@@ -61,7 +61,10 @@ struct FGenIndicatorPart
 /**
  * Indicateurs au sol d'un personnage (Curffe-Visuals.md §1.2), sur M_VFX_Telegraph :
  * - visée du lanceur (couloir, éclat, arc de portée, atterrissage, amorces) : client propriétaire seulement ;
- * - télégraphe centré sur le lanceur (Combustion, Living Flame) : tous les clients, couleur du point de vue.
+ * - télégraphe centré sur le lanceur (Combustion, Living Flame) : tous les clients, couleur du point de vue ;
+ * - bond en vol (décision du 2026-10-08) : cercle d'atterrissage et amorces de l'anneau, tous les clients, couleur du
+ *   point de vue, depuis le point répliqué (AGenCharacterBase::GetLeapTarget). Il reprend les emplacements Target et
+ *   Stub de la visée : la visée du bond se ferme au lancer, le vol commence au départ, et rien ne vise pendant le vol.
  * Plans posés à plat, un emplacement fixe par rôle (réservé une fois), aucun sur un serveur dédié. Les tailles
  * sautent aux seuils (jamais d'interpolation : Art Bible §7.5, ne jamais exagérer). Aucune couleur ici : le rôle
  * (RelationIndex) choisit la couleur dans MPC_TeamColours, côté matériau.
@@ -91,6 +94,11 @@ public:
 	float GetShownSize(FName Part) const;
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Tests : un même matériau pour toutes les parties (les instances MI_Telegraph_* ne sont assignées que dans BP_Champion). */
+	void SetAllMaterialsForTests(UMaterialInterface* Material);
+#endif
 
 protected:
 	virtual void BeginPlay() override;
@@ -138,8 +146,13 @@ private:
 
 	void DrawAim(const AGenCharacterBase& Caster);
 	void DrawSelfTelegraph(const AGenCharacterBase& Caster);
+	void DrawLeapTarget(const AGenCharacterBase& Caster);
+
+	/** Cercle cible et amorces de G (visée ou vol), dans la couleur de Relation. */
+	void ShowTargetAndStubs(const FGenAimGeometry& G, float Z, EGenViewerRelation Relation, float Fill);
 
 	float GetFloorZ(const AGenCharacterBase& Caster) const;
+	float GetFloorZ(const AGenCharacterBase& Caster, float CapsuleCentreZ) const;
 	EGenViewerRelation GetLocalRelation(const AGenCharacterBase& Caster) const;
 
 	UPROPERTY(Transient)

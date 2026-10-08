@@ -65,6 +65,12 @@ public:
 
 	float GetSpeed() const { return Speed; }
 
+	/** Portée max (cm), mesurée depuis le point d'apparition (indicateurs de visée : couloir). */
+	float GetMaxRange() const { return MaxRange; }
+
+	/** Rayon de la sphère de collision, sans l'échelle du tir (indicateurs : largeur du couloir, amorces). */
+	float GetCollisionRadius() const;
+
 	/** A explosé (consommé par un impact) ; répliqué. */
 	bool HasExploded() const { return bExploded; }
 

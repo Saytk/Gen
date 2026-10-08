@@ -20,6 +20,9 @@ class GEN_API UGenGA_GroundArea : public UGenGA_Cast
 public:
 	UGenGA_GroundArea();
 
+	/** Plan Visuals V6 : arc de portée seulement ; le cercle reste l'aperçu de la zone (Plan 2, AGenGroundArea). */
+	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const override;
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;

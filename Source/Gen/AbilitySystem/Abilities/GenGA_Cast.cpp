@@ -19,6 +19,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Character/GenCharacterBase.h"
+#include "Character/GenSpellIndicatorComponent.h"
 #include "Champions/Curffe/CurffeTuning.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -72,6 +73,9 @@ void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 
 	// Un seul sort incanté à la fois : celui-ci remplace l'incantation en cours (un sort déjà parti continue)
 	CancelOtherPendingCasts();
+
+	// Indicateur de visée du lanceur, de l'appui au verrouillage de la visée (le sort remplacé a fermé le sien)
+	BeginAimIndicator();
 
 	// Contrôles durs surveillés pendant TOUTE l'activation, quel que soit le déroulé (même sans nourrissage ni
 	// incantation) : OnCastInterrupted décide selon la phase (IsInterruptedByHardCC)
@@ -502,6 +506,27 @@ void UGenGA_Cast::EndFeedTasks()
 	}
 }
 
+void UGenGA_Cast::BeginAimIndicator()
+{
+	if (!IsLocallyControlled() || !WantsAimIndicator())
+	{
+		return;
+	}
+	if (const AGenCharacterBase* Character = GetGenCharacterFromActorInfo(); Character && Character->GetSpellIndicator())
+	{
+		Character->GetSpellIndicator()->BeginAim(this);
+	}
+}
+
+void UGenGA_Cast::EndAimIndicator()
+{
+	// Sans effet si un autre sort a ouvert sa propre visée depuis
+	if (const AGenCharacterBase* Character = GetGenCharacterFromActorInfo(); Character && Character->GetSpellIndicator())
+	{
+		Character->GetSpellIndicator()->EndAim(this);
+	}
+}
+
 void UGenGA_Cast::EndAimTask()
 {
 	if (AimTask)
@@ -736,6 +761,7 @@ void UGenGA_Cast::StopCasting()
 {
 	bIsFeeding = false;
 	EndFeedTasks();
+	EndAimIndicator();
 
 	// Toutes les écritures de l'affichage (estimation, compte annoncé par le client) passent par SetFedVisual
 	if (FedVisualCount > 0)
@@ -921,6 +947,9 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 		OutRelease.ClientLeapDistance = AimData->LeapDistance;
 		OutRelease.ClientLeapYaw = AimData->LeapYaw;
 	}
+
+	// Visée verrouillée : l'indicateur se ferme avant le geste (le sort part)
+	EndAimIndicator();
 
 	// Se tourner vers la cible (client et serveur, pour que la prédiction concorde)
 	if (bTurnToAim)

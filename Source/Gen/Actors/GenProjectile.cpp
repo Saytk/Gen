@@ -164,6 +164,11 @@ void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, A
 	Explode(OtherActor, bFromSweep ? FVector(SweepResult.ImpactPoint) : GetActorLocation(), DirectResponse);
 }
 
+float AGenProjectile::GetCollisionRadius() const
+{
+	return CollisionSphere ? CollisionSphere->GetUnscaledSphereRadius() : 0.f;
+}
+
 bool AGenProjectile::IsValidTarget(const AGenCharacterBase* Character) const
 {
 	return Character && !Character->IsDead() && IsEnemy(Character);

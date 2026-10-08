@@ -19,6 +19,8 @@ class GEN_API UCurffeGA_MeteorLeap : public UGenGA_Leap
 
 protected:
 	virtual void OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation) override;
+	/** Plan Visuals V6 : rayon de collision de RingProjectileClass (amorces de l'anneau = largeur des boules). */
+	virtual float GetRingProjectileRadius() const override;
 
 	/** Projectile de l'anneau (BP_Projectile_Fireball : portée, vitesse, effets). */
 	UPROPERTY(EditDefaultsOnly, Category = "Meteor Leap")

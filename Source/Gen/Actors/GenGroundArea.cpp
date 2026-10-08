@@ -4,6 +4,7 @@
 #include "AbilitySystem/GenAreaRules.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenHitRules.h"
+#include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenWorldQueries.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Character/GenCharacterBase.h"
@@ -114,6 +115,9 @@ void AGenGroundArea::BeginPlay()
 		TelegraphMID->SetScalarParameterValue(TEXT("BorderAlpha"), BorderAlpha);
 		TelegraphMID->SetScalarParameterValue(TEXT("EnemyPattern"), bEnemy ? 1.f : 0.f);
 		TelegraphMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
+
+		// Art Bible §7.5 : télégraphe ennemi au-dessus de tout, sa propre visée (aperçu : soi) au-dessus des alliés
+		TelegraphMesh->SetTranslucentSortPriority(GenIndicatorRules::GetSortPriority(Relation));
 
 		TelegraphMesh->SetVisibility(true);
 		SetActorTickEnabled(true);

@@ -1,4 +1,5 @@
 #include "Character/GenCharacterBase.h"
+#include "Character/GenSpellIndicatorComponent.h"
 
 #include "Abilities/GameplayAbilityTypes.h"
 #include "AbilitySystem/Abilities/GenGA_Cast.h"
@@ -51,6 +52,9 @@ AGenCharacterBase::AGenCharacterBase(const FObjectInitializer& ObjectInitializer
 
 	StatusVisuals = CreateDefaultSubobject<UGenStatusVisualsComponent>(TEXT("StatusVisuals"));
 	StatusVisuals->SetupAttachment(GetCapsuleComponent());
+
+	SpellIndicator = CreateDefaultSubobject<UGenSpellIndicatorComponent>(TEXT("SpellIndicator"));
+	SpellIndicator->SetupAttachment(GetCapsuleComponent());
 }
 
 void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

@@ -23,8 +23,26 @@ class GEN_API UGenGA_Projectile : public UGenGA_Cast
 public:
 	UGenGA_Projectile();
 
+	/**
+	 * Plan Visuals V6 : couloir jusqu'à la portée du projectile (coupé au premier mur), largeur = diamètre de collision ×
+	 * l'échelle que le serveur appliquera pour Fed, éclat au rayon du tir (GenIndicatorRules::ComputeProjectileAim).
+	 */
+	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const override;
+
+	/** Tir de base (non nourrissable, incantation < BasicAttackMaxCastTime) : jamais de ligne de visée par défaut. */
+	bool IsBasicAttack() const;
+
+	/** Au-delà, un sort non nourrissable n'est plus une attaque de base (Curffe-Visuals.md §3.1, ⚑ F11). */
+	static constexpr float BasicAttackMaxCastTime = 0.4f;
+
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
+
+	/**
+	 * Attaque de base (clic gauche, Pyroblast) : ligne de visée seulement si le joueur l'a demandée (console
+	 * gen.ShowBasicAttackAimLine 1, client ; passera dans les réglages, UI §7.2). Art Bible §7.2 : Filler sans télégraphe.
+	 */
+	virtual bool WantsAimIndicator() const override;
 
 	/** Serveur uniquement : fait apparaître le projectile en direction de TargetLocation. */
 	UFUNCTION(BlueprintCallable, Category = "Gen|Projectile")

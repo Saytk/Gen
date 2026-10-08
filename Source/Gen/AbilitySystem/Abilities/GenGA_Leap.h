@@ -7,6 +7,7 @@
 class AGenGroundArea;
 class UAbilityTask_ApplyRootMotionJumpForce;
 class UAnimMontage;
+struct FGenLeapTarget;
 struct FHitResult;
 
 /**
@@ -34,12 +35,27 @@ public:
 	/** En vol (après le décollage, avant l'atterrissage). */
 	bool IsAirborne() const { return bAirborne; }
 
+	/** Durée nominale du vol (remplissage du cercle d'atterrissage). */
+	float GetLeapDuration() const { return LeapDuration; }
+
+	/** Plan Visuals V6 : arc de portée, cercle d'atterrissage et amorces de l'anneau (GenIndicatorRules::ComputeLeapAim). */
+	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const override;
+
+	/**
+	 * Bond en vol, vu par tous (décision du 2026-10-08) : cercle d'atterrissage au point répliqué et une amorce par boule
+	 * de l'anneau à venir (GenIndicatorRules::ComputeLeapFlight).
+	 */
+	void GetFlightGeometry(const FGenLeapTarget& Target, FGenAimGeometry& Out) const;
+
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 	virtual bool IsInterruptedByHardCC() const override { return !bAirborne; }
 	/** Plan Visuals V3 : le clip de vol (CastMontage) finit avec la force de saut. */
 	virtual float GetCastMontageTargetDuration() const override { return LeapDuration; }
+
+	/** Rayon de collision du projectile de l'anneau (largeur des amorces), 0 = pas d'anneau. */
+	virtual float GetRingProjectileRadius() const { return 0.f; }
 
 	/** Atterrissage (serveur et client). Par défaut : montage, effet, zone d'atterrissage (serveur). */
 	virtual void OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation);

@@ -17,6 +17,7 @@ class UNiagaraSystem;
 class UGenAbilitySystemComponent;
 class UGenAttributeSet;
 class UGenGameplayAbility;
+class UGenSpellIndicatorComponent;
 struct FOnAttributeChangeData;
 
 namespace GenCastBar
@@ -291,6 +292,12 @@ public:
 
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 
+	/** Horloge des incantations et des bonds : temps serveur (GameState), sinon temps du monde. */
+	float GetCastClockSeconds() const;
+
+	/** Plan Visuals V6 : indicateurs au sol (visée du lanceur, télégraphes centrés, bond en vol). */
+	UGenSpellIndicatorComponent* GetSpellIndicator() const { return SpellIndicator; }
+
 	/** Bond en vol : point d'atterrissage vu par tous (serveur et client propriétaire ; StartTime est fixé ici). */
 	void SetLeapTarget(const FGenLeapTarget& Target);
 	/** Fin du bond d'Ability (sans effet si un autre bond a pris la place). */
@@ -344,6 +351,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|Status")
 	TObjectPtr<UGenStatusVisualsComponent> StatusVisuals;
+
+	/** Indicateurs au sol (matériaux MI_Telegraph_* assignés dans BP_Champion). Rien sur un serveur dédié. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gen|Indicator")
+	TObjectPtr<UGenSpellIndicatorComponent> SpellIndicator;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Health")
 	bool bRagdollOnDeath = true;
@@ -419,9 +430,6 @@ protected:
 
 	/** Lance ou arrête l'effet d'incantation selon CastInfo (rien sur un serveur dédié). */
 	void UpdateCastFX();
-
-	/** Horloge des incantations : temps serveur (GameState), sinon temps du monde. */
-	float GetCastClockSeconds() const;
 
 	/** Pendant l'incantation : face à la visée (rotation de contrôle) ; sinon : face au déplacement. */
 	void SetFaceAim(bool bFaceAim);

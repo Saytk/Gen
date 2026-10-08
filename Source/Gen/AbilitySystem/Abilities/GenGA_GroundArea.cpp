@@ -3,6 +3,8 @@
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/GenAreaRules.h"
 #include "AbilitySystem/GenFeeding.h"
+#include "AbilitySystem/GenIndicatorRules.h"
+#include "Character/GenCharacterBase.h"
 #include "Actors/GenGroundArea.h"
 #include "Champions/Curffe/CurffeTuning.h"
 #include "Engine/World.h"
@@ -13,6 +15,12 @@ UGenGA_GroundArea::UGenGA_GroundArea()
 	// Valeurs de départ du Pilier de flammes (Curffe.md §3) : 2 m + 0.5 m par flamme nourrie
 	RadiusAtMaxFeed = Radius + 50.f * CurffeTuning::MaxFeedPerSpell;
 	Damage = FScalableFloat(0.f);
+}
+
+bool UGenGA_GroundArea::GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const
+{
+	GenIndicatorRules::ComputeGroundAreaAim(Caster.GetActorLocation(), Cursor, Range, Fed, Out);
+	return true;
 }
 
 void UGenGA_GroundArea::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
