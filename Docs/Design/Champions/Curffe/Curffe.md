@@ -35,9 +35,10 @@ approved part.
 Counter trigger: **P** = projectile (triggers counters), **A** = ground area (does not).
 
 ### LMB: Fireball
-- Projectile (P), cast **0.40 s**, no cooldown, range **11 m**, **12** damage.
-  (Decision 2026-10-08, user playtest: 0.35 s felt too fast; the user set 0.40 s, "the standard like in
-  Battlerite" (2.5 shots/s). Damage 10 → 12 so sustained damage stays close to before: 30 vs 29 per second.)
+- Projectile (P), cast **0.35 s**, then a **0.30 s cooldown that starts at the end of the cast** (Battlerite
+  rhythm, like Alysia's M1): one shot every 0.65 s (~1.5/s). Range **11 m**, **16** damage (~25 per second).
+  (Decision 2026-10-08, user playtest: 2.5 shots/s still felt too fast; the user confirmed Battlerite's
+  cooldown starts at the end of the cast. A click during the cooldown is buffered and fires when it ends.)
 - +1 flame on enemy hit; energy **+2** per hit.
 - During Combustion it becomes a **Pyroblast** (see F).
 - VisualWeight: Filler (2).
@@ -98,7 +99,7 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
   completes.
 - On cast: the mage **erupts**, a **3 m** nova (A) for **20** damage and a **3 m** knockback.
 - Then **ablaze for 5 s**:
-  1. **Pyroblasts:** LMB becomes a bigger projectile (P), cast 0.40 s, **15** damage, explodes in a
+  1. **Pyroblasts:** LMB becomes a bigger projectile (P), cast 0.35 s + 0.30 s cooldown after the cast, **20** damage, explodes in a
      **1.2 m** area. Works with every other spell on cooldown.
   2. **Unlimited flames:** the Hearth refills after every spell.
   3. **Fast feeding:** 0.15 s per flame instead of 0.3 s; telegraphs never drop below 0.5 s.
@@ -140,7 +141,7 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 
 - **Time to kill** (any 3 s window, vs 210 HP):
   - without F: Flame Pillar 12 + Great Fireball (3) 44 + Meteor Leap 8 + 1 ring 8 = **72 (34 %)**, cap 35 %;
-  - with F: nova 20 + Great Fireball (3 flames, fast fed) 44 + 3 Pyroblasts 45 = **109 (52 %)**, cap 55 % (0.5 s nova + 0.95 s Great Fireball leaves room for 3 Pyroblasts at 0.40 s);
+  - with F: nova 20 + Great Fireball (3 flames, fast fed) 44 + 2 Pyroblasts 40 = **104 (50 %)**, cap 55 % (0.5 s nova + 0.95 s Great Fireball leaves 1.55 s: 2 Pyroblasts at one per 0.65 s);
   - full 5 s Combustion ≈ 130 (62 %): strong, can't kill alone.
 - **Hard CC:** Flame Pillar only (knockbacks are not hard CC).
 - **Energy pace:** ≈ 50 s to the ultimate without R, ≈ 65 s with one R (estimate: 50 % active combat,
