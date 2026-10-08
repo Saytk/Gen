@@ -6,6 +6,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
 UGenStatusVisualsComponent::UGenStatusVisualsComponent()
@@ -56,6 +58,7 @@ void UGenStatusVisualsComponent::Bind(UAbilitySystemComponent* InASC, const TArr
 
 		Shapes.Add(Shape);
 		ShapeMIDs.Add(MID);
+		Systems.Add(nullptr);
 		Shown.Add(false);
 		Flashing.Add(false);
 		FlashTimers.AddDefaulted();
@@ -97,9 +100,14 @@ void UGenStatusVisualsComponent::Unbind()
 			Shape->DestroyComponent();
 		}
 	}
+	for (int32 Index = 0; Index < Systems.Num(); ++Index)
+	{
+		SetSystemActive(Index, false);
+	}
 
 	Shapes.Reset();
 	ShapeMIDs.Reset();
+	Systems.Reset();
 	Shown.Reset();
 	Flashing.Reset();
 	FlashTimers.Reset();
@@ -122,6 +130,18 @@ bool UGenStatusVisualsComponent::IsStatusShown(FGameplayTag Tag) const
 	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
 	{
 		if (Visuals[Index].Tag == Tag && Shown[Index])
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UGenStatusVisualsComponent::IsStatusSystemActive(FGameplayTag Tag) const
+{
+	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
+	{
+		if (Visuals[Index].Tag == Tag && Systems.IsValidIndex(Index) && Systems[Index])
 		{
 			return true;
 		}
@@ -161,6 +181,10 @@ void UGenStatusVisualsComponent::SetShown(int32 Index, bool bShown)
 	{
 		Shapes[Index]->SetVisibility(bShown);
 	}
+	if (bShown != bWasShown)
+	{
+		SetSystemActive(Index, bShown);
+	}
 
 	UWorld* World = GetWorld();
 	if (bShown && !bWasShown && Visuals[Index].AppearFlashDuration > 0.f)
@@ -186,6 +210,37 @@ void UGenStatusVisualsComponent::SetShown(int32 Index, bool bShown)
 		}
 		SetFlash(Index, false);
 	}
+}
+
+void UGenStatusVisualsComponent::SetSystemActive(int32 Index, bool bActive)
+{
+	if (!Systems.IsValidIndex(Index))
+	{
+		return;
+	}
+
+	if (!bActive)
+	{
+		// Désactivé, pas détruit : les particules finissent leur vie, puis le composant retourne au pool (AutoRelease)
+		if (UNiagaraComponent* System = Systems[Index])
+		{
+			System->Deactivate();
+		}
+		Systems[Index] = nullptr;
+		return;
+	}
+
+	UNiagaraSystem* Template = Visuals[Index].System;
+	if (!Template || Systems[Index])
+	{
+		return;
+	}
+
+	// Attaché au corps (socket) s'il y en a un, sinon au composant (centre du personnage). Pool : Art Bible §7.8
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
+	USceneComponent* AttachTo = Character && Character->GetMesh() ? static_cast<USceneComponent*>(Character->GetMesh()) : this;
+	Systems[Index] = UNiagaraFunctionLibrary::SpawnSystemAttached(Template, AttachTo, Visuals[Index].Socket, FVector::ZeroVector, FRotator::ZeroRotator,
+		EAttachLocation::SnapToTarget, /*bAutoDestroy*/ false, /*bAutoActivate*/ true, ENCPoolMethod::AutoRelease);
 }
 
 void UGenStatusVisualsComponent::SetFlash(int32 Index, bool bFlash)

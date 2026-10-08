@@ -4,6 +4,7 @@
 
 #include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
+#include "NiagaraSystem.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
@@ -229,6 +230,21 @@ bool FGenStatusVisualTest::RunTest(const FString& Parameters)
 
 	TestWorld.Advance(0.8f);
 	TestFalse(TEXT("caché à la fin"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+
+	// Plan Visuals V9 : un état avec seulement un système Niagara (ni forme ni matériau) suit aussi son tag
+	FGenStatusVisual Countering;
+	Countering.Tag = GenGameplayTags::State_Countering;
+	Countering.System = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Gen/Champions/Curffe/VFX/NS_Curffe_AblazeBody.NS_Curffe_AblazeBody"));
+	TestNotNull(TEXT("système de test"), Countering.System.Get());
+	Visuals->Bind(ASC, { Stunned, Countering });
+	TestFalse(TEXT("système : caché au départ"), Visuals->IsStatusShown(GenGameplayTags::State_Countering) || Visuals->IsStatusSystemActive(GenGameplayTags::State_Countering));
+	ASC->AddLooseGameplayTag(GenGameplayTags::State_Countering);
+	TestTrue(TEXT("système : affiché avec le tag"), Visuals->IsStatusShown(GenGameplayTags::State_Countering));
+	TestTrue(TEXT("système : lancé avec le tag"), Visuals->IsStatusSystemActive(GenGameplayTags::State_Countering));
+	TestFalse(TEXT("l'autre état reste caché"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+	ASC->RemoveLooseGameplayTag(GenGameplayTags::State_Countering);
+	TestFalse(TEXT("système : caché sans le tag"), Visuals->IsStatusShown(GenGameplayTags::State_Countering));
+	TestFalse(TEXT("système : désactivé sans le tag"), Visuals->IsStatusSystemActive(GenGameplayTags::State_Countering));
 
 	Visuals->Unbind();
 	return true;

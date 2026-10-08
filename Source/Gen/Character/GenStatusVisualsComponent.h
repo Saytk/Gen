@@ -9,6 +9,8 @@
 class UAbilitySystemComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class UStaticMesh;
 class UStaticMeshComponent;
 
@@ -63,6 +65,18 @@ struct FGenStatusVisual
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	TObjectPtr<UMaterialInterface> OwnerMeshMaterial;
+
+	/**
+	 * Plan Visuals V9 : système Niagara attaché au corps tant que l'état est actif (ex : State.Curffe.Ablaze ->
+	 * NS_Curffe_AblazeBody sur spine_03), désactivé quand il prend fin (les particules s'éteignent d'elles-mêmes).
+	 * Un état peut avoir une forme (Mesh), un système, ou les deux. Python : system.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
+	TObjectPtr<UNiagaraSystem> System;
+
+	/** Socket du corps où attacher System (vide : centre du personnage). Python : socket. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
+	FName Socket;
 };
 
 /**
@@ -90,6 +104,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Status")
 	bool IsStatusFlashing(FGameplayTag Tag) const;
 
+	/** Système Niagara de l'état Tag actif en ce moment (lu par les tests et le PIE). */
+	UFUNCTION(BlueprintPure, Category = "Gen|Status")
+	bool IsStatusSystemActive(FGameplayTag Tag) const;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -97,6 +115,8 @@ private:
 	void OnTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void SetShown(int32 Index, bool bShown);
 	void SetFlash(int32 Index, bool bFlash);
+	/** Lance (bActive) ou désactive le système de l'état Index. */
+	void SetSystemActive(int32 Index, bool bActive);
 	void RefreshOwnerMesh();
 
 	TArray<FGenStatusVisual> Visuals;
@@ -106,6 +126,10 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> ShapeMIDs;
+
+	/** Systèmes en cours, par état (nul quand il est désactivé : le composant retourne au pool). */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> Systems;
 
 	/** Matériaux d'origine du corps, gardés tant qu'un OwnerMeshMaterial est imposé. */
 	UPROPERTY(Transient)
