@@ -36,7 +36,7 @@ namespace
 	/** Le télégraphe flotte juste au-dessus du sol (pas de scintillement). */
 	constexpr float TelegraphHeight = 2.f;
 	/** Le plan /Engine/BasicShapes/Plane mesure 100 cm : échelle = rayon / 50. */
-	constexpr float PlaneHalfSize = 50.f;
+	constexpr float TelegraphPlaneHalfSize = 50.f;
 }
 
 AGenGroundArea::AGenGroundArea()
@@ -166,7 +166,7 @@ EGenViewerRelation AGenGroundArea::GetLocalViewerRelation() const
 
 void AGenGroundArea::SetTelegraphRadius(float InRadius)
 {
-	const float Scale = FMath::Max(InRadius, 1.f) / PlaneHalfSize;
+	const float Scale = FMath::Max(InRadius, 1.f) / TelegraphPlaneHalfSize;
 	TelegraphMesh->SetRelativeScale3D(FVector(Scale, Scale, 1.f));
 }
 
