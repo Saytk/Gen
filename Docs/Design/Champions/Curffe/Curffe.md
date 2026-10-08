@@ -10,7 +10,7 @@ approved part.
 - **Role:** Ranged, the game's reference champion (mid skill: easy to pick up, depth in the
   interactions). **Pure offence** in the base kit; support leanings only through builds (deferred).
 - **Twist:** *Five flames orbit the mage. Holding a flame spell feeds it flames: each one adds
-  0.2 s of casting and one level of power.*
+  0.3 s of casting and one level of power, up to 3 levels.*
 - **Fantasy:** the WoW-style fire mage who builds heat and erupts, ablaze, in Combustion.
 - **Weakness:** low health (200); the more he feeds, the slower and more predictable he is; an
   **empty mage (0 flames)** is visible to everyone and is the moment to dive him; ground areas go
@@ -21,9 +21,12 @@ approved part.
 - **5 flames** orbit the mage, visible to everyone (opponents can count them).
 - **Gain:** +1 per Fireball (LMB) hit on an enemy; +2 per hit blocked by Backfire (Q); +1 every 3 s
   passively while below 5. Living Flame (R) refills to 5. Combustion (F) makes them unlimited.
-- **Feeding rule:** hold a spell marked with a flame (RMB, Space, E) to feed it. Every **0.2 s** held,
-  one more flame moves from the orbit into the spell (max 5, or fewer if the mage has fewer). Release
-  to cast. Feeding is visible: the flames visibly leave the orbit and the spell's telegraph grows.
+- **Feeding rule:** hold a spell marked with a flame (RMB, Space, E) to feed it. Every **0.3 s** held,
+  one more flame moves from the orbit into the spell, up to **3 thresholds** (max 3 flames per spell, or
+  fewer if the mage has fewer). Release to cast. Feeding is visible: the flames visibly leave the orbit,
+  the charge bar shows one tick per threshold, and the spell's indicator grows at each threshold.
+  (Decision 2026-10-08: 3 thresholds max per spell, so every threshold is easy to hit on purpose. The Hearth
+  keeps 5 flames, so a full Hearth pays for one 3-flame spell plus a 2-flame one.)
 - Fed flames are **spent on release**. A cancelled or interrupted cast returns them (guidelines §3.1).
 - This is the kit's only custom state (complexity budget met). Objects on screen: Flame Pillar only.
 
@@ -38,19 +41,19 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 - VisualWeight: Filler (2).
 
 ### RMB: Great Fireball (feedable)
-- Charged projectile (P). Cast **0.5 s + 0.2 s per flame** (max 1.5 s). Cooldown **6 s**, range **13 m**.
-- Damage **14 + 6 per flame** (max 44).
-- **3+ flames:** explodes on impact in a **1.5 m** area (A for the splash; the direct hit is P).
-- **5 flames:** the explosion also knocks back **4 m**.
-- Projectile grows with flames and slows from **25 m/s** (0 flames) to **16 m/s** (5 flames).
-- Energy **+6, +1 per flame** on hit.
-- VisualWeight: Skillshot (5) at 0–2 flames, CC/burst (7–8) at 3–5 flames.
+- Charged projectile (P). Cast **0.5 s + 0.3 s per flame** (max 1.4 s). Cooldown **6 s**, range **13 m**.
+- Damage **14 + 10 per flame** (max 44).
+- **2+ flames:** explodes on impact in a **1.5 m** area (A for the splash; the direct hit is P).
+- **3 flames:** the explosion also knocks back **4 m**.
+- Projectile grows with flames and slows from **25 m/s** (0 flames) to **16 m/s** (3 flames).
+- Energy **+6, +2 per flame** on hit.
+- VisualWeight: Skillshot (5) at 0–1 flame, CC/burst (7–8) at 2–3 flames.
 
 ### Space: Meteor Leap (feedable)
-- Leap with a visible arc, **7 m**, cooldown **10 s**. Take-off **0.1 s + 0.2 s per fed flame**.
+- Leap with a visible arc, **7 m**, cooldown **10 s**. Take-off **0.1 s + 0.3 s per fed flame**.
 - **8** damage in a small area on landing (A).
 - **Each fed flame bursts out as a Fireball** (P, 8 damage) in an even ring around the landing point
-  (5 flames = a 5-point star). Ring Fireballs follow the Fireball rules (range, walls, counters).
+  (3 flames = a triangle). Ring Fireballs follow the Fireball rules (range, walls, counters).
 - An enemy can be hit by **one ring projectile at most** (ring geometry). Primary purpose: **escape**
   (landing away screens off pursuers); engage is the weaker secondary use (≤ 1 projectile per enemy).
 - Energy **+2** on landing hit.
@@ -64,9 +67,9 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 - VisualWeight: CC/burst (7) on trigger.
 
 ### E: Flame Pillar (feedable)
-- Ground-targeted delayed area (A). Cast **0.4 s** (+0.2 s per fed flame), then **0.8 s** telegraph
+- Ground-targeted delayed area (A). Cast **0.4 s** (+0.3 s per fed flame), then **0.8 s** telegraph
   before impact. Range **9 m**, cooldown **12 s**.
-- Radius **2 m + 0.3 m per flame**. **12** damage and a **1 s stun**.
+- Radius **2 m + 0.5 m per flame** (max 3.5 m). **12** damage and a **1 s stun**.
 - CC score (guidelines §3.3): telegraph ≥ 1 s (2) + normal area (1) + long range (0) + 12 s cooldown
   (1) + several targets (0) = **4 → middle of the stun range**.
 - **The kit's only hard CC.** Energy **+8** on hit.
@@ -90,7 +93,7 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
   1. **Pyroblasts:** LMB becomes a bigger projectile (P), cast 0.35 s, **13** damage, explodes in a
      **1.2 m** area. Works with every other spell on cooldown.
   2. **Unlimited flames:** the Hearth refills after every spell.
-  3. **Fast feeding:** 0.1 s per flame instead of 0.2 s; telegraphs never drop below 0.5 s.
+  3. **Fast feeding:** 0.15 s per flame instead of 0.3 s; telegraphs never drop below 0.5 s.
 - Not immune to CC. Unmistakable visuals and audio.
 - (Decision: "cooldowns twice as fast" was dropped; it broke the time-to-kill cap.)
 - VisualWeight: Ultimate (9–10).
@@ -103,15 +106,15 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 | Backfire block | +2 flames per hit, +10 energy |
 | Living Flame | Hearth refills to 5 |
 | Combustion | Unlimited flames, faster feeding, LMB → Pyroblast |
-| Feeding Great Fireball | Damage, then area (3+), then knockback (5) |
+| Feeding Great Fireball | Damage, then area (2+), then knockback (3) |
 | Feeding Meteor Leap | Ring of Fireballs at landing (1 per flame) |
 | Feeding Flame Pillar | Bigger radius, longer telegraph |
 
 ## 5. Combo routes
 
 - **All in:** Fireballs up to 5 flames → Flame Pillar (stun) → Great Fireball fed 2–3 flames to land
-  inside the stun. With energy: Living Flame (refill) → 5-flame Great Fireball.
-- **Poke and stall:** Fireball stream + Great Fireballs with 1–2 flames, keeping flames for the leap.
+  inside the stun. With energy: Living Flame (refill) → 3-flame Great Fireball.
+- **Poke and stall:** Fireball stream + Great Fireballs with 1 flame, keeping flames for the leap.
 - **Disengage:** Backfire (+2 flames) → fed Meteor Leap whose ring screens pursuers; or Living Flame
   → speed away.
 - **Combustion window:** nova pushes enemies away → Pyroblast stream → full Great Fireball with fast
