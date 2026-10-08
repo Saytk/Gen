@@ -9,6 +9,7 @@
 #include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenTargetData.h"
 #include "AbilitySystem/GenWorldQueries.h"
+#include "AbilitySystemComponent.h"
 #include "Actors/GenGroundArea.h"
 #include "Character/GenCharacterBase.h"
 #include "Components/CapsuleComponent.h"
@@ -16,6 +17,7 @@
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/RootMotionSource.h"
+#include "GameplayPrediction.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGenLeap, Log, All);
@@ -345,13 +347,28 @@ void UGenGA_Leap::OnLeapLanded(const FGenCastRelease& Release, const FVector& La
 	}
 
 	const AActor* Avatar = GetAvatarActorFromActorInfo();
-	if (!Avatar || !Avatar->HasAuthority())
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!Avatar || !ASC)
 	{
+		return;
+	}
+
+	// Revue Plan 2 Tasks 7-8, M-4 : le propriétaire voit l'impact à SON atterrissage (local, jamais répliqué), pas ~1 RTT
+	// plus tard. Le serveur le diffuse sous la clé d'activation du client : seul ce client l'ignore (IsLocalClientKey dans
+	// NetMulticast_InvokeGameplayCueExecuted), les autres le jouent. Sort lancé par le serveur : clé du serveur, joué partout
+	if (!Avatar->HasAuthority())
+	{
+		if (ImpactCueTag.IsValid() && IsLocallyControlled())
+		{
+			ASC->InvokeGameplayCueEvent(ImpactCueTag, EGameplayCueEvent::Executed, MakeEffectContext(CurrentSpecHandle, CurrentActorInfo));
+		}
 		return;
 	}
 
 	if (ImpactCueTag.IsValid())
 	{
+		// Sans relancer la confirmation de la clé (déjà faite à l'activation)
+		FScopedPredictionWindow CueWindow(ASC, CurrentActivationInfo.GetActivationPredictionKey(), /*InSetReplicatedPredictionKey*/ false);
 		K2_ExecuteGameplayCue(ImpactCueTag, MakeEffectContext(CurrentSpecHandle, CurrentActorInfo));
 	}
 

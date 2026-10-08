@@ -9,6 +9,9 @@
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenHitRules.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystemInterface.h"
+#include "GameplayCueManager.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
@@ -448,6 +451,12 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 	float ClientMark = 0.f;
 	float ServerMark = 0.f;
 
+	/** Signaux d'impact du bond joués, par monde (revue Plan 2 Tasks 7-8, M-4). */
+	TMap<TWeakObjectPtr<UWorld>, int32> ImpactCues;
+	/** Chez le propriétaire, son bond était encore actif quand le signal a joué (donc à SON atterrissage). */
+	bool bOwnerCueDuringOwnLeap = false;
+	FDelegateHandle CueHandle;
+
 	static constexpr float LandingDamage = 5.f;
 	static constexpr float RingDamage = 8.f;
 
@@ -479,6 +488,12 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 		}
 		SpawnHandle.Reset();
 		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
+		UGenNetTestGA_MeteorLeap::TestImpactCueTag = FGameplayTag();
+		if (CueHandle.IsValid())
+		{
+			UAbilitySystemGlobals::Get().GetGameplayCueManager()->OnGameplayCueRouted().Remove(CueHandle);
+			CueHandle.Reset();
+		}
 	}
 
 	bool HasLanded() const
@@ -664,6 +679,50 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 			const AGenCharacterBase* Caster = PS ? PS->GetPawn<AGenCharacterBase>() : nullptr;
 			return Caster && !Caster->GetLeapTarget().IsActive();
 		}, DefaultWait());
+	}
+
+	/**
+	 * Revue Plan 2 Tasks 7-8, M-4 : le signal d'impact du bond joue chez le propriétaire à SON atterrissage (prédit, son bond
+	 * encore actif), une seule fois (le serveur le diffuse sous sa clé d'activation, que lui seul ignore), et une fois chez
+	 * l'autre client. Rien sur le serveur dédié.
+	 */
+	TEST_METHOD(ImpactCue_PredictedForOwner_OncePerClient)
+	{
+		UGenNetTestGA_MeteorLeap::TestImpactCueTag = Tag(TEXT("GameplayCue.FlameLeap.Impact"));
+		CueHandle = UAbilitySystemGlobals::Get().GetGameplayCueManager()->OnGameplayCueRouted().AddLambda(
+			[this](AActor* Target, FGameplayTag CueTag, EGameplayCueEvent::Type Event, const FGameplayCueParameters&, EGameplayCueExecutionOptions)
+			{
+				if (!Target || Event != EGameplayCueEvent::Executed || CueTag != UGenNetTestGA_MeteorLeap::TestImpactCueTag)
+				{
+					return;
+				}
+				++ImpactCues.FindOrAdd(Target->GetWorld());
+				const APawn* Pawn = Cast<APawn>(Target);
+				if (Pawn && Pawn->IsLocallyControlled() && !Pawn->HasAuthority())
+				{
+					const IAbilitySystemInterface* Owner = Cast<IAbilitySystemInterface>(Target);
+					bOwnerCueDuringOwnLeap = Owner && IsAbilityActive(Owner->GetAbilitySystemComponent(), UGenNetTestGA_MeteorLeap::StaticClass());
+				}
+			});
+		QueueSetup();
+		QueueFeed(0.45f);
+		Network
+			.UntilServer(TEXT("Serveur : atterri"), [this](FBasePIENetworkComponentState&) { return HasLanded(); }, DefaultWait())
+			.UntilClients(TEXT("Clients : signal d'impact joué"), [this](FBasePIENetworkComponentState& Client) { return ImpactCues.FindRef(Client.World) > 0; }, DefaultWait());
+		QueueServerWait(TEXT("Serveur : 0.5 s pour un éventuel doublon"), 0.5f);
+		Network
+			.ThenServer(TEXT("Serveur dédié : aucun signal"), [this](FBasePIENetworkComponentState& Server)
+			{
+				ASSERT_THAT(AreEqual(0, ImpactCues.FindRef(Server.World), TEXT("Signal cosmétique : jamais sur le serveur dédié")));
+			})
+			.ThenClients(TEXT("Clients : un seul signal chacun"), [this](FBasePIENetworkComponentState& Client)
+			{
+				ASSERT_THAT(AreEqual(1, ImpactCues.FindRef(Client.World), TEXT("Un signal par client, sans doublon")));
+			})
+			.ThenClient(TEXT("Client 0 : signal joué à son propre atterrissage"), 0, [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsTrue(bOwnerCueDuringOwnLeap, TEXT("Prédit : joué pendant le bond local, pas à la diffusion du serveur")));
+			});
 	}
 
 	/** Étourdi en plein vol : ignoré, le vol continue, la zone et l'anneau partent. */

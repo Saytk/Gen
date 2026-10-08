@@ -12,6 +12,7 @@ void UGenNetTestGA_Lingering::OnCastLaunched(const FGenCastRelease& Release)
 }
 
 FGameplayTagContainer UGenNetTestGA_MeteorLeap::TestCooldownTags;
+FGameplayTag UGenNetTestGA_MeteorLeap::TestImpactCueTag;
 float UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
 int32 UGenNetTestGA_Passive::ActivationCount = 0;
 FGameplayTag UGenNetTestGA_Triggered::TestInputTag;

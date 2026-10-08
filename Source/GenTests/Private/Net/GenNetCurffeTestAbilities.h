@@ -114,11 +114,15 @@ public:
 	/** Distance d'apparition des boules de l'anneau, reprise à l'activation (0 par défaut ; test de la règle des murs). */
 	static float TestRingSpawnOffset;
 
+	/** Signal d'impact à l'atterrissage, repris à l'activation (aucun par défaut ; revue Plan 2 Tasks 7-8, M-4). */
+	static FGameplayTag TestImpactCueTag;
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
 	{
 		CooldownTags = TestCooldownTags;
 		RingSpawnOffset = TestRingSpawnOffset;
+		ImpactCueTag = TestImpactCueTag;
 		Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	}
 };
