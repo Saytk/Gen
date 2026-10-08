@@ -41,6 +41,12 @@ protected:
 	virtual void PlayerTick(float DeltaTime) override;
 
 	/**
+	 * Client propriétaire : la possession du pion est confirmée. Si son ASC est déjà initialisé (OnRep_PlayerState
+	 * passé avant que le contrôleur soit connu), on prévient l'interface ici : la barre de sorts ne reste pas vide.
+	 */
+	virtual void AcknowledgePossession(APawn* P) override;
+
+	/**
 	 * La rotation de contrôle suit le curseur. Elle part au serveur avec chaque mouvement,
 	 * ce qui permet au personnage de faire face à la visée pendant une incantation.
 	 */

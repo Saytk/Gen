@@ -20,6 +20,7 @@ class USpacer;
 class UTexture;
 class FViewport;
 struct FActiveGameplayEffectHandle;
+struct FGameplayAbilitySpec;
 struct FGameplayEffectSpec;
 struct FOnAttributeChangeData;
 
@@ -70,7 +71,12 @@ protected:
 
 private:
 	void ApplyLayout();
-	void ResolveAbility();
+	/** Cherche le sort de InputTag dans l'ASC (sauf Excluded, un spec en cours de retrait) et s'y câble. */
+	void ResolveAbility(FGameplayAbilitySpecHandle Excluded = FGameplayAbilitySpecHandle());
+	/** Oublie le sort résolu (tags de recharge, icône) sans délier l'ASC. */
+	void ClearResolvedAbility();
+	/** Sort accordé ou retiré (UGenAbilitySystemComponent::OnAbilitiesChanged) : respawn, changement de champion, sort tardif. */
+	void HandleAbilitiesChanged(const FGameplayAbilitySpec& Spec, bool bRemoved);
 	/** Mappings Enhanced Input reconstruits (contexte ajouté, réassignation) : on relit le libellé de touche. */
 	UFUNCTION() void HandleControlMappingsRebuilt();
 	/** Viewport redimensionné : l'échelle DPI change, donc l'épaisseur minimale du bord (§7.1). */
@@ -106,12 +112,15 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> SweepMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> ArcMID;
 
+	/** Tags de l'ASC (étourdissement), gardés tant que l'ASC est lié. */
 	TArray<TPair<FGameplayTag, FDelegateHandle>> TagHandles;
+	/** Tags de recharge du sort résolu, retirés quand le sort change. */
+	TArray<TPair<FGameplayTag, FDelegateHandle>> CooldownTagHandles;
+	FDelegateHandle AbilitiesChangedHandle;
 	FDelegateHandle EnergyHandle;
 	FDelegateHandle MaxEnergyHandle;
 	FDelegateHandle EffectAddedHandle;
 	FTimerHandle RefreshTimer;
-	FTimerHandle ResolveRetryTimer;
 	FDelegateHandle ViewportResizedHandle;
 
 	EGenAbilitySlotState State = EGenAbilitySlotState::Empty;
@@ -123,7 +132,6 @@ private:
 	bool bLocked = false;
 	/** Ultime pleine ET lançable lors du dernier rafraîchissement : l'impulsion part sur le front montant. */
 	bool bUltimateWasReadyFull = false;
-	int32 ResolveAttempts = 0;
 	/** Boîte du chiffre par classe de format, mesurée dans le style du chiffre (TS_Cooldown) à la première utilisation. */
 	TMap<FIntPoint, GenUIRules::FCooldownBoxLayout> CooldownBoxLayouts;
 	FIntPoint CooldownBoxClass = FIntPoint(-1, -1);

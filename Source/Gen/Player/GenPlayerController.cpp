@@ -9,6 +9,7 @@
 #include "Input/GenInputConfig.h"
 #include "InputActionValue.h"
 #include "Player/GenPlayerState.h"
+#include "UI/GenUISubsystem.h"
 
 AGenPlayerController::AGenPlayerController()
 {
@@ -28,6 +29,23 @@ void AGenPlayerController::BeginPlay()
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
 		Subsystem->AddMappingContext(InputConfig->DefaultMappingContext, 0);
+	}
+}
+
+void AGenPlayerController::AcknowledgePossession(APawn* P)
+{
+	Super::AcknowledgePossession(P);
+
+	// Second chemin de l'événement "ASC prêt" (l'autre : AGenPlayerCharacter::InitAbilitySystemFromPlayerState).
+	// Le sous-système ignore une seconde annonce pour le même ASC et le même pion.
+	const AGenCharacterBase* GenCharacter = Cast<AGenCharacterBase>(P);
+	UAbilitySystemComponent* ASC = GenCharacter ? GenCharacter->GetAbilitySystemComponent() : nullptr;
+	if (IsLocalController() && ASC && ASC->GetAvatarActor() == P)
+	{
+		if (UGenUISubsystem* UISubsystem = UGenUISubsystem::Get(this))
+		{
+			UISubsystem->NotifyAbilitySystemReady(ASC);
+		}
 	}
 }
 

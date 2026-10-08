@@ -73,6 +73,18 @@ TArray<FActiveGameplayEffectHandle> UGenAbilitySystemComponent::ApplyEffectsToSe
 	return Handles;
 }
 
+void UGenAbilitySystemComponent::OnGiveAbility(FGameplayAbilitySpec& AbilitySpec)
+{
+	Super::OnGiveAbility(AbilitySpec);
+	OnAbilitiesChanged.Broadcast(AbilitySpec, /*bRemoved*/ false);
+}
+
+void UGenAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec)
+{
+	OnAbilitiesChanged.Broadcast(AbilitySpec, /*bRemoved*/ true);
+	Super::OnRemoveAbility(AbilitySpec);
+}
+
 void UGenAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
 	if (!InputTag.IsValid())

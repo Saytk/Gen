@@ -1,6 +1,7 @@
 #include "UI/GenAbilitySlot.h"
 
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -28,13 +29,6 @@
 #include "UI/GenUIDataAssets.h"
 #include "UI/GenUILog.h"
 #include "UI/GenUISubsystem.h"
-
-namespace
-{
-	/** Le sort n'est pas encore répliqué au client quand l'ASC est prêt : on réessaie un peu. */
-	constexpr float ResolveRetryInterval = 0.25f;
-	constexpr int32 ResolveRetryMax = 40;
-}
 
 void UGenAbilitySlot::NativeConstruct()
 {
@@ -159,7 +153,6 @@ void UGenAbilitySlot::Bind(UAbilitySystemComponent* InASC)
 
 	Unbind();
 	ASC = InASC;
-	ResolveAttempts = 0;
 
 	if (!ASC.IsValid())
 	{
@@ -186,6 +179,13 @@ void UGenAbilitySlot::Bind(UAbilitySystemComponent* InASC)
 		bUltimateWasReadyFull = Segments > 0 && GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Segments) == Segments;
 	}
 
+	// Sorts accordés après l'ASC (réplication des specs), retirés au respawn ou au changement de champion :
+	// événements de l'ASC, pas de sondage
+	if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(InASC))
+	{
+		AbilitiesChangedHandle = GenASC->OnAbilitiesChanged.AddUObject(this, &ThisClass::HandleAbilitiesChanged);
+	}
+
 	ResolveAbility();
 	RefreshKeyLabel();
 }
@@ -195,8 +195,9 @@ void UGenAbilitySlot::Unbind()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(RefreshTimer);
-		World->GetTimerManager().ClearTimer(ResolveRetryTimer);
 	}
+
+	ClearResolvedAbility();
 
 	if (ASC.IsValid())
 	{
@@ -216,18 +217,18 @@ void UGenAbilitySlot::Unbind()
 		{
 			ASC->OnActiveGameplayEffectAddedDelegateToSelf.Remove(EffectAddedHandle);
 		}
+		if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC.Get()))
+		{
+			GenASC->OnAbilitiesChanged.Remove(AbilitiesChangedHandle);
+		}
 	}
 
 	TagHandles.Reset();
 	EnergyHandle.Reset();
 	MaxEnergyHandle.Reset();
 	EffectAddedHandle.Reset();
+	AbilitiesChangedHandle.Reset();
 	ASC.Reset();
-	SpecHandle = FGameplayAbilitySpecHandle();
-	AbilityCDO.Reset();
-	CooldownTags.Reset();
-	CooldownEndTime = 0.f;
-	CooldownDuration = 0.f;
 
 	// Un rebind en plein flash ne doit pas figer un bord à moitié allumé
 	FlashStartTime = -1.f;
@@ -236,14 +237,55 @@ void UGenAbilitySlot::Unbind()
 	{
 		SweepMID->SetScalarParameterValue(TEXT("RimFlash"), 0.f);
 	}
-	// Pas d'icône du sort précédent sur un slot délié
+}
+
+void UGenAbilitySlot::ClearResolvedAbility()
+{
+	if (ASC.IsValid())
+	{
+		for (const TPair<FGameplayTag, FDelegateHandle>& Pair : CooldownTagHandles)
+		{
+			ASC->RegisterGameplayTagEvent(Pair.Key, EGameplayTagEventType::NewOrRemoved).Remove(Pair.Value);
+		}
+	}
+	CooldownTagHandles.Reset();
+
+	SpecHandle = FGameplayAbilitySpecHandle();
+	AbilityCDO.Reset();
+	CooldownTags.Reset();
+	// Remis à zéro : la recharge relue pour le nouveau sort ne déclenche pas de flash de fin
+	CooldownEndTime = 0.f;
+	CooldownDuration = 0.f;
+
+	// Pas d'icône du sort précédent sur un slot délié ou en attente de son sort
 	if (IconMID)
 	{
 		IconMID->SetTextureParameterValue(TEXT("Icon"), DefaultIconTexture);
 	}
 }
 
-void UGenAbilitySlot::ResolveAbility()
+void UGenAbilitySlot::HandleAbilitiesChanged(const FGameplayAbilitySpec& Spec, bool bRemoved)
+{
+	if (bRemoved)
+	{
+		// Notre sort part (respawn, changement de champion) : on se recâble sur un autre sort de la même touche s'il y en a
+		if (Spec.Handle == SpecHandle)
+		{
+			ClearResolvedAbility();
+			ResolveAbility(Spec.Handle);
+		}
+		return;
+	}
+
+	// Sort accordé pour notre touche (sort tardif, nouveau corps) : il remplace l'ancien handle
+	if (Spec.Handle != SpecHandle && Spec.Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+	{
+		ClearResolvedAbility();
+		ResolveAbility();
+	}
+}
+
+void UGenAbilitySlot::ResolveAbility(FGameplayAbilitySpecHandle Excluded)
 {
 	if (!ASC.IsValid())
 	{
@@ -253,7 +295,7 @@ void UGenAbilitySlot::ResolveAbility()
 	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 	{
 		const UGenGameplayAbility* Ability = Cast<UGenGameplayAbility>(Spec.Ability);
-		if (Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		if (Ability && Spec.Handle != Excluded && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
 		{
 			SpecHandle = Spec.Handle;
 			AbilityCDO = Ability;
@@ -267,11 +309,8 @@ void UGenAbilitySlot::ResolveAbility()
 
 	if (!AbilityCDO.IsValid())
 	{
-		// Les sorts donnés par le serveur arrivent après l'ASC côté client : on réessaie
-		if (++ResolveAttempts <= ResolveRetryMax && GetWorld())
-		{
-			GetWorld()->GetTimerManager().SetTimer(ResolveRetryTimer, this, &ThisClass::ResolveAbility, ResolveRetryInterval, false);
-		}
+		// Pas encore de sort pour cette touche (côté client, les specs arrivent après l'ASC) : HandleAbilitiesChanged
+		// nous rappellera quand il sera accordé
 		RefreshVisuals();
 		return;
 	}
@@ -279,7 +318,7 @@ void UGenAbilitySlot::ResolveAbility()
 	for (const FGameplayTag& Tag : CooldownTags)
 	{
 		FDelegateHandle Handle = ASC->RegisterGameplayTagEvent(Tag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::OnCooldownTagChanged);
-		TagHandles.Emplace(Tag, Handle);
+		CooldownTagHandles.Emplace(Tag, Handle);
 	}
 
 	// Par le paramètre du MID et non SetBrushFromTexture, qui remplacerait le matériau (cercle, désaturation)
