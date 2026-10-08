@@ -4,7 +4,7 @@
 #include "Engine/DeveloperSettings.h"
 #include "GenUISettings.generated.h"
 
-class UCommonActivatableWidget;
+class UGenHUDLayout;
 class UGenPrimaryGameLayout;
 class UGenUIKeyGlyphs;
 class UGenUIMetrics;
@@ -21,7 +21,7 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Tokens") TSoftObjectPtr<UGenUIMetrics> Metrics;
 	UPROPERTY(Config, EditAnywhere, Category = "Tokens") TSoftObjectPtr<UGenUIKeyGlyphs> KeyGlyphs;
 	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UGenPrimaryGameLayout> PrimaryLayoutClass;
-	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UCommonActivatableWidget> HUDLayoutClass;
+	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UGenHUDLayout> HUDLayoutClass;
 
 	virtual FName GetCategoryName() const override { return TEXT("Game"); }
 };

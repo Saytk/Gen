@@ -9,7 +9,9 @@
 #include "Engine/Font.h"
 #include "EngineUtils.h"
 #include "Player/GenPlayerState.h"
+#include "UI/GenHUDLayout.h"
 #include "UI/GenPrimaryGameLayout.h"
+#include "UI/GenUILog.h"
 #include "UI/GenUISettings.h"
 #include "UI/GenUITags.h"
 
@@ -28,10 +30,17 @@ void AGenHUD::BeginPlay()
 	TSubclassOf<UGenPrimaryGameLayout> LayoutClass = Settings->PrimaryLayoutClass.LoadSynchronous();
 	if (!LayoutClass)
 	{
+		UE_LOG(LogGenUI, Log, TEXT("PrimaryLayoutClass non renseignée (Project Settings > Game > Gen UI) : pas d'interface UMG, HUD Canvas seul."));
 		return;
 	}
 
 	PrimaryLayout = CreateWidget<UGenPrimaryGameLayout>(PC, LayoutClass);
+	if (!PrimaryLayout)
+	{
+		// Classe abstraite (classe native choisie à la main), Blueprint invalide ou PC sans joueur local
+		UE_LOG(LogGenUI, Warning, TEXT("Impossible de créer la racine d'interface %s pour %s"), *GetNameSafe(LayoutClass), *GetNameSafe(PC));
+		return;
+	}
 	PrimaryLayout->AddToPlayerScreen(1000); // la racine est le seul widget ajouté à l'écran (§8.1)
 	PrimaryLayout->PushWidgetToLayer(GenUITags::UI_Layer_Game, Settings->HUDLayoutClass.LoadSynchronous());
 }

@@ -6,10 +6,9 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/GenUIDataAssets.h"
+#include "UI/GenUILog.h"
 #include "UI/GenUIRules.h"
 #include "UI/GenUISettings.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogGenUI, Log, All);
 
 UGenUISubsystem* UGenUISubsystem::Get(const UObject* WorldContextOrLocalPlayerOwner)
 {
