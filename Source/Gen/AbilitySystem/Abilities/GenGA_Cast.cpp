@@ -298,6 +298,21 @@ void UGenGA_Cast::PlayFeedMontage()
 	const float StepLength = FeedMontage->GetSectionLength(FirstSection != INDEX_NONE ? FirstSection : 0);
 	const float Rate = GetPhaseRate(FeedMontage, StepLength, ActiveFeedInterval, GenMontageTiming::GetExpectedFeedRate(FeedInterval, ActiveFeedInterval));
 	PlayPhaseMontage(FeedMontage, Rate, /*bStopWhenAbilityEnds*/ true);
+
+	// Le geste ne dépasse pas le dernier seuil atteignable (2 flammes : Feed_2 tenue, jamais Feed_3 avant la charge).
+	// Par l'ASC : local sur cette machine et répliqué aux autres joueurs depuis le serveur
+	int32 FeedSectionCount = 0;
+	while (FeedMontage->GetSectionIndex(*FString::Printf(TEXT("Feed_%d"), FeedSectionCount + 1)) != INDEX_NONE)
+	{
+		++FeedSectionCount;
+	}
+	const int32 FeedCap = FMath::Min(MaxFeed, FeedSlotsAtPress);
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (ASC && ASC->GetCurrentMontage() == FeedMontage && GenMontageTiming::ShouldHoldFeedSection(FeedCap, FeedSectionCount))
+	{
+		const FName HoldSection(*FString::Printf(TEXT("Feed_%d"), GenMontageTiming::GetFeedHoldSection(FeedCap, FeedSectionCount)));
+		ASC->CurrentMontageSetNextSectionName(HoldSection, HoldSection);
+	}
 }
 
 void UGenGA_Cast::OnFeedMontageDelayFinished()
@@ -562,10 +577,31 @@ void UGenGA_Cast::StartCasting()
 	// V3 : calé sur CastTime quand le lancer est un CastMontage à part ; montage unique du Plan 1 : vitesse 1.
 	if (ChargeMontage)
 	{
-		const float Rate = GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, CastMontage != nullptr, CastTime)
-			? GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), CastTime, 1.f)
-			: 1.f;
-		PlayPhaseMontage(ChargeMontage, Rate, /*bStopWhenAbilityEnds*/ false);
+		// Clic gauche maintenu : le geste de lancer du sort précédent joue encore (activation suivante une image après le
+		// lancer) ; la charge attend la fin de sa fenêtre au lieu de le couper. Seulement pour une charge calée sur
+		// CastTime (elle est alors jouée plus vite et finit au même moment) ; le minuteur du sort ne change pas
+		float Delay = 0.f;
+		if (CastMontage && GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, true, CastTime))
+		{
+			const FGameplayAbilityActorInfo* Info = GetCurrentActorInfo();
+			const UAnimInstance* AnimInstance = Info ? Info->GetAnimInstance() : nullptr;
+			const bool bThrowPlaying = AnimInstance && AnimInstance->Montage_IsPlaying(CastMontage) && LastCastMontageTime >= 0.0;
+			const float SinceThrow = bThrowPlaying ? static_cast<float>(GetWorld()->GetTimeSeconds() - LastCastMontageTime) : -1.f;
+			Delay = GenMontageTiming::GetChargeStartDelay(SinceThrow, CastTime, CastMontageReleaseHold);
+		}
+
+		if (Delay > 0.f)
+		{
+			PendingChargeDelay = Delay;
+			UAbilityTask_WaitDelay* ChargeDelayTask = UAbilityTask_WaitDelay::WaitDelay(this, Delay);
+			ChargeDelayTask->OnFinish.AddDynamic(this, &ThisClass::OnChargeDelayFinished);
+			ChargeDelayTask->ReadyForActivation();
+			GEN_CAST_LOG(Verbose, "Charge retardée de %.3fs (geste de lancer précédent protégé)", Delay);
+		}
+		else
+		{
+			PlayChargeMontage(0.f);
+		}
 	}
 
 	CastStartTime = GetWorld()->GetTimeSeconds();
@@ -585,6 +621,29 @@ void UGenGA_Cast::StartCasting()
 	UAbilityTask_WaitDelay* CastTask = UAbilityTask_WaitDelay::WaitDelay(this, CastTime);
 	CastTask->OnFinish.AddDynamic(this, &ThisClass::OnCastFinished);
 	CastTask->ReadyForActivation();
+}
+
+void UGenGA_Cast::PlayChargeMontage(float Delay)
+{
+	if (!ChargeMontage)
+	{
+		return;
+	}
+	const bool bScaled = GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, CastMontage != nullptr, CastTime);
+	// Retardée : jouée plus vite, sans avertissement de recalage pour cette accélération voulue
+	const float ExpectedRate = Delay > 0.f && CastTime > Delay ? CastTime / (CastTime - Delay) : 1.f;
+	const float Rate = bScaled ? GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), FMath::Max(CastTime - Delay, KINDA_SMALL_NUMBER), ExpectedRate) : 1.f;
+	PlayPhaseMontage(ChargeMontage, Rate, /*bStopWhenAbilityEnds*/ false);
+}
+
+void UGenGA_Cast::OnChargeDelayFinished()
+{
+	// Incantation toujours en cours (une annulation termine la tâche avec le sort)
+	if (IsActive() && !bReleased)
+	{
+		PlayChargeMontage(PendingChargeDelay);
+	}
+	PendingChargeDelay = 0.f;
 }
 
 void UGenGA_Cast::OnServerAimReceived(const FGameplayAbilityTargetDataHandle& DataHandle)
@@ -937,6 +996,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 		const float Target = GetCastMontageTargetDuration();
 		const float Rate = Target > 0.f ? GetPhaseRate(CastMontage, CastMontage->GetPlayLength(), Target, 1.f) : 1.f;
 		PlayPhaseMontage(CastMontage, Rate, bStopCastMontageWithAbility);
+		LastCastMontageTime = GetWorld() ? GetWorld()->GetTimeSeconds() : -1.0;
 	}
 
 	return true;
