@@ -209,10 +209,13 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 	}
 
 	// Un appui frais qui part remplace l'appui en attente ; sinon l'appui retenu part dès qu'il peut, seul dans l'image
-	// (la répétition automatique attend : elle annulerait son incantation)
+	// (la répétition automatique attend : elle annulerait son incantation). Un sort de la même touche qui ne peut pas partir
+	// (Pyroblast hors embrasement) ne vide pas le tampon de l'autre (boule de feu en recharge)
 	const bool bFreshActivation = AbilitiesToActivate.ContainsByPredicate([this](const FGameplayAbilitySpecHandle& Handle)
 	{
-		return InputPressedSpecHandles.Contains(Handle);
+		const FGameplayAbilitySpec* Spec = InputPressedSpecHandles.Contains(Handle) ? FindAbilitySpecFromHandle(Handle) : nullptr;
+		const UGameplayAbility* Ability = Spec ? (Spec->GetPrimaryInstance() ? Spec->GetPrimaryInstance() : Spec->Ability.Get()) : nullptr;
+		return Ability && (!HasBufferedInput() || Ability->CanActivateAbility(Handle, AbilityActorInfo.Get()));
 	});
 	FGameplayAbilitySpecHandle BufferedHandle;
 	if (bFreshActivation)
@@ -375,6 +378,42 @@ bool UGenAbilitySystemComponent::HasHardCC() const
 	return HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags());
 }
 
+namespace GenInputBuffer
+{
+	const UGenGameplayAbility* GetSpecAbility(const FGameplayAbilitySpec& Spec)
+	{
+		return Cast<UGenGameplayAbility>(Spec.GetPrimaryInstance() ? Spec.GetPrimaryInstance() : Spec.Ability.Get());
+	}
+
+	/**
+	 * Rythme de l'attaque de base (recharge après l'incantation, décision du 2026-10-08) : recharge courte du sort, au plus
+	 * InputBufferDuration (marge d'arrondi : 0.3 s saisi vaut 0.30000001 en float) ; 0 sinon.
+	 */
+	float GetShortCooldownDuration(const FGameplayAbilitySpec& Spec)
+	{
+		const UGenGameplayAbility* Ability = GetSpecAbility(Spec);
+		const float Duration = Ability ? Ability->CooldownDuration.GetValueAtLevel(Spec.Level) : 0.f;
+		return Duration > 0.f && Duration <= UGenAbilitySystemComponent::InputBufferDuration + UE_KINDA_SMALL_NUMBER ? Duration : 0.f;
+	}
+
+	/** Recharge courte de Spec qui court en ce moment (le reste prédit peut dépasser un peu la durée) ; 0 sinon. */
+	float GetShortCooldownRemaining(const FGameplayAbilitySpec& Spec, const FGameplayAbilityActorInfo* ActorInfo)
+	{
+		const UGenGameplayAbility* Ability = GetSpecAbility(Spec);
+		return Ability && ActorInfo && GetShortCooldownDuration(Spec) > 0.f ? FMath::Max(Ability->GetCooldownTimeRemaining(ActorInfo), 0.f) : 0.f;
+	}
+
+	/**
+	 * Recharge courte que l'appui retenu de Spec doit encore attendre : celle qui court, ou toute la recharge courte du sort
+	 * s'il incante encore (elle commence au départ). 0 sans recharge courte.
+	 */
+	float GetShortCooldownWait(const FGameplayAbilitySpec& Spec, const FGameplayAbilityActorInfo* ActorInfo)
+	{
+		const float Remaining = GetShortCooldownRemaining(Spec, ActorInfo);
+		return Remaining > 0.f || !Spec.IsActive() ? Remaining : GetShortCooldownDuration(Spec);
+	}
+}
+
 bool UGenAbilitySystemComponent::ShouldBufferPress(const FGameplayAbilitySpec& Spec) const
 {
 	const UWorld* World = GetWorld();
@@ -389,6 +428,12 @@ bool UGenAbilitySystemComponent::ShouldBufferPress(const FGameplayAbilitySpec& S
 	if (HasMatchingGameplayTag(GenGameplayTags::State_CastLocked))
 	{
 		return LocalCastLockEndTime < 0.0 || LocalCastLockEndTime - Now <= InputBufferLead;
+	}
+
+	// Recharge courte de ce sort en cours (attaque de base : 0.3 s après l'incantation) : l'appui part à sa fin
+	if (GenInputBuffer::GetShortCooldownRemaining(Spec, AbilityActorInfo.Get()) > 0.f)
+	{
+		return true;
 	}
 
 	// Une incantation (celle de ce sort ou d'un autre) finit dans moins de InputBufferLead s
@@ -433,10 +478,19 @@ void UGenAbilitySystemComponent::BufferPress(const TArray<FGameplayAbilitySpecHa
 	{
 		return;
 	}
-	// Tous les sorts de l'appui (touche partagée : boule de feu et Pyroblast) ; part celui qui le peut au moment voulu
+	// Tous les sorts de l'appui (touche partagée : boule de feu et Pyroblast) ; part celui qui le peut au moment voulu.
+	// L'attente couvre en plus la recharge courte qui suit (attaque de base : incantation, puis 0.3 s de recharge)
 	BufferedPressHandles.Reset();
 	BufferedPressHandles.Append(Handles);
-	BufferedPressExpireTime = World->GetTimeSeconds() + InputBufferDuration;
+	float CooldownWait = 0.f;
+	for (const FGameplayAbilitySpecHandle& Handle : Handles)
+	{
+		if (const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(Handle))
+		{
+			CooldownWait = FMath::Max(CooldownWait, GenInputBuffer::GetShortCooldownWait(*Spec, AbilityActorInfo.Get()));
+		}
+	}
+	BufferedPressExpireTime = World->GetTimeSeconds() + InputBufferDuration + CooldownWait;
 	// Fin d'image : il part dans l'image où le verrou ou l'incantation se termine
 	RequestEndOfFrameInput();
 }

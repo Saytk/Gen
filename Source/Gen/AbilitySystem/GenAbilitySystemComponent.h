@@ -45,7 +45,9 @@ public:
 	 * Revue PIE finale, C-5 : tampon des appuis (client propriétaire seulement : il ne fait que retarder la tentative
 	 * d'activation locale). Un appui qui ne peut pas partir à cause du verrou de lancement (bond en vol, forme de feu) ou
 	 * d'une incantation qui finit dans moins de InputBufferLead s est retenu InputBufferDuration s et part dès que
-	 * possible, dans l'image même (passage de fin d'image). Le dernier appui gagne ; un appui qui part tout de suite, la
+	 * possible, dans l'image même (passage de fin d'image). Rythme de l'attaque de base (2026-10-08) : un appui pendant une
+	 * recharge courte du sort (au plus InputBufferDuration) attend aussi, et l'attente couvre la recharge courte qui suit
+	 * une incantation. Le dernier appui gagne ; un appui qui part tout de suite, la
 	 * touche d'annulation, un contrôle dur ou la mort vident le tampon. Jamais de tampon sous contrôle dur.
 	 */
 	static constexpr float InputBufferDuration = 0.3f;

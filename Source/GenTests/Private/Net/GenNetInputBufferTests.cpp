@@ -4,6 +4,7 @@
 #if ENABLE_PIE_NETWORK_TEST
 
 #include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/World.h"
@@ -19,7 +20,8 @@ using namespace GenNetTest;
 /**
  * Gen.Net.InputBuffer (revue PIE finale, C-5) : tampon des appuis du client propriétaire. Bond de test (vol de 0.8 s) :
  * un clic gauche tapé dans les 0.2 dernières secondes du vol attend et part à l'atterrissage, dans l'image même ; tapé
- * 0.5 s avant l'atterrissage, il est perdu (comme avant : « Vol, sans sort »).
+ * 0.5 s avant l'atterrissage, il est perdu (comme avant : « Vol, sans sort »). Rythme de l'attaque de base (2026-10-08) :
+ * un clic gauche tapé pendant la recharge de la boule de feu (GA_Fireball, 0.3 s après l'incantation) part à sa fin.
  */
 NETWORK_TEST_CLASS(InputBuffer, "Gen.Net")
 {
@@ -164,6 +166,85 @@ NETWORK_TEST_CLASS(InputBuffer, "Gen.Net")
 				}
 				return LandTime >= 0.0 && Now >= LandTime + 0.4;
 			}, DefaultWait());
+	}
+
+	/** Joueur prêt, boule de feu suivie (sans bond). */
+	void QueueFireballReady()
+	{
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : sol de test"), [this](FBasePIENetworkComponentState& Server) { ASSERT_THAT(IsNotNull(SpawnTestFloor(Server.World))); })
+			.UntilClients(TEXT("Clients : sol de test reçu"), [](FBasePIENetworkComponentState& Client) { return HasTestFloor(Client.World); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : lanceur posé"), [this](FBasePIENetworkComponentState& Server)
+			{
+				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Caster));
+				PlaceOnFloor(Caster, 0.f, 0.f);
+			})
+			.UntilClient(TEXT("Client 0 : posé au sol"), 0, [](FBasePIENetworkComponentState& Client)
+			{
+				const ACharacter* Pawn = GetLocalController(Client)->GetPawn<ACharacter>();
+				return Pawn && FVector::Dist2D(Pawn->GetActorLocation(), FVector::ZeroVector) < 20.f && Pawn->GetCharacterMovement()->IsMovingOnGround();
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : visée, suivi de la boule de feu"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
+				PC->bDebugAimOverride = true;
+				PC->DebugAimLocation = FVector(500.f, 0.f, StandingHeight);
+				UGenAbilitySystemComponent* ASC = GetClientGenASC(Client);
+				ASSERT_THAT(IsNotNull(FindAbilitySpec(ASC, FireballClass), TEXT("Boule de feu accordée")));
+				ClientASC = ASC;
+				UWorld* World = Client.World;
+				ActivatedHandle = ASC->AbilityActivatedCallbacks.AddLambda([this, World](UGameplayAbility* Ability)
+				{
+					if (Ability && Ability->GetClass() == FireballClass.Get())
+					{
+						FireballTimes.Add(World->GetTimeSeconds());
+					}
+				});
+			});
+	}
+
+	TEST_METHOD(TapDuringFireballCooldown_FiresWhenItEnds)
+	{
+		const FGameplayTag CooldownTag = Tag(TEXT("Cooldown.Ability.Fireball"));
+		QueueFireballReady();
+		Network
+			.ThenClient(TEXT("Client 0 : premier clic gauche"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				const UGameplayAbility* Fireball = FireballClass->GetDefaultObject<UGameplayAbility>();
+				ASSERT_THAT(IsTrue(Cast<UGenGameplayAbility>(Fireball) && Cast<UGenGameplayAbility>(Fireball)->CooldownDuration.GetValueAtLevel(1) > 0.f,
+					TEXT("GA_Fireball a une recharge (rythme de l'attaque de base)")));
+				Tap(Client, Tag(TEXT("InputTag.Ability.Primary")));
+			})
+			.UntilClient(TEXT("Client 0 : recharge après l'incantation"), 0, [this, CooldownTag](FBasePIENetworkComponentState& Client)
+			{
+				return GetClientGenASC(Client)->HasMatchingGameplayTag(CooldownTag);
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : clic gauche pendant la recharge"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				FireballsAtTap = FireballTimes.Num();
+				TapTime = Client.World->GetTimeSeconds();
+				Tap(Client, Tag(TEXT("InputTag.Ability.Primary")));
+				bBufferedAtTap = GetClientGenASC(Client)->HasBufferedInput();
+				ASSERT_THAT(AreEqual(FireballsAtTap, FireballTimes.Num(), TEXT("Rien ne part pendant la recharge")));
+			})
+			.UntilClient(TEXT("Client 0 : fin de la recharge"), 0, [this, CooldownTag](FBasePIENetworkComponentState& Client)
+			{
+				if (LandTime < 0.0 && !GetClientGenASC(Client)->HasMatchingGameplayTag(CooldownTag))
+				{
+					LandTime = Client.World->GetTimeSeconds();
+				}
+				return LandTime >= 0.0 && Client.World->GetTimeSeconds() >= LandTime + 0.2;
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : la boule de feu part à la fin de la recharge"), 0, [this](FBasePIENetworkComponentState&)
+			{
+				TestRunner->AddInfo(FString::Printf(TEXT("Tap %.3f s avant la fin de la recharge ; boules de feu : %d"), LandTime - TapTime, FireballTimes.Num() - FireballsAtTap));
+				ASSERT_THAT(IsTrue(bBufferedAtTap, TEXT("Appui retenu par le tampon")));
+				ASSERT_THAT(AreEqual(FireballsAtTap + 1, FireballTimes.Num(), TEXT("Une boule de feu après la recharge")));
+				ASSERT_THAT(IsTrue(FireballTimes.Last() >= LandTime - 0.05 && FireballTimes.Last() <= LandTime + 0.1, TEXT("Partie à la fin de la recharge")));
+			});
 	}
 
 	TEST_METHOD(TapInLastFifthOfFlight_FiresOnLanding)
