@@ -75,6 +75,16 @@ tout le reste avance sans cérémonie.
 - **Tests réseau automatiques comme barrière.** Les tests CQTest `Gen.Net.*` remplacent les matrices PIE
   à chaque tâche. Un seul passage PIE court (2 clients) par fonctionnalité pour l'œil ; la matrice complète
   (3 clients, latence) seulement avant la fusion dans `main`.
+- **Ne pas redémarrer l'éditeur pour rien.**
+  - Un seul redémarrage par lot de C++ : on fusionne le C++ du worktree dans l'arbre principal à un point de
+    synchronisation prévu, puis on ferme, compile et relance une seule fois.
+  - Pendant l'itération, Live Coding pour les `.cpp`. Préférer un changement en `.cpp` à un nouveau membre de
+    `.h` quand c'est possible, et regrouper les changements de `.h` du lot.
+  - Les assets ne se modifient que dans l'éditeur principal, jamais en headless sur une autre branche : pas
+    de fusion d'assets binaires, donc pas de fermeture de l'éditeur pour fusionner.
+  - Les tests tournent dans l'éditeur ouvert, pas dans un second process Unreal (sauf le test headless avant
+    de pousser).
+  - Pas de redémarrage « par sécurité » : seulement si une compilation l'exige ou si l'éditeur a planté.
 - **Visuel : montrer tôt.** VFX, animations et UI se font dans l'éditeur avec une capture avant/après dès
   la première version, jamais construits « à l'aveugle » en headless puis branchés. Le style de référence
   (bible §7.4, [TASTE #5]) sert de base : on duplique et on adapte.
