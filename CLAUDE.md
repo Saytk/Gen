@@ -121,7 +121,8 @@ tout le reste avance sans cérémonie.
   reste la vérification finale, à l'œil.
   - Lancés dans l'éditeur ouvert, ces tests remplacent le niveau courant par une carte vide, sans demander.
     Il faut donc sauvegarder avant, puis rouvrir `L_Arena` après.
-- **Test headless, seulement comme barrière avant un commit** :
+- **Test headless, seulement comme barrière avant de pousser** (inutile si l'éditeur a été relancé sur la
+  compilation finale sans Live Coding depuis, et que la suite complète y est passée) :
   `UnrealEditor-Cmd.exe "<projet>\Gen.uproject" -ExecCmds="Automation RunTests Gen.;Quit" -unattended -nullrhi -nosplash -nosound -stdout -ReportExportPath="<projet>\Saved\TestReport" -ModelContextProtocolPort=8011`.
   Lire ensuite `index.json` dans le dossier du rapport, pas le log. `Tools/RunGenTests.ps1` fait les deux.
 
