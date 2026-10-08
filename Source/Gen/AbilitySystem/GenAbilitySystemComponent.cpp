@@ -257,15 +257,16 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 		return FActiveGameplayEffectHandle();
 	}
 
-	// Plan 3 Task 4 : intouchable (forme de feu...), aucun contrôle dur ne prend.
-	// Plan 3 Task 5 : immunisé par la résilience non plus.
-	if (HasMatchingGameplayTag(GenGameplayTags::State_Untouchable) || HasMatchingGameplayTag(GenGameplayTags::State_CCImmune))
+	// Seuls les contrôles durs passent ici (ex : State.Countering n'en est pas un). Vérifié d'abord (revue P3 T3-7, M5) :
+	// une erreur d'appel ne doit pas passer inaperçue parce que la cible est intouchable ou immunisée
+	if (!ensureMsgf(GenGameplayTags::GetHardCCTags().HasTagExact(StateTag), TEXT("ApplyHardCC : %s n'est pas un contrôle dur"), *StateTag.ToString()))
 	{
 		return FActiveGameplayEffectHandle();
 	}
 
-	// Seuls les contrôles durs passent ici (ex : State.Countering n'en est pas un)
-	if (!ensureMsgf(GenGameplayTags::GetHardCCTags().HasTagExact(StateTag), TEXT("ApplyHardCC : %s n'est pas un contrôle dur"), *StateTag.ToString()))
+	// Plan 3 Task 4 : intouchable (forme de feu...), aucun contrôle dur ne prend.
+	// Plan 3 Task 5 : immunisé par la résilience non plus. Refusé => jamais compté pour la résilience.
+	if (HasMatchingGameplayTag(GenGameplayTags::State_Untouchable) || HasMatchingGameplayTag(GenGameplayTags::State_CCImmune))
 	{
 		return FActiveGameplayEffectHandle();
 	}
@@ -389,7 +390,32 @@ int32 UGenAbilitySystemComponent::CancelPendingCasts(const UGameplayAbility* Exc
 	// déjà arrivée (ordre des RPC du joueur : une visée envoyée avant l'annulation arrive avant elle)
 	for (UGenGA_Cast* CastAbility : Pending)
 	{
-		CastAbility->CancelAbility(CastAbility->GetCurrentAbilitySpecHandle(), CastAbility->GetCurrentActorInfo(), CastAbility->GetCurrentActivationInfo(), true);
+		const FGameplayAbilitySpecHandle Handle = CastAbility->GetCurrentAbilitySpecHandle();
+		CastAbility->CancelAbility(Handle, CastAbility->GetCurrentActorInfo(), CastAbility->GetCurrentActivationInfo(), true);
+
+		// Revue P3 T3-7, I2 : un sort annulé dont la touche reste enfoncée (clic gauche en répétition automatique) ne se
+		// relance pas tout seul dans la même image (ProcessAbilityInput) : il faut relâcher puis rappuyer. Tous les sorts de
+		// la même touche (Pyroblast et boule de feu partagent le clic gauche) : la touche entière est « relâchée » pour eux.
+		// Touche d'annulation seulement : un sort qui en remplace un autre (Except) peut partager sa touche et doit garder
+		// son appui (relâchement du nourrissage). La répétition automatique du sort remplacé reste bloquée tant que le
+		// nouveau s'incante (ProcessAbilityInput, IsAnotherAbilityCasting)
+		if (Except)
+		{
+			continue;
+		}
+		InputHeldSpecHandles.Remove(Handle);
+		InputPressedSpecHandles.Remove(Handle);
+		if (CastAbility->InputTag.IsValid())
+		{
+			for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+			{
+				if (Spec.GetDynamicSpecSourceTags().HasTagExact(CastAbility->InputTag))
+				{
+					InputHeldSpecHandles.Remove(Spec.Handle);
+					InputPressedSpecHandles.Remove(Spec.Handle);
+				}
+			}
+		}
 	}
 	return Pending.Num();
 }

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "InputCoreTypes.h"
+#include "UI/GenUIRules.h"
 #include "GenUIDataAssets.generated.h"
 
 class UTexture2D;
@@ -21,6 +22,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Surfaces") FLinearColor Bg_Panel = FLinearColor::Black;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_Overlay = FLinearColor::Black;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_Locked = FLinearColor::Black;
+	/**
+	 * cooldown.noEnergy #2E4A78 α 0.45 (§2.5) : voile « pas assez d'énergie ». Valeur posée dans DA_UIPalette via HexToLinear ;
+	 * le défaut est le jeton lui-même (depuis le hex), pour qu'une palette pas encore mise à jour ne voile pas le disque en noir opaque.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_NoEnergy = GenUIRules::HexToLinear(TEXT("#2E4A78"), 0.45f);
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Energy") FLinearColor Energy_Charging = FLinearColor::Yellow;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Energy") FLinearColor Energy_Full = FLinearColor::Yellow;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Flash") FLinearColor Flash_White = FLinearColor::White;
@@ -48,6 +54,8 @@ public:
 	/** Chiffre de recharge caché si la durée totale est inférieure (§4.1, tunable). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar", meta = (Units = "s")) float CooldownHideBelowTotal = 2.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float CooldownDesaturation = 0.7f;
+	/** Luminosité de l'icône quand l'énergie manque (§4.1 : 55 %). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float NoEnergyBrightness = 0.55f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Motion", meta = (Units = "s")) float ReadyFlashDuration = 0.2f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Motion", meta = (Units = "s")) float UltimatePulseDuration = 0.3f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") int32 UltimateSegments = 4;

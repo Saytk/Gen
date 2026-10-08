@@ -60,6 +60,8 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 	float ClientMark = 0.f;
 	float ServerMark = 0.f;
 	float CastStartServerTime = -1.f;
+	/** Temps du serveur du dernier tag lâche retiré sur le serveur seul (QueueLooseTagOnOne). */
+	float ServerTagRemovedTime = -1.f;
 
 	/** Répétition automatique : activations de la boule de feu vues pendant l'incantation de la grande. */
 	int32 GatedActivations = 0;
@@ -539,7 +541,7 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 		const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(TagName));
 		if (bServer)
 		{
-			Network.ThenServer(bAdd ? TEXT("Serveur seul : pose le tag") : TEXT("Serveur seul : retire le tag"), [this, Tag, bAdd](FBasePIENetworkComponentState&)
+			Network.ThenServer(bAdd ? TEXT("Serveur seul : pose le tag") : TEXT("Serveur seul : retire le tag"), [this, Tag, bAdd](FBasePIENetworkComponentState& Server)
 			{
 				ASSERT_THAT(IsTrue(Tag.IsValid(), TEXT("Tag inconnu")));
 				if (bAdd)
@@ -549,6 +551,7 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 				else
 				{
 					ServerCasterASC->RemoveLooseGameplayTag(Tag);
+					ServerTagRemovedTime = Server.World->GetTimeSeconds();
 				}
 			});
 		}
@@ -624,6 +627,9 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 			.ThenServer(TEXT("Serveur : aucune flamme dépensée dans la fenêtre de grâce"), [this](FBasePIENetworkComponentState&)
 			{
 				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				// Revue P3 T3-7, M9 : sinon le test passerait à vide (tag encore là au lancer)
+				ASSERT_THAT(IsTrue(ServerTagRemovedTime >= 0.f && ServerTagRemovedTime < SpawnTime,
+					*FString::Printf(TEXT("Tag retiré (%.3f) avant le lancer (%.3f)"), ServerTagRemovedTime, SpawnTime)));
 				ASSERT_THAT(IsTrue(bCooldownAtSpawn, TEXT("Le sort est bien lancé")));
 				ASSERT_THAT(IsNear(MaxFlames, FlamesAtSpawn, 0.01f, TEXT("Gratuit comme chez le client")));
 			})
@@ -761,6 +767,71 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 			.ThenClient(TEXT("Client 0 : relâche M1"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
 				ASSERT_THAT(AreEqual(0, GatedActivations, TEXT("Aucune relance pendant l'incantation")));
+				UGenAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				ASC->AbilityInputTagReleased(GetCDO(FireballClass)->InputTag);
+				ASC->ProcessAbilityInput(0.f, false);
+			});
+	}
+
+	/**
+	 * Revue P3 T3-7, I2 : M1 maintenu (boule de feu en répétition automatique), touche d'annulation pendant l'incantation.
+	 * Tant que M1 reste enfoncé, aucune relance (le client traite les touches à chaque image comme le PC) et aucun tir
+	 * côté serveur ; relâcher puis rappuyer relance la boule de feu.
+	 */
+	TEST_METHOD(AutoRepeat_CancelKeyStopsHeldPrimaryUntilPressedAgain)
+	{
+		QueueSetup();
+		Network
+			.ThenClient(TEXT("Client 0 : M1 enfoncé"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UGenAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				ASSERT_THAT(IsNotNull(ASC));
+				ASC->AbilityInputTagPressed(GetCDO(FireballClass)->InputTag);
+				ASC->ProcessAbilityInput(0.f, false);
+				ASSERT_THAT(IsTrue(IsAbilityActive(ASC, FireballClass), TEXT("La boule de feu doit être en incantation")));
+			})
+			.UntilServer(TEXT("Serveur : boule de feu en incantation"), [this](FBasePIENetworkComponentState&) { return IsAbilityActive(ServerCasterASC.Get(), FireballClass); }, DefaultWait())
+			.ThenClient(TEXT("Client 0 : touche d'annulation, M1 toujours enfoncé"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UGenAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				ASSERT_THAT(AreEqual(1, ASC->CancelPendingCasts(), TEXT("La boule de feu est annulée")));
+				// Même image que le PC : ProcessAbilityInput suit l'annulation
+				ASC->ProcessAbilityInput(0.f, false);
+				ASSERT_THAT(IsFalse(IsAbilityActive(ASC, FireballClass), TEXT("Pas de relance dans la même image")));
+				bFireballWasActive = false;
+				GatedActivations = 0;
+				ClientMark = Client.World->GetTimeSeconds();
+			})
+			.UntilClient(TEXT("Client 0 : M1 maintenu 0.8 s après l'annulation"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UGenAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				ASC->ProcessAbilityInput(0.f, false);
+				const bool bActive = IsAbilityActive(ASC, FireballClass);
+				GatedActivations += bActive && !bFireballWasActive ? 1 : 0;
+				bFireballWasActive = bActive;
+				return Client.World->GetTimeSeconds() >= ClientMark + 0.8f;
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : aucune relance tant que M1 reste enfoncé"), 0, [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(0, GatedActivations, TEXT("Annulé : M1 maintenu ne relance pas")));
+			})
+			.ThenServer(TEXT("Serveur : aucun tir"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(0, ProjectileCount, TEXT("Aucune boule de feu partie")));
+				ASSERT_THAT(IsFalse(IsAbilityActive(ServerCasterASC.Get(), FireballClass)));
+			})
+			.ThenClient(TEXT("Client 0 : relâche puis rappuie M1"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				UGenAbilitySystemComponent* ASC = GetLocalGenASC(Client);
+				ASC->AbilityInputTagReleased(GetCDO(FireballClass)->InputTag);
+				ASC->ProcessAbilityInput(0.f, false);
+				ASC->AbilityInputTagPressed(GetCDO(FireballClass)->InputTag);
+				ASC->ProcessAbilityInput(0.f, false);
+				ASSERT_THAT(IsTrue(IsAbilityActive(ASC, FireballClass), TEXT("Nouvel appui : la boule de feu repart")));
+			})
+			.UntilServer(TEXT("Serveur : la boule de feu part"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenClient(TEXT("Client 0 : relâche M1"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
 				UGenAbilitySystemComponent* ASC = GetLocalGenASC(Client);
 				ASC->AbilityInputTagReleased(GetCDO(FireballClass)->InputTag);
 				ASC->ProcessAbilityInput(0.f, false);

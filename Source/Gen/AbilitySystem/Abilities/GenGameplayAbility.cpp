@@ -7,6 +7,7 @@
 #include "AbilitySystem/GenEnergy.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
 #include "Character/GenCharacterBase.h"
 #include "Engine/World.h"
 #include "GenGameplayTags.h"
@@ -102,7 +103,18 @@ bool UGenGameplayAbility::CheckCost(const FGameplayAbilitySpecHandle Handle, con
 	// Même règle que la barre de sorts (« Pas assez d'énergie ») : 25.0 suffit pour 25, 24.99 non
 	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	const float Energy = ASC ? ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()) : 0.f;
-	return GenEnergy::CanAfford(Energy, EnergyCost);
+	if (GenEnergy::CanAfford(Energy, EnergyCost))
+	{
+		return true;
+	}
+
+	// Comme Super : la raison du refus (ClientActivateAbilityFailed, retours « pas assez d'énergie » par tag d'échec)
+	const FGameplayTag& CostTag = UAbilitySystemGlobals::Get().ActivateFailCostTag;
+	if (OptionalRelevantTags && CostTag.IsValid())
+	{
+		OptionalRelevantTags->AddTag(CostTag);
+	}
+	return false;
 }
 
 void UGenGameplayAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const

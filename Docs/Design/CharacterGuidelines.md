@@ -112,6 +112,9 @@ Example: a thin, slow stun projectile with a 0.8 s cast, mid range, 12 s cooldow
 - **At most one hard CC among the 5 basic spells.** R and F may each add one.
 - **Resilience:** after 2.5 s of hard CC within 5 s, the target is immune to hard CC for 1.5 s, with a
   visible effect. Long stuns are allowed; endless chains are not.
+  - "Within 5 s" is strict: count the union of the hard CC (overlaps count once) inside the 5 s that end when the
+    latest CC ends. Two 1.5 s stuns about 5 s apart don't trigger it. The CC that reaches 2.5 s applies in full, and
+    the immunity lasts until 1.5 s after it ends. A refused CC (untouchable, already immune) doesn't count.
 - **Ultimates** are interrupted by stun, silence, fear and incapacitate, not by knockback.
 
 ### 3.4 Defensive spells (Q)

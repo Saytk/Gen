@@ -5,7 +5,7 @@ Utilisation (Python avec Pillow, hors éditeur ou dans l'éditeur si Pillow y es
     python Content/Python/gen_ui_icons.py [dossier_de_sortie]
 
 Sortie par défaut : <projet>/Saved/UIIcons/
-  - T_UI_Ability_Curffe_{Primary,Secondary,Mobility}.png  (256 px, RGBA)
+  - T_UI_Ability_Curffe_{Primary,Secondary,Mobility,1,2}.png  (256 px, RGBA ; 1 = Retour de flamme, 2 = Pilier de flammes)
   - T_UI_Glyph_{LMB,RMB,Lock}.png                         (64 px, blanc, teinté en text.primary par le widget)
   - checks/ : niveaux de gris, flou gaussien 2 px, 32 px, planche contact et mesures (§2.11)
 
@@ -148,6 +148,64 @@ def icon_mobility():
         spikes.append((ix + math.cos(a) * r, iy - 4 + math.sin(a) * r * (0.62 + 0.38 * up)))
     d.polygon([(s(x), s(y)) for x, y in spikes], fill=BODY)
     disc(d, ix - 4, iy - 10, 15, CORE)
+    return finish(img, ICON_SIZE)
+
+
+def thick_arc(d, cx, cy, r_out, r_in, a0, a1, col, steps=40):
+    """Bande en arc de cercle (angles en degrés, sens horaire écran), bouts plats."""
+    outer = [(cx + math.cos(math.radians(a0 + (a1 - a0) * i / steps)) * r_out,
+              cy + math.sin(math.radians(a0 + (a1 - a0) * i / steps)) * r_out) for i in range(steps + 1)]
+    inner = [(cx + math.cos(math.radians(a1 - (a1 - a0) * i / steps)) * r_in,
+              cy + math.sin(math.radians(a1 - (a1 - a0) * i / steps)) * r_in) for i in range(steps + 1)]
+    d.polygon([(s(x), s(y)) for x, y in outer + inner], fill=col)
+
+
+def icon_backfire():
+    """Retour de flamme : garde levée (arc de bouclier tourné vers le haut à droite), une petite boule de feu s'y brise."""
+    img, d = canvas(ICON_SIZE)
+    background(d)
+    # Garde : arc épais centré en bas à gauche, convexe vers le haut à droite (3 bandes, lumière en haut à gauche)
+    gx, gy = 92, 168
+    thick_arc(d, gx, gy, 112, 78, -135, 45, EDGE)
+    thick_arc(d, gx, gy, 106, 84, -128, 38, BODY)
+    thick_arc(d, gx, gy, 106, 96, -122, -40, CORE)
+    # Boule de feu qui s'écrase sur la garde (en haut à droite), éclats rejetés vers l'extérieur
+    hx, hy, r = 196, 66, 20
+    spikes = []
+    for k in range(12):
+        a = math.radians(-135 + k * 30)
+        rr = 40 if k % 2 == 0 else 22
+        spikes.append((hx + math.cos(a) * rr, hy + math.sin(a) * rr))
+    d.polygon([(s(x), s(y)) for x, y in spikes], fill=EDGE)
+    lit_orb(d, hx, hy, r)
+    return finish(img, ICON_SIZE)
+
+
+def icon_flame_pillar():
+    """Pilier de flammes : haute colonne de feu verticale qui jaillit d'une ellipse au sol."""
+    img, d = canvas(ICON_SIZE)
+    background(d)
+    # Sol : ellipse brune, bord ambré côté lumière
+    d.ellipse([s(40), s(176), s(216), s(226)], fill=EDGE)
+    d.ellipse([s(52), s(180), s(204), s(216)], fill=BODY)
+    d.ellipse([s(70), s(186), s(170), s(208)], fill=CORE)
+
+    def column(half_w, top, bottom, col, dx=0.0):
+        # Colonne effilée vers le haut avec deux ondulations latérales
+        pts_l, pts_r = [], []
+        steps = 24
+        for i in range(steps + 1):
+            t = i / steps  # 0 = bas, 1 = haut
+            y = bottom - (bottom - top) * t
+            w = half_w * (1.0 - 0.85 * t ** 1.4) * (1.0 + 0.12 * math.sin(t * math.pi * 3))
+            cx = 128 + dx + 6 * math.sin(t * math.pi * 2)
+            pts_l.append((cx - w, y))
+            pts_r.append((cx + w, y))
+        d.polygon([(s(x), s(y)) for x, y in pts_l + list(reversed(pts_r))], fill=col)
+
+    column(44, 18, 200, EDGE)
+    column(32, 34, 196, BODY, dx=-3)
+    column(14, 70, 190, CORE, dx=-8)
     return finish(img, ICON_SIZE)
 
 
@@ -307,6 +365,8 @@ def main(out_dir=None):
         "T_UI_Ability_Curffe_Primary": icon_primary(),
         "T_UI_Ability_Curffe_Secondary": icon_secondary(),
         "T_UI_Ability_Curffe_Mobility": icon_mobility(),
+        "T_UI_Ability_Curffe_1": icon_backfire(),
+        "T_UI_Ability_Curffe_2": icon_flame_pillar(),
     }
     glyphs = {
         "T_UI_Glyph_LMB": glyph_mouse(left=True),

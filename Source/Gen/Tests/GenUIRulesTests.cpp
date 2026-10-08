@@ -169,4 +169,26 @@ bool FGenUISegmentsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUIEnergySlotTest, "Gen.UI.EnergySlot",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenUIEnergySlotTest::RunTest(const FString& Parameters)
+{
+	// CostSegments(EnergyCost, MaxEnergy, Segments) : un segment par tranche de Max/Segments (§4.1)
+	TestEqual(TEXT("R : 25 -> 1 segment"), GenUIRules::CostSegments(25.f, 100.f, 4), 1);
+	TestEqual(TEXT("F : 100 -> 4 segments"), GenUIRules::CostSegments(100.f, 100.f, 4), 4);
+	TestEqual(TEXT("sort gratuit : pas d'arc"), GenUIRules::CostSegments(0.f, 100.f, 4), 0);
+	TestEqual(TEXT("coût entre deux segments : arrondi au-dessus"), GenUIRules::CostSegments(30.f, 100.f, 4), 2);
+	TestEqual(TEXT("énergie max inconnue : pas d'arc"), GenUIRules::CostSegments(25.f, 0.f, 4), 0);
+
+	// ResolveSlotState(bHasAbility, bLocked, CooldownRemaining, bCanAfford)
+	TestEqual(TEXT("pas assez d'énergie"), GenUIRules::ResolveSlotState(true, false, 0.f, false), EGenAbilitySlotState::NoEnergy);
+	TestEqual(TEXT("la recharge prime sur l'énergie"), GenUIRules::ResolveSlotState(true, false, 2.f, false), EGenAbilitySlotState::Cooldown);
+	TestEqual(TEXT("bloqué prime sur l'énergie"), GenUIRules::ResolveSlotState(true, true, 0.f, false), EGenAbilitySlotState::Locked);
+	TestEqual(TEXT("assez d'énergie : prêt"), GenUIRules::ResolveSlotState(true, false, 0.f, true), EGenAbilitySlotState::Ready);
+	TestEqual(TEXT("sans le 4e argument : prêt"), GenUIRules::ResolveSlotState(true, false, 0.f), EGenAbilitySlotState::Ready);
+	TestEqual(TEXT("vide prime sur tout"), GenUIRules::ResolveSlotState(false, true, 2.f, false), EGenAbilitySlotState::Empty);
+	return true;
+}
+
 #endif

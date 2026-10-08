@@ -144,8 +144,12 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 
 	// --- Seuils ------------------------------------------------------------------------------------------
 
-	/** Touche tenue 0.75 s (seuils à 0.3 et 0.6 s) : 2 flammes, puis lancer. */
-	TEST_METHOD(Threshold_FiresOnClientsOnlyWhenTheCountRises_NeverOnDedicatedServer)
+	/**
+	 * Le client 0 tient la grande boule de feu HoldSeconds puis relâche ; serveur, lanceur et observateur relèvent les
+	 * changements du compte affiché. Vérifie le pop si et seulement si le compte augmente, MaxShown au plus haut, le retour
+	 * à 0 sans pop, et ExpectedOwnerPops pops chez le lanceur ; chez l'observateur, au moins MinObserverPops pops.
+	 */
+	void QueueHoldAndCheckPops(float HoldSeconds, int32 MaxShownExpected, int32 ExpectedOwnerPops, int32 MinObserverPops)
 	{
 		Network
 			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
@@ -175,40 +179,60 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 				SendInput(Client, GreatFireballClass, true);
 				ClientMark = Client.World->GetTimeSeconds();
 			})
-			.UntilClient(TEXT("Client 0 : touche tenue 0.75 s"), 0, [this](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + 0.75f; }, DefaultWait())
-			.ThenClient(TEXT("Client 0 : relâche (2 flammes)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
+			.UntilClient(TEXT("Client 0 : touche tenue"), 0, [this, HoldSeconds](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + HoldSeconds; }, DefaultWait())
+			.ThenClient(TEXT("Client 0 : relâche"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
 			.UntilClients(TEXT("Clients : nourrissage vu puis lancer"), [this](FBasePIENetworkComponentState& Client) { return HasSeenFeedAndRelease(Client.ClientIndex); }, DefaultWait())
 			.ThenServer(TEXT("Serveur dédié : aucun événement cosmétique"), [this](FBasePIENetworkComponentState&)
 			{
 				ASSERT_THAT(AreEqual(0, Records.FindOrAdd(ServerKey).Num(), TEXT("Rien sur le serveur dédié")));
 				ASSERT_THAT(AreEqual(0, OrphanPops, TEXT("Chaque pop suit un changement du compte")));
 			})
-			.ThenClients(TEXT("Clients : pop si et seulement si le compte augmente"), [this](FBasePIENetworkComponentState& Client)
+			.ThenClients(TEXT("Clients : pop si et seulement si le compte augmente"), [this, MaxShownExpected, ExpectedOwnerPops, MinObserverPops](FBasePIENetworkComponentState& Client)
 			{
 				const TArray<FFedRecord>& List = Records.FindOrAdd(Client.ClientIndex);
 				int32 Pops = 0;
 				int32 MaxShown = 0;
+				FString Seen;
 				for (const FFedRecord& Record : List)
 				{
-					ASSERT_THAT(AreEqual(Record.New > Record.Old, Record.bPop, *FString::Printf(TEXT("%d -> %d"), Record.Old, Record.New)));
+					Seen += FString::Printf(TEXT("%d->%d%s "), Record.Old, Record.New, Record.bPop ? TEXT("*") : TEXT(""));
+				}
+				for (const FFedRecord& Record : List)
+				{
+					ASSERT_THAT(AreEqual(Record.New > Record.Old, Record.bPop, *FString::Printf(TEXT("%d -> %d (relevés : %s)"), Record.Old, Record.New, *Seen)));
 					Pops += Record.bPop ? 1 : 0;
 					MaxShown = FMath::Max(MaxShown, Record.New);
 				}
-				ASSERT_THAT(AreEqual(2, MaxShown, TEXT("2 flammes affichées au plus haut")));
+				ASSERT_THAT(AreEqual(MaxShownExpected, MaxShown, TEXT("Flammes affichées au plus haut")));
 				ASSERT_THAT(AreEqual(0, List.Last().New, TEXT("Retour à 0 au lancer, sans pop")));
 				if (Client.ClientIndex == 0)
 				{
 					// Client du lanceur : son compte prédit monte d'un cran par seuil
-					ASSERT_THAT(AreEqual(2, Pops, TEXT("Un pop par seuil sur le client du lanceur")));
+					ASSERT_THAT(AreEqual(ExpectedOwnerPops, Pops, TEXT("Un pop par seuil sur le client du lanceur")));
 				}
 				else
 				{
-					// Observateur : un ou deux pops selon le regroupement de la réplication (0 -> 2 = un seul pop)
-					ASSERT_THAT(IsTrue(Pops >= 1 && Pops <= 2, TEXT("L'observateur voit le seuil")));
+					// Observateur : regroupement possible de la réplication (0 -> 2 = un seul pop)
+					ASSERT_THAT(IsTrue(Pops >= MinObserverPops && Pops <= ExpectedOwnerPops, *FString::Printf(TEXT("L'observateur voit les seuils (relevés : %s)"), *Seen)));
 				}
 			});
 	}
 
+	/** Touche tenue 0.75 s (seuils à 0.3 et 0.6 s) : 2 flammes, puis lancer. */
+	TEST_METHOD(Threshold_FiresOnClientsOnlyWhenTheCountRises_NeverOnDedicatedServer)
+	{
+		QueueHoldAndCheckPops(0.75f, 2, 2, 1);
+	}
+
+	/**
+	 * Revue P3 T3-7, I1 : touche tenue jusqu'au plafond (le client s'arrête seul à 3 flammes, 0.9 s). Le 3e seuil arrive
+	 * chez l'observateur avec la fin du nourrissage (annonce du client + MarkFeedEnded, même image du serveur) : il doit
+	 * quand même faire son pop. Seuils espacés de 0.3 s : 3 pops chez l'observateur aussi.
+	 */
+	TEST_METHOD(Threshold_HeldToTheCap_ObserverPopsAtEachOfTheThreeThresholds)
+	{
+		QueueHoldAndCheckPops(1.2f, 3, 3, 3);
+	}
 
 	/**
 	 * Revue V2-V4 (test manquant) : 1 flamme, annulation par la touche d'annulation, nouvel appui aussitôt, 1 flamme, lancer.

@@ -3,6 +3,7 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenEnergy.h"
 #include "AbilitySystemComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "GameplayEffect.h"
@@ -160,20 +161,25 @@ void UGenAbilitySlot::Bind(UAbilitySystemComponent* InASC)
 		return;
 	}
 
-	// Étourdi => bloqué (§4.1 Locked)
-	FDelegateHandle StunHandle = ASC->RegisterGameplayTagEvent(GenGameplayTags::State_Stunned, EGameplayTagEventType::NewOrRemoved)
-		.AddUObject(this, &ThisClass::OnStunTagChanged);
-	TagHandles.Emplace(GenGameplayTags::State_Stunned, StunHandle);
-	bLocked = ASC->HasMatchingGameplayTag(GenGameplayTags::State_Stunned);
+	// Contrôle dur qui empêche de lancer (étourdi, silence, peur, neutralisé) => bloqué (§4.1 Locked)
+	for (const FGameplayTag& HardCCTag : GenGameplayTags::GetHardCCTags())
+	{
+		FDelegateHandle LockHandle = ASC->RegisterGameplayTagEvent(HardCCTag, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &ThisClass::OnStunTagChanged);
+		TagHandles.Emplace(HardCCTag, LockHandle);
+	}
+	bLocked = ASC->HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags());
 
 	// Le GE de recharge du serveur remplace le GE prédit (compte 1 -> 2 -> 1, aucun événement de tag) : on relit la recharge (§8.2)
 	EffectAddedHandle = ASC->OnActiveGameplayEffectAddedDelegateToSelf.AddUObject(this, &ThisClass::OnEffectAdded);
 
+	// Énergie : arc de coût et état « pas assez d'énergie » (R, F), impulsion de l'ultime. Le coût du sort n'est connu
+	// qu'après ResolveAbility (réessais) : chaque emplacement écoute, un événement par changement d'énergie (§8.4).
+	EnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
+	MaxEnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMaxEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
+
 	if (bIsUltimate)
 	{
-		EnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
-		MaxEnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMaxEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
-
 		// Déjà pleine au moment du Bind (respawn, rebind) : pas d'impulsion
 		const int32 Segments = GetUIMetrics()->UltimateSegments;
 		bUltimateWasReadyFull = Segments > 0 && GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Segments) == Segments;
@@ -453,7 +459,7 @@ void UGenAbilitySlot::RefreshVisuals()
 	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 	const float Remaining = FMath::Max(CooldownEndTime - Now, 0.f);
 
-	State = GenUIRules::ResolveSlotState(AbilityCDO.IsValid(), bLocked, Remaining);
+	State = GenUIRules::ResolveSlotState(AbilityCDO.IsValid(), bLocked, Remaining, CanAffordAbility());
 	CooldownString = State == EGenAbilitySlotState::Cooldown ? GenUIRules::FormatCooldown(Remaining, CooldownDuration, Metrics->CooldownHideBelowTotal) : FString();
 
 	IconImage->SetVisibility(State == EGenAbilitySlotState::Empty ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
@@ -464,17 +470,21 @@ void UGenAbilitySlot::RefreshVisuals()
 	LockImage->SetVisibility(State == EGenAbilitySlotState::Locked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 
 	// Avant le balayage : l'impulsion de l'ultime peut démarrer un flash à appliquer dès cette passe
-	const bool bUltimateReady = bIsUltimate && UpdateUltimateArc();
+	const bool bUltimateReady = UpdateCostArc();
 
 	// La désaturation de la recharge s'applique à l'icône, pas au voile du balayage (§4.1)
 	if (IconMID)
 	{
 		IconMID->SetScalarParameterValue(TEXT("DimAmount"), State == EGenAbilitySlotState::Cooldown ? Metrics->CooldownDesaturation : 0.f);
+		// Pas assez d'énergie : icône à 55 % de luminosité (§4.1)
+		IconMID->SetScalarParameterValue(TEXT("Brightness"), State == EGenAbilitySlotState::NoEnergy ? Metrics->NoEnergyBrightness : 1.f);
 	}
 
 	if (SweepMID)
 	{
-		const float Progress = (State == EGenAbilitySlotState::Cooldown && CooldownDuration > 0.f) ? Remaining / CooldownDuration : 0.f;
+		// Pas assez d'énergie : voile cooldown.noEnergy sur tout le disque (balayage plein), sans chiffre ni mouvement
+		const bool bNoEnergy = State == EGenAbilitySlotState::NoEnergy;
+		const float Progress = bNoEnergy ? 1.f : ((State == EGenAbilitySlotState::Cooldown && CooldownDuration > 0.f) ? Remaining / CooldownDuration : 0.f);
 		float Flash = 0.f;
 		if (FlashStartTime >= 0.f && FlashDuration > 0.f)
 		{
@@ -490,7 +500,8 @@ void UGenAbilitySlot::RefreshVisuals()
 		const float RimPx = GenUIRules::RimLayoutWidth(bIsUltimate ? Metrics->UltimateRimWidth : Metrics->SlotRimWidth, UWidgetLayoutLibrary::GetViewportScale(this));
 		SweepMID->SetScalarParameterValue(TEXT("RimWidth"), RimPx / FMath::Max(SlotSize * 0.5f, 1.f));
 		SweepMID->SetScalarParameterValue(TEXT("Locked"), State == EGenAbilitySlotState::Locked ? 1.f : 0.f);
-		SweepMID->SetVectorParameterValue(TEXT("OverlayColour"), State == EGenAbilitySlotState::Locked ? Palette->Cooldown_Locked : Palette->Cooldown_Overlay);
+		SweepMID->SetVectorParameterValue(TEXT("OverlayColour"), State == EGenAbilitySlotState::Locked ? Palette->Cooldown_Locked
+			: (bNoEnergy ? Palette->Cooldown_NoEnergy : Palette->Cooldown_Overlay));
 		// Bord : line.bronze ; ultime : anneau energy.full à α 0.5, α 1.0 seulement pleine ET lançable (§4.1)
 		FLinearColor RimColour = Palette->Line_Bronze;
 		if (bIsUltimate)
@@ -510,8 +521,15 @@ void UGenAbilitySlot::OnCooldownTagChanged(const FGameplayTag Tag, int32 NewCoun
 
 void UGenAbilitySlot::OnStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
-	bLocked = NewCount > 0;
+	// Plusieurs tags bloquent : on relit l'ensemble plutôt que le compte de celui qui change
+	bLocked = ASC.IsValid() && ASC->HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags());
 	RefreshVisuals();
+}
+
+bool UGenAbilitySlot::CanAffordAbility() const
+{
+	const float Cost = AbilityCDO.IsValid() ? AbilityCDO->EnergyCost : 0.f;
+	return !ASC.IsValid() || GenEnergy::CanAfford(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), Cost);
 }
 
 void UGenAbilitySlot::OnEnergyChanged(const FOnAttributeChangeData& Data)
@@ -534,34 +552,51 @@ void UGenAbilitySlot::OnEffectAdded(UAbilitySystemComponent* Target, const FGame
 	}
 }
 
-bool UGenAbilitySlot::UpdateUltimateArc()
+bool UGenAbilitySlot::UpdateCostArc()
 {
-	if (!ASC.IsValid())
+	const UGenUIMetrics* Metrics = GetUIMetrics();
+	const UGenUIPalette* Palette = GetUIPalette();
+
+	// Toujours sur l'ultime ; ailleurs seulement si le sort coûte de l'énergie (R : 1 segment). Un segment garde la
+	// taille d'un segment de l'ultime (SegmentSlots).
+	const float MaxEnergy = ASC.IsValid() ? ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()) : 0.f;
+	const float Cost = AbilityCDO.IsValid() ? AbilityCDO->EnergyCost : 0.f;
+	const int32 CostSegments = GenUIRules::CostSegments(Cost, MaxEnergy, Metrics->UltimateSegments);
+	const int32 Segments = CostSegments > 0 ? CostSegments : (bIsUltimate ? Metrics->UltimateSegments : 0);
+
+	if (ArcImage)
+	{
+		ArcImage->SetVisibility(Segments > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (!ASC.IsValid() || Segments == 0)
 	{
 		return false;
 	}
 
-	const UGenUIMetrics* Metrics = GetUIMetrics();
-	const UGenUIPalette* Palette = GetUIPalette();
-
-	const int32 Segments = Metrics->UltimateSegments;
-	const int32 Funded = GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()),
-		ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Segments);
-	const bool bFull = Segments > 0 && Funded == Segments;
+	const int32 Funded = FMath::Min(GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), MaxEnergy, Metrics->UltimateSegments), Segments);
+	const bool bFull = Funded == Segments;
+	// energy.full et son contour : seulement l'arc complet de l'ultime (§4.1)
+	const bool bUltimateFull = bIsUltimate && bFull;
 
 	if (ArcMID)
 	{
+		ArcMID->SetScalarParameterValue(TEXT("SegmentSlots"), Metrics->UltimateSegments);
 		ArcMID->SetScalarParameterValue(TEXT("Segments"), Segments);
 		ArcMID->SetScalarParameterValue(TEXT("Funded"), Funded);
-		ArcMID->SetScalarParameterValue(TEXT("FullOutline"), bFull ? 1.f : 0.f);
-		ArcMID->SetVectorParameterValue(TEXT("Colour"), bFull ? Palette->Energy_Full : Palette->Energy_Charging);
+		ArcMID->SetScalarParameterValue(TEXT("FullOutline"), bUltimateFull ? 1.f : 0.f);
+		ArcMID->SetVectorParameterValue(TEXT("Colour"), bUltimateFull ? Palette->Energy_Full : Palette->Energy_Charging);
 		// Segments non financés : contour creux text.secondary ; contour de l'arc plein : text.primary (§4.1)
 		ArcMID->SetVectorParameterValue(TEXT("HollowColour"), Palette->Text_Secondary);
 		ArcMID->SetVectorParameterValue(TEXT("OutlineColour"), Palette->Text_Primary);
 	}
 
+	if (!bIsUltimate)
+	{
+		return false;
+	}
+
 	// Ultime prête : une seule impulsion de 300 ms via le RimFlash du balayage (indépendante de l'arc), jamais de boucle (§4.1).
-	// Seulement quand elle est lançable : pleine pendant un étourdissement ou une recharge => impulsion quand elle le redevient.
+	// Seulement quand elle est lançable : pleine pendant un contrôle dur ou une recharge => impulsion quand elle le redevient.
 	// Tant que le sort n'est pas résolu (Empty), on garde l'état précédent.
 	if (State != EGenAbilitySlotState::Empty)
 	{
@@ -573,7 +608,7 @@ bool UGenAbilitySlot::UpdateUltimateArc()
 		bUltimateWasReadyFull = bReadyFull;
 	}
 
-	// État courant, sans le verrou de l'impulsion : une ultime vide (Empty) ou non lançable n'a jamais l'anneau à α 1.0
+	// État courant, sans le verrou de l'impulsion : une ultime vide, non lançable ou sans assez d'énergie n'a jamais l'anneau à α 1.0
 	return bFull && State == EGenAbilitySlotState::Ready;
 }
 

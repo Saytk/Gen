@@ -60,6 +60,7 @@ void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 	FedVisualCount = 0;
 	FeedSlotsAtPress = 0;
 	ActiveFeedInterval = FeedInterval; // figé par StartFeeding (nourrissage rapide)
+	ValidationFeedInterval = FeedInterval;
 	ServerFeedElapsed = 0.f;
 	ReportedFedCount = INDEX_NONE;
 	bInterruptWatchStarted = false;
@@ -211,9 +212,12 @@ void UGenGA_Cast::StartFeeding()
 	// retiré juste avant son activation (fenêtre de grâce, GenFeeding::ServerTagGrace). Cas symétrique au début de
 	// l'embrasement (tag prédit par le client, pas encore posé sur le serveur) : traité à la fin du nourrissage
 	// (OnFeedSynced), si le tag est posé juste après l'activation.
+	// Revue P3 T3-7 (mineur) : la grâce ne sert qu'à la VALIDATION (ValidationFeedInterval). L'estimation, la barre et le
+	// geste vus par les autres suivent l'intervalle avec lequel le nourrissage a commencé sur cette machine.
 	const UAbilitySystemComponent* FeedASC = GetAbilitySystemComponentFromActorInfo();
-	const bool bFastFeeding = (FeedASC && FeedASC->HasMatchingGameplayTag(GenGameplayTags::State_FastFeeding)) || IsFastFeedingInGrace(/*bAddedAfterActivation*/ false);
+	const bool bFastFeeding = FeedASC && FeedASC->HasMatchingGameplayTag(GenGameplayTags::State_FastFeeding);
 	ActiveFeedInterval = GenFeeding::GetFeedInterval(FeedInterval, bFastFeeding);
+	ValidationFeedInterval = GenFeeding::GetFeedInterval(FeedInterval, bFastFeeding || IsFastFeedingInGrace(/*bAddedAfterActivation*/ false));
 
 	// Unités disponibles à l'appui : autant de crans sur la barre, et jamais plus d'unités nourries
 	// (une flamme régénérée pendant l'appui ne s'ajoute pas)
@@ -442,12 +446,13 @@ void UGenGA_Cast::OnFeedSynced()
 		ServerFeedElapsed = GetWorld()->GetTimeSeconds() - FeedStartTime;
 
 		// Revue V2-V4, I1, cas symétrique : State.FastFeeding posé sur le serveur juste APRÈS son activation (début de
-		// l'embrasement : le client l'avait déjà, prédit). La validation se fait sur l'intervalle rapide.
+		// l'embrasement : le client l'avait déjà, prédit). La validation (seulement elle) se fait sur l'intervalle rapide ;
+		// l'estimation et le geste ont déjà suivi l'intervalle normal (cosmétique, revue P3 T3-7, M8).
 		const float FastInterval = GenFeeding::GetFeedInterval(FeedInterval, true);
-		if (ActiveFeedInterval > FastInterval && IsFastFeedingInGrace(/*bAddedAfterActivation*/ true))
+		if (ValidationFeedInterval > FastInterval && IsFastFeedingInGrace(/*bAddedAfterActivation*/ true))
 		{
 			GEN_CAST_LOG(Verbose, "Nourrissage rapide posé juste après l'activation : validation à %.2fs par unité", FastInterval);
-			ActiveFeedInterval = FastInterval;
+			ValidationFeedInterval = FastInterval;
 		}
 	}
 
@@ -639,9 +644,12 @@ void UGenGA_Cast::OnServerAimReceived(const FGameplayAbilityTargetDataHandle& Da
 		MarkFeedEnded(Fed, /*bFinal*/ true);
 	}
 
-	// Pas d'acquittement de la clé de la visée tant que le sort n'est pas parti : le cooldown et la dépense prédits
-	// par le client restent en place jusqu'au commit du serveur (acquitté avec lui), au lieu d'être retirés puis
-	// réappliqués. Seulement dans la fenêtre du RPC qui porte cette visée (elle l'acquitterait en sortant).
+	// Pas d'acquittement de la clé de la visée tant que le sort n'est pas parti : en général, le cooldown et la dépense
+	// prédits par le client restent en place jusqu'au commit du serveur (acquitté avec lui), au lieu d'être retirés puis
+	// réappliqués. Pas garanti (revue P3 T3-7, M3) : le client rattrape toutes les clés <= une clé plus récente acquittée
+	// avant ce départ (FPredictionKeyDelegates::CatchUpTo) ; ses valeurs prédites peuvent alors disparaître un instant
+	// avant celles du serveur (jamais de double dépense). Seulement dans la fenêtre du RPC qui porte cette visée (elle
+	// l'acquitterait en sortant).
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC);
 	const FPredictionKey AimKey = GenASC ? GenASC->GetReplicatedTargetDataKey(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey()) : FPredictionKey();
@@ -692,8 +700,8 @@ void UGenGA_Cast::OnServerLaunchDelayFinished()
 	}
 
 	// Fin de l'incantation du serveur : le sort est lancé maintenant, dans la fenêtre de prédiction de la visée.
-	// Cooldown et dépense sont répliqués avec l'acquittement de la clé : le client garde ses valeurs prédites
-	// jusqu'aux valeurs du serveur, sans trou.
+	// Cooldown et dépense sont répliqués avec l'acquittement de la clé : le client garde en général ses valeurs prédites
+	// jusqu'aux valeurs du serveur (voir OnServerAimReceived pour l'exception d'une clé plus récente acquittée avant).
 	FScopedPredictionWindow AimWindow(ASC, DeferredAimKey);
 	DeferredAimKey = FPredictionKey();
 
@@ -834,7 +842,7 @@ int32 UGenGA_Cast::ResolveFedCount(const FGameplayAbilityTargetData* Data, bool 
 	// Serveur pour un client distant : le client ne peut annoncer ni plus que ce qu'il a, ni plus que le temps écoulé
 	if (IsServerForRemoteClient())
 	{
-		const int32 Validated = GenFeeding::ValidateFedCount(Reported, FeedCap, Available, ServerFeedElapsed, ActiveFeedInterval);
+		const int32 Validated = GenFeeding::ValidateFedCount(Reported, FeedCap, Available, ServerFeedElapsed, ValidationFeedInterval);
 		if (!bLog)
 		{
 			return Validated;

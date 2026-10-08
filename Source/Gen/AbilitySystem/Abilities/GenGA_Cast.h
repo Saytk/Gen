@@ -379,9 +379,15 @@ private:
 	float FeedStartTime = 0.f;
 	/**
 	 * Intervalle retenu au début du nourrissage (rapide sous State.FastFeeding), sur chaque machine. Posé par StartFeeding.
-	 * Sert aux ticks, à la barre de cast et à la validation du serveur : jamais FeedInterval directement pendant un sort.
+	 * Sert aux ticks, à la barre de cast et au geste : jamais FeedInterval directement pendant un sort. La validation du
+	 * serveur prend ValidationFeedInterval.
 	 */
 	float ActiveFeedInterval = 0.f;
+	/**
+	 * Serveur : intervalle de la VALIDATION du compte (ResolveFedCount). = ActiveFeedInterval, sauf fenêtre de grâce de
+	 * State.FastFeeding (revue V2-V4, I1) : rapide pour valider ce que le client a prédit, sans changer les visuels.
+	 */
+	float ValidationFeedInterval = 0.f;
 	/** Serveur : durée du nourrissage mesurée entre l'activation et le signal du client. */
 	float ServerFeedElapsed = 0.f;
 	/** Serveur : compte brut annoncé par le client (ServerReportFedResource), sinon INDEX_NONE. */
