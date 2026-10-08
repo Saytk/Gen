@@ -5,6 +5,8 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/Effects/GenGE_Cooldown.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenAbilityTooltipData.h"
+#include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "Champions/Curffe/CurffeGameplayTags.h"
 #include "Blueprint/UserWidget.h"
 #include "Champions/Curffe/CurffeGA_Combustion.h"
@@ -116,6 +118,79 @@ bool FGenEnergySlotWidgetTest::RunTest(const FString& Parameters)
 	SlotF->Unbind();
 	SetEnergy(100.f);
 	TestEqual(TEXT("délié : plus d'écoute de l'énergie"), SlotR->GetState(), EGenAbilitySlotState::NoEnergy);
+	return true;
+}
+
+/**
+ * Gen.UI.SharedInputSlot (revue finale, M-9) : clic gauche partagé par GA_Fireball et GA_Pyroblast (assets). L'emplacement
+ * suit le sort qui partirait : la boule de feu hors embrasement, Pyroblast pendant (icône, infobulle, nombres), puis de
+ * nouveau la boule de feu, sans sondage (événement du tag State.Curffe.Ablaze).
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenSharedInputSlotTest, "Gen.UI.SharedInputSlot",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenSharedInputSlotTest::RunTest(const FString& Parameters)
+{
+	auto LoadAbility = [](const TCHAR* AssetName) -> TSubclassOf<UGenGameplayAbility>
+	{
+		const FString Path = FString::Printf(TEXT("/Game/Gen/Champions/Curffe/Abilities/%s.%s_C"), AssetName, AssetName);
+		return LoadClass<UGenGameplayAbility>(nullptr, *Path);
+	};
+	const TSubclassOf<UGenGameplayAbility> FireballClass = LoadAbility(TEXT("GA_Fireball"));
+	const TSubclassOf<UGenGameplayAbility> PyroblastClass = LoadAbility(TEXT("GA_Pyroblast"));
+	UClass* SlotClass = LoadClass<UGenAbilitySlot>(nullptr, TEXT("/Game/Gen/UI/HUD/WBP_AbilitySlot.WBP_AbilitySlot_C"));
+	if (!TestNotNull(TEXT("GA_Fireball"), FireballClass.Get()) || !TestNotNull(TEXT("GA_Pyroblast"), PyroblastClass.Get())
+		|| !TestNotNull(TEXT("WBP_AbilitySlot"), SlotClass))
+	{
+		return false;
+	}
+
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Dummy = TestWorld.SpawnDummy();
+	UGenAbilitySystemComponent* ASC = Dummy ? Dummy->GetGenAbilitySystemComponent() : nullptr;
+	if (!TestNotNull(TEXT("ASC du mannequin"), ASC))
+	{
+		return false;
+	}
+	// Ordre d'octroi du kit : la boule de feu d'abord (premier spec de la touche)
+	ASC->GrantAbilities({ FireballClass, PyroblastClass }, nullptr);
+
+	UGenAbilitySlot* Slot = CreateWidget<UGenAbilitySlot>(TestWorld.World, SlotClass);
+	if (!TestNotNull(TEXT("emplacement LMB"), Slot))
+	{
+		return false;
+	}
+	Slot->InputTag = GenGameplayTags::InputTag_Ability_Primary;
+	Slot->Bind(ASC);
+
+	auto ExpectedText = [](TSubclassOf<UGenGameplayAbility> AbilityClass)
+	{
+		FGenAbilityTooltipData Data;
+		GenAbilityTooltip::Build(*AbilityClass->GetDefaultObject<UGenGameplayAbility>(), Data);
+		return Data.ToString();
+	};
+	auto SlotText = [Slot]()
+	{
+		FGenAbilityTooltipData Data;
+		return Slot->BuildTooltipData(Data) ? Data.ToString() : FString();
+	};
+	const FString FireballText = ExpectedText(FireballClass);
+	const FString PyroblastText = ExpectedText(PyroblastClass);
+	TestNotEqual(TEXT("infobulles différentes"), FireballText, PyroblastText);
+
+	TestEqual(TEXT("hors embrasement : boule de feu"), SlotText(), FireballText);
+	ASC->AddLooseGameplayTag(CurffeGameplayTags::State_Ablaze);
+	TestEqual(TEXT("embrasé : Pyroblast (sort qui partirait)"), SlotText(), PyroblastText);
+	ASC->RemoveLooseGameplayTag(CurffeGameplayTags::State_Ablaze);
+	TestEqual(TEXT("fin de l'embrasement : boule de feu"), SlotText(), FireballText);
+
+	// Un contrôle dur bloque les deux : il ne change pas le sort affiché
+	ASC->AddLooseGameplayTag(CurffeGameplayTags::State_Ablaze);
+	ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr);
+	TestEqual(TEXT("embrasé et étourdi : toujours Pyroblast"), SlotText(), PyroblastText);
+	TestEqual(TEXT("étourdi : bloqué"), Slot->GetState(), EGenAbilitySlotState::Locked);
+
+	Slot->Unbind();
 	return true;
 }
 

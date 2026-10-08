@@ -265,8 +265,13 @@ void UGenAbilitySlot::ClearResolvedAbility()
 		{
 			ASC->RegisterGameplayTagEvent(Pair.Key, EGameplayTagEventType::NewOrRemoved).Remove(Pair.Value);
 		}
+		for (const TPair<FGameplayTag, FDelegateHandle>& Pair : SelectionTagHandles)
+		{
+			ASC->RegisterGameplayTagEvent(Pair.Key, EGameplayTagEventType::NewOrRemoved).Remove(Pair.Value);
+		}
 	}
 	CooldownTagHandles.Reset();
+	SelectionTagHandles.Reset();
 
 	SpecHandle = FGameplayAbilitySpecHandle();
 	AbilityCDO.Reset();
@@ -310,18 +315,36 @@ void UGenAbilitySlot::ResolveAbility(FGameplayAbilitySpecHandle Excluded)
 		return;
 	}
 
+	FGameplayTagContainer SelectionTags;
+	int32 Candidates = 0;
 	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 	{
 		const UGenGameplayAbility* Ability = Cast<UGenGameplayAbility>(Spec.Ability);
 		if (Ability && Spec.Handle != Excluded && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
 		{
-			SpecHandle = Spec.Handle;
-			AbilityCDO = Ability;
-			if (const FGameplayTagContainer* Tags = Ability->GetCooldownTags())
-			{
-				CooldownTags = *Tags;
-			}
-			break;
+			Ability->GetSelectionTags(SelectionTags);
+			++Candidates;
+		}
+	}
+
+	if (const FGameplayAbilitySpec* Preferred = FindPreferredSpec(Excluded))
+	{
+		const UGenGameplayAbility* Ability = CastChecked<UGenGameplayAbility>(Preferred->Ability);
+		SpecHandle = Preferred->Handle;
+		AbilityCDO = Ability;
+		if (const FGameplayTagContainer* Tags = Ability->GetCooldownTags())
+		{
+			CooldownTags = *Tags;
+		}
+	}
+
+	// Revue finale, M-9 : plusieurs sorts sur la touche => l'emplacement suit les tags qui les départagent
+	if (Candidates > 1)
+	{
+		for (const FGameplayTag& Tag : SelectionTags)
+		{
+			FDelegateHandle Handle = ASC->RegisterGameplayTagEvent(Tag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::OnSelectionTagChanged);
+			SelectionTagHandles.Emplace(Tag, Handle);
 		}
 	}
 
@@ -353,6 +376,39 @@ void UGenAbilitySlot::ResolveAbility(FGameplayAbilitySpecHandle Excluded)
 	}
 
 	RefreshCooldown();
+}
+
+const FGameplayAbilitySpec* UGenAbilitySlot::FindPreferredSpec(FGameplayAbilitySpecHandle Excluded) const
+{
+	if (!ASC.IsValid())
+	{
+		return nullptr;
+	}
+	const FGameplayAbilitySpec* First = nullptr;
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		const UGenGameplayAbility* Ability = Cast<UGenGameplayAbility>(Spec.Ability);
+		if (!Ability || Spec.Handle == Excluded || !Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		{
+			continue;
+		}
+		if (Ability->IsSelectedByOwnerTags(*ASC))
+		{
+			return &Spec;
+		}
+		First = First ? First : &Spec;
+	}
+	return First;
+}
+
+void UGenAbilitySlot::OnSelectionTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	const FGameplayAbilitySpec* Preferred = FindPreferredSpec();
+	if (Preferred && Preferred->Handle != SpecHandle)
+	{
+		ClearResolvedAbility();
+		ResolveAbility();
+	}
 }
 
 void UGenAbilitySlot::RefreshKeyLabel()

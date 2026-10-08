@@ -508,6 +508,12 @@ x=0                                                                   x=1920
 
 **Slot order:** LMB, RMB, Space, Q, E, R, F, the kit from CharacterGuidelines §2: basic attack, signature skillshot, mobility, defensive tool, utility, energy spell (costs 25) and ultimate (costs 100). They map to `InputTag.Ability.Primary / Secondary / Mobility / Defensive / Utility / Energy / Ultimate`. Primary, Secondary, Mobility and Ultimate exist in code; the other three names are proposals.
 
+**Shared input.** Several abilities can share one input, such as Curffe's LMB: Fireball normally, Pyroblast while ablaze.
+- The slot shows the ability that the input would activate now. That is the first one whose own required tags are present and whose own blocking tags are absent.
+- Death and hard CC block every ability, so they don't change which one is shown. If no ability qualifies, the slot shows the first one granted.
+- The icon, tooltip, numbers and cooldown all follow the shown ability.
+- The slot switches on the tag event, without polling.
+
 **Geometry:**
 
 | Item | Value |
@@ -1618,6 +1624,7 @@ Copy this into the PR description and tick each item.
 
 | Date | Section | Change |
 |---|---|---|
+| 2026-10-08 | §4.1 Shared input | Added: a slot shared by several abilities shows the one its input would activate now (Pyroblast on LMB while ablaze), following the tag event (final integration review, M-9) |
 | 2026-10-08 | §4.1 Ready flash | Clarified: the flash fires on the change into Ready from Cooldown or Not enough energy, never from Cooldown into Not enough energy (review of Plan 3 Tasks 8–10, M4) |
 | 2026-10-08 | §4.1 Ability tooltip | Added: hover (0.3 s) and held "show details" key, content generated from the ability's live data, `bg.panelRaised` / `TS_Body` / `radius.panel` / `motion.fast`. New `DA_UIPalette` tokens `Bg_PanelRaised`, `Accent_Brass` and `DA_UIMetrics` values `TooltipHoverDelay`, `MotionFast`, `HudPanelPadding`, `RadiusPanel`, `PanelOutlineWidth`, `TooltipMaxWidth`, `TooltipGap` |
 | 2026-10-08 | §2.5 `cooldown.noEnergy` | Noted the shared C++ constant and the test that keeps the C++ default and `DA_UIPalette` on the token (review of Plan 3 Tasks 8–10, M9) |
