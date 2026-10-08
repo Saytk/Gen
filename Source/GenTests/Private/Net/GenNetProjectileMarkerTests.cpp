@@ -224,6 +224,28 @@ NETWORK_TEST_CLASS(ProjectileMarker, "Gen.Net")
 				ASSERT_THAT(IsNear(bOwner ? 1.f : 3.f, MID->K2_GetScalarParameterValue(TEXT("RelationIndex")), 0.001f, TEXT("Soi chez le lanceur, ennemi chez l'observateur")));
 				ASSERT_THAT(IsNear(bOwner ? 0.f : 1.f, MID->K2_GetScalarParameterValue(TEXT("EnemyPattern")), 0.001f, TEXT("Chevrons pour l'ennemi seulement")));
 				ASSERT_THAT(IsNear(1.f, MID->K2_GetScalarParameterValue(TEXT("Fill")), 0.001f, TEXT("Disque plein")));
+			})
+			// Revue finale, M-2 : rien sur la trajectoire, le tir atteint sa portée maximale et s'éteint sans exploser
+			.UntilServer(TEXT("Serveur : fin de course"), [this](FBasePIENetworkComponentState&)
+			{
+				return !ServerProjectile.IsValid() || ServerProjectile->HasExploded();
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : bout de portée = extinction, pas d'explosion"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsTrue(ServerProjectile.IsValid(), TEXT("Projectile encore là à sa fin de course")));
+				ASSERT_THAT(IsTrue(ServerProjectile->HasFizzled(), TEXT("Bout de portée : extinction")));
+			})
+			.UntilClients(TEXT("Clients : extinction reçue"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const TWeakObjectPtr<AGenProjectile>* Found = ClientProjectiles.Find(Client.ClientIndex);
+				return Found && Found->IsValid() && (*Found)->HasExploded();
+			}, DefaultWait())
+			.ThenClients(TEXT("Clients : ni explosion ni marqueur"), [this](FBasePIENetworkComponentState& Client)
+			{
+				AGenProjectile* Projectile = ClientProjectiles.FindRef(Client.ClientIndex).Get();
+				ASSERT_THAT(IsNotNull(Projectile));
+				ASSERT_THAT(IsTrue(Projectile->HasFizzled(), TEXT("Extinction répliquée (pas d'éclat d'impact)")));
+				ASSERT_THAT(IsFalse(Projectile->GetGroundMarker() && Projectile->GetGroundMarker()->IsVisible(), TEXT("Marqueur caché")));
 			});
 	}
 

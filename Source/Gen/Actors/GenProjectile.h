@@ -93,6 +93,9 @@ public:
 	/** A explosé (consommé par un impact) ; répliqué. */
 	bool HasExploded() const { return bExploded; }
 
+	/** Le tir a atteint sa portée maximale sans rien toucher : il disparaît (HasExploded aussi vrai). */
+	bool HasFizzled() const { return bFizzled; }
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
@@ -113,6 +116,13 @@ protected:
 	 * de la cible directe (OnSphereOverlap), jamais Ignored : une cible intouchable est traversée sans exploser.
 	 */
 	void Explode(AActor* HitActor, const FVector& Location, EGenHitResponse DirectResponse = EGenHitResponse::Hit);
+
+	/**
+	 * Serveur : portée maximale atteinte sans rien toucher (revue finale, M-2). Spec (règles de la boule de feu) : le tir
+	 * disparaît, sans dégâts ni éclat de zone ; l'éclat sans dégâts mentait sur la zone touchée (« le visuel est la
+	 * hitbox »). La traînée du tir s'éteint en fondu, rien d'autre.
+	 */
+	void Fizzle();
 
 	UFUNCTION()
 	void OnRep_Exploded();
@@ -187,6 +197,10 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_Exploded)
 	bool bExploded = false;
+
+	/** Fin de course sans impact (Fizzle) : répliqué avec bExploded, lu par OnRep_Exploded (pas d'effets d'impact). */
+	UPROPERTY(Replicated)
+	bool bFizzled = false;
 
 	UPROPERTY(Replicated)
 	FVector_NetQuantize ImpactLocation;
