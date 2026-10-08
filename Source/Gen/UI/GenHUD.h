@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "UI/GenCastBarRules.h"
 #include "GenHUD.generated.h"
 
 class AGenCharacterBase;
@@ -28,6 +29,9 @@ protected:
 	void DrawLocalCastBar(const AGenCharacterBase* LocalCharacter, float Bottom);
 	void DrawBar(float X, float Y, float Width, float Height, float Percent, const FLinearColor& FillColor);
 
+	/** Barre de cast : remplissage, puis pour un sort nourri un cran de 1 px par flamme et le compteur à droite. */
+	void DrawCastBar(float X, float Y, float Width, float Height, const GenCastBar::FLayout& Layout);
+
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	float OverheadOffsetZ = 130.f;
 
@@ -48,4 +52,8 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	FLinearColor CastColor = FLinearColor(1.f, 0.55f, 0.1f);
+
+	/** Crans et compteur des sorts nourris (token text.primary, UI_Guidelines §2.2 et §4.5). */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD")
+	FLinearColor CastTickColor = FLinearColor(0.791f, 0.807f, 0.831f);
 };
