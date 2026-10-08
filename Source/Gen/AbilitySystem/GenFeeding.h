@@ -57,6 +57,17 @@ namespace GenFeeding
 		return FMath::Max(CastTime - FMath::Max(Tolerance, 0.f) - ElapsedCastTime, 0.f);
 	}
 
+	/**
+	 * Délai avant la prochaine flamme, calé sur le début du nourrissage : la flamme FedCount + 1 tombe à
+	 * FeedStartTime + (FedCount + 1) × FeedInterval. Des minuteurs enchaînés hériteraient chacun du retard
+	 * du précédent (une fraction d'image par tick) ; ici le retard ne dépasse jamais une image.
+	 * 0 = seuil déjà dépassé (saccade) : tick à l'image suivante.
+	 */
+	inline float GetNextFeedTickDelay(float FeedStartTime, int32 FedCount, float FeedInterval, float Now)
+	{
+		return FMath::Max(FeedStartTime + (FMath::Max(FedCount, 0) + 1) * FMath::Max(FeedInterval, 0.f) - Now, 0.f);
+	}
+
 	/** Interpolation linéaire : AtZero sans nourrissage, AtMax à MaxFeed unités (bornée). */
 	inline float ScaleByFeed(float AtZero, float AtMax, int32 Fed, int32 MaxFeed)
 	{

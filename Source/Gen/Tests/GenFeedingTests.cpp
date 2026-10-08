@@ -67,7 +67,33 @@ bool FGenCastTimingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("visée immédiate"), GenFeeding::GetServerCastWait(0.5f, 0.f, 0.1f), 0.4f, KINDA_SMALL_NUMBER);
 	TestEqual(TEXT("sort instantané"), GenFeeding::GetServerCastWait(0.f, 0.f, 0.1f), 0.f, KINDA_SMALL_NUMBER);
 	TestEqual(TEXT("tolérance négative ignorée"), GenFeeding::GetServerCastWait(0.5f, 0.45f, -1.f), 0.05f, KINDA_SMALL_NUMBER);
+
+	const float Tolerance = GenFeeding::CastTimeTolerance;
+	// Boule de feu (0.35 s) sous 60 ms ± 15 ms : la gigue (± 30 ms + une image) ne diffère jamais le tir
+	TestEqual(TEXT("boule de feu, gigue défavorable"), GenFeeding::GetServerCastWait(0.35f, 0.35f - 0.03f - 0.017f, Tolerance), 0.f, KINDA_SMALL_NUMBER);
+	// Activation perdue puis renvoyée (environ un aller-retour de retard) : le projectile attend le reste
+	TestEqual(TEXT("boule de feu, activation renvoyée"), GenFeeding::GetServerCastWait(0.35f, 0.21f, Tolerance), 0.04f, KINDA_SMALL_NUMBER);
+	// Client tricheur qui colle la visée à l'activation : l'incantation est imposée à la tolérance près
+	TestEqual(TEXT("visée collée à l'activation"), GenFeeding::GetServerCastWait(0.5f, 0.f, Tolerance), 0.5f - Tolerance, KINDA_SMALL_NUMBER);
+
 	TestTrue(TEXT("tolérance petite devant les incantations"), GenFeeding::CastTimeTolerance > 0.f && GenFeeding::CastTimeTolerance <= 0.1f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFeedingNextTickTest, "Gen.Feeding.NextTickDelay",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenFeedingNextTickTest::RunTest(const FString& Parameters)
+{
+	// GetNextFeedTickDelay(FeedStartTime, FedCount, FeedInterval, Now) : flamme k+1 à début + (k+1) x intervalle
+	TestEqual(TEXT("première flamme à l'appui"), GenFeeding::GetNextFeedTickDelay(10.f, 0, 0.2f, 10.f), 0.2f, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("première flamme, une image plus tard"), GenFeeding::GetNextFeedTickDelay(10.f, 0, 0.2f, 10.0167f), 0.1833f, 1.e-4f);
+	TestEqual(TEXT("tick en retard : le suivant n'hérite pas du retard"), GenFeeding::GetNextFeedTickDelay(10.f, 1, 0.2f, 10.21f), 0.19f, 1.e-4f);
+	TestEqual(TEXT("4e tick en retard de 15 ms : 5e toujours à 11.0"), GenFeeding::GetNextFeedTickDelay(10.f, 4, 0.2f, 10.815f), 0.185f, 1.e-4f);
+	TestEqual(TEXT("saccade : seuil déjà dépassé => tick suivant immédiat"), GenFeeding::GetNextFeedTickDelay(10.f, 3, 0.2f, 10.95f), 0.f, KINDA_SMALL_NUMBER);
+	// Combustion : nourrissage à 0.1 s, 10 ticks en retard d'une demi-image ne dérivent pas
+	TestEqual(TEXT("intervalle court : 10e tick"), GenFeeding::GetNextFeedTickDelay(10.f, 9, 0.1f, 10.908f), 0.092f, 1.e-4f);
+	TestEqual(TEXT("intervalle nul"), GenFeeding::GetNextFeedTickDelay(10.f, 2, 0.f, 10.5f), 0.f, KINDA_SMALL_NUMBER);
 	return true;
 }
 

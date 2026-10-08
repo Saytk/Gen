@@ -15,6 +15,11 @@ class UGenAttributeSet;
 class UGenGameplayAbility;
 struct FOnAttributeChangeData;
 
+namespace GenCastBar
+{
+	struct FLayout;
+}
+
 /** Équipe "neutre" : ennemie de tout le monde (mannequins d'entraînement, monstres...). */
 inline constexpr uint8 GenNoTeam = 255;
 
@@ -32,6 +37,7 @@ struct FGenCastInfo
 	UPROPERTY(BlueprintReadOnly, Category = "Cast")
 	float StartTime = 0.f;
 
+	/** Durée de la barre. Sort nourri : durée maximale (FeedSlots × FeedInterval + incantation). */
 	UPROPERTY(BlueprintReadOnly, Category = "Cast")
 	float Duration = 0.f;
 
@@ -42,6 +48,22 @@ struct FGenCastInfo
 	/** Socket du mesh où attacher FX (ex: hand_r). */
 	UPROPERTY(BlueprintReadOnly, Category = "Cast")
 	FName FXSocket;
+
+	/** Sort nourri : flammes disponibles à l'appui, un cran chacune (0 = incantation normale). */
+	UPROPERTY(BlueprintReadOnly, Category = "Cast")
+	uint8 FeedSlots = 0;
+
+	/** Sort nourri : une flamme toutes les FeedInterval s. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cast")
+	float FeedInterval = 0.f;
+
+	/** Sort nourri : fin du nourrissage, en temps serveur (0 = nourrissage en cours). */
+	UPROPERTY(BlueprintReadOnly, Category = "Cast")
+	float FeedEndTime = 0.f;
+
+	/** Sort nourri : flammes nourries, connues à la fin du nourrissage. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cast")
+	uint8 FedCount = 0;
 
 	bool IsCasting() const { return Ability != nullptr && Duration > 0.f; }
 };
@@ -130,11 +152,27 @@ public:
 	void StartCast(UClass* Ability, float Duration, UNiagaraSystem* FX = nullptr, FName FXSocket = NAME_None);
 	void StopCast(UClass* Ability);
 
+	/**
+	 * Sort nourri : une seule barre de l'appui au lancer. Démarre la barre du nourrissage
+	 * (FeedSlots crans, longueur FeedSlots × FeedInterval + CastTime). Arrêtée par StopCast.
+	 */
+	void StartFeedCast(UClass* Ability, int32 FeedSlots, float FeedInterval, float CastTime, UNiagaraSystem* FX = nullptr, FName FXSocket = NAME_None);
+
+	/**
+	 * Fin du nourrissage avec FedCount flammes : les segments inutilisés se replient et la même barre
+	 * continue sur l'incantation. Rappelable pour corriger le compte (l'heure de fin reste la première).
+	 * Sans effet si la barre n'est plus celle d'Ability.
+	 */
+	void MarkFeedEnded(UClass* Ability, int32 FedCount);
+
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 
 	/** 0..1, ou -1 si aucune incantation. */
 	UFUNCTION(BlueprintPure, Category = "Gen|Cast")
 	float GetCastProgress() const;
+
+	/** Disposition complète de la barre (remplissage, crans, compteur). Faux si aucune incantation. */
+	bool GetCastBarLayout(GenCastBar::FLayout& OutLayout) const;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -189,6 +227,9 @@ protected:
 
 	/** Lance ou arrête l'effet d'incantation selon CastInfo (rien sur un serveur dédié). */
 	void UpdateCastFX();
+
+	/** Horloge des incantations : temps serveur (GameState), sinon temps du monde. */
+	float GetCastClockSeconds() const;
 
 	/** Pendant l'incantation : face à la visée (rotation de contrôle) ; sinon : face au déplacement. */
 	void SetFaceAim(bool bFaceAim);

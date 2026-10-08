@@ -84,8 +84,37 @@ void AGenHUD::DrawHUD()
 
 void AGenHUD::DrawBar(float X, float Y, float Width, float Height, float Percent, const FLinearColor& FillColor)
 {
-	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), X - 1.f, Y - 1.f, Width + 2.f, Height + 2.f);
+	DrawRect(BarBackgroundColor, X - 1.f, Y - 1.f, Width + 2.f, Height + 2.f);
 	DrawRect(FillColor, X, Y, Width * FMath::Clamp(Percent, 0.f, 1.f), Height);
+}
+
+void AGenHUD::DrawCastBar(float X, float Y, float Width, float Height, const GenCastBar::FLayout& Layout)
+{
+	DrawBar(X, Y, Width, Height, Layout.Fill, CastColor);
+
+	if (!Layout.bFed)
+	{
+		return;
+	}
+
+	// Un cran par seuil de flamme (celui qui tombe sur le bout de la barre est déjà marqué par le bord).
+	// Clair devant le remplissage ; sombre une fois franchi, sinon presque invisible sur la couleur de cast.
+	for (const float Tick : Layout.Ticks)
+	{
+		if (Tick < 1.f)
+		{
+			const FLinearColor& TickColor = Tick <= Layout.Fill ? BarBackgroundColor : CastTickColor;
+			DrawRect(TickColor, FMath::RoundToFloat(X + Width * Tick), Y, 1.f, Height);
+		}
+	}
+
+	// Compteur de flammes à droite de la barre, centré sur sa hauteur
+	UFont* Font = GEngine->GetSmallFont();
+	const FString CounterText = FString::FromInt(Layout.Counter);
+	float TextWidth = 0.f;
+	float TextHeight = 0.f;
+	GetTextSize(CounterText, TextWidth, TextHeight, Font);
+	DrawText(CounterText, CastTickColor, X + Width + 4.f, Y + (Height - TextHeight) * 0.5f, Font);
 }
 
 void AGenHUD::DrawOverheadBars(const AGenCharacterBase* LocalCharacter, uint8 LocalTeam)
@@ -126,19 +155,19 @@ void AGenHUD::DrawOverheadBars(const AGenCharacterBase* LocalCharacter, uint8 Lo
 		GetTextSize(HealthText, TextWidth, TextHeight, Font);
 		DrawText(HealthText, FLinearColor::White, ScreenLocation.X - TextWidth * 0.5f, Y - TextHeight - 1.f, Font);
 
-		// Barre de cast sous la barre de vie (permet de voir venir les sorts ennemis)
-		const float CastProgress = Character->GetCastProgress();
-		if (CastProgress >= 0.f)
+		// Barre de cast sous la barre de vie (permet de voir venir les sorts ennemis, et leur charge)
+		GenCastBar::FLayout CastLayout;
+		if (Character->GetCastBarLayout(CastLayout))
 		{
-			DrawBar(X, Y + OverheadBarSize.Y + 3.f, OverheadBarSize.X, 5.f, CastProgress, CastColor);
+			DrawCastBar(X, Y + OverheadBarSize.Y + 3.f, OverheadBarSize.X, 5.f, CastLayout);
 		}
 	}
 }
 
 void AGenHUD::DrawLocalCastBar(const AGenCharacterBase* LocalCharacter, float Bottom)
 {
-	const float CastProgress = LocalCharacter->GetCastProgress();
-	if (CastProgress < 0.f)
+	GenCastBar::FLayout Layout;
+	if (!LocalCharacter->GetCastBarLayout(Layout))
 	{
 		return;
 	}
@@ -146,14 +175,15 @@ void AGenHUD::DrawLocalCastBar(const AGenCharacterBase* LocalCharacter, float Bo
 	const FGenCastInfo& Info = LocalCharacter->GetCastInfo();
 	const UGenGameplayAbility* AbilityCDO = Cast<UGenGameplayAbility>(Info.Ability->GetDefaultObject());
 	const FString Name = !AbilityCDO || AbilityCDO->DisplayName.IsEmpty() ? Info.Ability->GetName() : AbilityCDO->DisplayName.ToString();
-	const float Remaining = Info.Duration * (1.f - CastProgress);
+	// Sort nourri pendant le nourrissage : temps restant si toutes les flammes passent
+	const float Remaining = Layout.TotalDuration * (1.f - Layout.Fill);
 
 	const float Width = 260.f;
 	const float Height = 14.f;
 	const float X = (Canvas->ClipX - Width) * 0.5f;
 	const float Y = Bottom - Height;
 
-	DrawBar(X, Y, Width, Height, CastProgress, CastColor);
+	DrawCastBar(X, Y, Width, Height, Layout);
 
 	UFont* Font = GEngine->GetSmallFont();
 	DrawText(Name, FLinearColor::White, X + 4.f, Y, Font);
