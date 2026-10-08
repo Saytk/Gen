@@ -78,6 +78,10 @@ struct FGenCastInfo
 	UPROPERTY(BlueprintReadOnly, Category = "Cast")
 	uint8 FedCount = 0;
 
+	/** Canalisation (fenêtre minutée : contre, forme de Living Flame) : la barre se vide (UI §4.5). Posé par StartChannel. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cast")
+	bool bChannel = false;
+
 	bool IsCasting() const { return Ability != nullptr && Duration > 0.f; }
 };
 
@@ -209,6 +213,20 @@ public:
 	 * Sans effet si la barre n'est plus celle d'Ability.
 	 */
 	void MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFinal = false);
+
+	/**
+	 * Plan Visuals V4 : fenêtre minutée affichée comme une canalisation (la barre se vide de droite à gauche, UI §4.5),
+	 * vue par tous : fenêtre de contre, forme de Living Flame. Serveur et client propriétaire, comme StartCast, mais
+	 * sans effet d'incantation ni visée imposée (SetFaceAim). Arrêtée par StopCast(Ability).
+	 * À appeler depuis OnCastLaunched : UGenGA_Cast a déjà retiré la barre de l'incantation (EndCastPresentation).
+	 */
+	void StartChannel(UClass* Ability, float Duration);
+
+	/**
+	 * Part écoulée de l'incantation ou de la canalisation en cours, 0..1 (0 sans incantation), en temps serveur.
+	 * Grandit même quand la barre se vide : horloge des télégraphes centrés (UGenSpellIndicatorComponent).
+	 */
+	float GetCastElapsedFraction() const;
 
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 

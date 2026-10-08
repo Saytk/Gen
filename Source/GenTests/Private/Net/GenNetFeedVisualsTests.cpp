@@ -8,6 +8,7 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "Animation/AnimMontage.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
+#include "AbilitySystem/GenCastBarRules.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/World.h"
 #include "Net/GenNetTestHelpers.h"
@@ -23,6 +24,8 @@ using namespace GenNetTest;
  *   du lanceur (compte prédit) et chez l'observateur (compte répliqué, OnRep_FedResource), seulement quand le compte
  *   augmente ; jamais au lancer (retour à 0) et jamais sur le serveur dédié.
  * - V3 : le montage de nourrissage part dès l'appui et l'observateur le voit pendant le nourrissage.
+ * - V4 : une canalisation (fenêtre minutée) se réplique, la barre de l'observateur se vide pendant que la part écoulée
+ *   grandit.
  */
 NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 {
@@ -267,6 +270,81 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 			.UntilClient(TEXT("Client 1 : le geste de nourrissage est remplacé (charge, lancer)"), 1, [this, FeedPose](FBasePIENetworkComponentState& Client)
 			{
 				return GetCasterMontage(Client.World) != FeedPose;
+			}, DefaultWait());
+	}
+
+	// --- Canalisation (V4) -----------------------------------------------------------------------------------
+
+	static constexpr float ChannelDuration = 2.f;
+	float ObserverFill = -1.f;
+	float ObserverFraction = -1.f;
+
+	/**
+	 * Une fenêtre minutée (StartChannel, serveur) se réplique avec bChannel : l'observateur voit la barre se vider
+	 * pendant que la part écoulée (horloge des télégraphes) grandit, les deux complémentaires. Le client du lanceur
+	 * ne la reçoit pas (COND_SkipOwner) : il la prédit lui-même avec le même appel.
+	 */
+	TEST_METHOD(Channel_Replicates_ObserverSeesTheDrainingFraction)
+	{
+		UClass* WindowAbility = UGenGA_Cast::StaticClass();
+
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : le lanceur ouvre une fenêtre de 2 s"), [this, WindowAbility](FBasePIENetworkComponentState& Server)
+			{
+				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Caster));
+				CasterPlayerId = Caster->GetPlayerState()->GetPlayerId();
+				Caster->StartChannel(WindowAbility, ChannelDuration);
+				ASSERT_THAT(IsTrue(Caster->GetCastInfo().bChannel));
+			})
+			.ThenClient(TEXT("Client 0 : prédit la même fenêtre"), 0, [this, WindowAbility](FBasePIENetworkComponentState& Client)
+			{
+				AGenCharacterBase* Caster = FindCaster(Client.World);
+				ASSERT_THAT(IsNotNull(Caster));
+				Caster->StartChannel(WindowAbility, ChannelDuration);
+				GenCastBar::FLayout Layout;
+				ASSERT_THAT(IsTrue(Caster->GetCastBarLayout(Layout) && Layout.bDrain, TEXT("Le client du lanceur voit sa barre se vider")));
+			})
+			.UntilClient(TEXT("Client 1 : canalisation répliquée"), 1, [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = FindCaster(Client.World);
+				return Caster && Caster->GetCastInfo().IsCasting() && Caster->GetCastInfo().bChannel;
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 1 : première mesure"), 1, [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = FindCaster(Client.World);
+				GenCastBar::FLayout Layout;
+				ASSERT_THAT(IsTrue(Caster->GetCastBarLayout(Layout)));
+				ASSERT_THAT(IsTrue(Layout.bDrain, TEXT("La barre de l'observateur se vide")));
+				ASSERT_THAT(AreEqual(0, Layout.Ticks.Num(), TEXT("Ni cran")));
+				ObserverFill = Layout.Fill;
+				ObserverFraction = Caster->GetCastElapsedFraction();
+				ASSERT_THAT(IsNear(1.f, ObserverFill + ObserverFraction, 0.01f, TEXT("Barre restante + part écoulée = 1")));
+				ClientMark = Client.World->GetTimeSeconds();
+			})
+			.UntilClient(TEXT("Client 1 : 0.5 s plus tard"), 1, [this](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + 0.5f; }, DefaultWait())
+			.ThenClient(TEXT("Client 1 : la barre a baissé, l'horloge a monté"), 1, [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = FindCaster(Client.World);
+				GenCastBar::FLayout Layout;
+				ASSERT_THAT(IsTrue(Caster->GetCastBarLayout(Layout)));
+				const float Fraction = Caster->GetCastElapsedFraction();
+				ASSERT_THAT(IsTrue(Layout.Fill < ObserverFill - 0.1f, TEXT("La barre se vide")));
+				ASSERT_THAT(IsTrue(Fraction > ObserverFraction + 0.1f, TEXT("La part écoulée grandit")));
+				ASSERT_THAT(IsNear(1.f, Layout.Fill + Fraction, 0.01f, TEXT("Toujours complémentaires")));
+			})
+			.ThenServer(TEXT("Serveur : fin de la fenêtre"), [this, WindowAbility](FBasePIENetworkComponentState& Server)
+			{
+				AGenCharacterBase* Caster = FindCaster(Server.World);
+				ASSERT_THAT(IsNotNull(Caster));
+				Caster->StopCast(WindowAbility);
+			})
+			.UntilClient(TEXT("Client 1 : plus de barre"), 1, [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = FindCaster(Client.World);
+				return Caster && !Caster->GetCastInfo().IsCasting();
 			}, DefaultWait());
 	}
 };

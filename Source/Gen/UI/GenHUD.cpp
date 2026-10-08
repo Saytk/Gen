@@ -176,8 +176,9 @@ void AGenHUD::DrawLocalCastBar(const AGenCharacterBase* LocalCharacter, float Bo
 	const FGenCastInfo& Info = LocalCharacter->GetCastInfo();
 	const UGenGameplayAbility* AbilityCDO = Cast<UGenGameplayAbility>(Info.Ability->GetDefaultObject());
 	const FString Name = !AbilityCDO || AbilityCDO->DisplayName.IsEmpty() ? Info.Ability->GetName() : AbilityCDO->DisplayName.ToString();
-	// Sort nourri pendant le nourrissage : temps restant si toutes les flammes passent
-	const float Remaining = Layout.TotalDuration * (1.f - Layout.Fill);
+	// Sort nourri pendant le nourrissage : temps restant si toutes les flammes passent.
+	// Canalisation (V4) : Fill est déjà la part restante (la barre se vide).
+	const float Remaining = Layout.TotalDuration * (Layout.bDrain ? Layout.Fill : 1.f - Layout.Fill);
 
 	const float Width = 260.f;
 	const float Height = 14.f;

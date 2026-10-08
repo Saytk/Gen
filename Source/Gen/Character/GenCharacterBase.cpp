@@ -110,6 +110,22 @@ void AGenCharacterBase::MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFin
 	CastInfo.FedCount = bFinal ? Count : FMath::Max(CastInfo.FedCount, Count);
 }
 
+void AGenCharacterBase::StartChannel(UClass* Ability, float Duration)
+{
+	// Comme StartCast, sans effet ni SetFaceAim : la fenêtre ne fige pas l'orientation du personnage
+	CastInfo = FGenCastInfo();
+	CastInfo.Ability = Ability;
+	CastInfo.Duration = Duration;
+	CastInfo.StartTime = GetCastClockSeconds();
+	CastInfo.bChannel = true;
+	UpdateCastFX(); // éteint l'effet d'une incantation précédente
+}
+
+float AGenCharacterBase::GetCastElapsedFraction() const
+{
+	return CastInfo.IsCasting() ? GenCastBar::GetElapsedFraction(CastInfo.StartTime, CastInfo.Duration, GetCastClockSeconds()) : 0.f;
+}
+
 void AGenCharacterBase::StopCast(UClass* Ability)
 {
 	// Ne pas effacer l'incantation d'un autre sort lancé entre-temps
@@ -202,6 +218,7 @@ bool AGenCharacterBase::GetCastBarLayout(GenCastBar::FLayout& OutLayout) const
 
 	GenCastBar::FParams Params;
 	Params.StartTime = CastInfo.StartTime;
+	Params.bChannel = CastInfo.bChannel;
 	if (CastInfo.FeedSlots > 0)
 	{
 		// Sort nourri : Duration est la longueur du nourrissage (cf. StartFeedCast), l'incantation en est le reste

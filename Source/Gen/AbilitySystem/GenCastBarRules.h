@@ -24,6 +24,8 @@ namespace GenCastBar
 		float FeedEndTime = 0.f;
 		/** Flammes nourries : en direct pendant le nourrissage, définitives après. */
 		int32 FedCount = 0;
+		/** Canalisation (fenêtre minutée : contre, forme de Living Flame) : la barre se vide (UI §4.5). Jamais nourrie. */
+		bool bChannel = false;
 	};
 
 	/** Ce que le HUD dessine. */
@@ -39,7 +41,18 @@ namespace GenCastBar
 		int32 Counter = 0;
 		/** Sort nourri : le HUD dessine les crans et le compteur. */
 		bool bFed = false;
+		/** Canalisation : Fill = part RESTANTE (la barre se vide de droite à gauche, UI §4.5). */
+		bool bDrain = false;
 	};
+
+	/**
+	 * Part écoulée d'une incantation ou d'une canalisation, 0..1 (0 si Duration ≤ 0). Grandit toujours, même quand la
+	 * barre se vide : c'est l'horloge des télégraphes (UGenSpellIndicatorComponent).
+	 */
+	inline float GetElapsedFraction(float StartTime, float Duration, float Now)
+	{
+		return Duration > 0.f ? FMath::Clamp((Now - StartTime) / Duration, 0.f, 1.f) : 0.f;
+	}
 
 	/**
 	 * Disposition de la barre à l'instant Now (temps serveur).
@@ -47,6 +60,8 @@ namespace GenCastBar
 	 *
 	 * - Incantation normale (S = 0, ou I ≤ 0) : total = C, remplissage = (Now − début) / C,
 	 *   ni cran ni compteur.
+	 * - Canalisation (bChannel, jamais nourrie) : total = C, remplissage = 1 − (Now − début) / C (bDrain),
+	 *   ni cran ni compteur ; vide si C = 0.
 	 * - Nourrissage en cours (Te = 0) : total T_S = S·I + C, remplissage = écoulé / T_S,
 	 *   crans à k·I / T_S (k = 1..S), compteur = N (flammes réellement nourries, en direct). Le compteur
 	 *   n'est pas déduit du temps : il ne recule jamais au relâché et suit les flammes de l'orbite.
@@ -65,6 +80,15 @@ namespace GenCastBar
 		const float Interval = Params.FeedInterval;
 		const int32 Slots = Interval > 0.f ? FMath::Max(Params.FeedSlots, 0) : 0;
 		const float Elapsed = FMath::Max(Now - Params.StartTime, 0.f);
+
+		// Canalisation : jamais nourrie (ni cran ni compteur), la barre se vide
+		if (Params.bChannel)
+		{
+			Layout.bDrain = true;
+			Layout.TotalDuration = CastTime;
+			Layout.Fill = CastTime > 0.f ? 1.f - GetElapsedFraction(Params.StartTime, CastTime, Now) : 0.f;
+			return Layout;
+		}
 
 		if (Slots == 0)
 		{

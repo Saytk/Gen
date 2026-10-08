@@ -238,4 +238,73 @@ bool FGenCastBarEdgeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCastBarChannelTest, "Gen.CastBar.Channel",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenCastBarChannelTest::RunTest(const FString& Parameters)
+{
+	// Fenêtre de contre (Backfire) : 1.2 s
+	GenCastBar::FParams P;
+	P.CastTime = 1.2f;
+	P.StartTime = 10.f;
+	P.bChannel = true;
+	const GenCastBar::FLayout Start = GenCastBar::ComputeLayout(P, 10.f);
+	const GenCastBar::FLayout Mid = GenCastBar::ComputeLayout(P, 10.6f);
+	const GenCastBar::FLayout End = GenCastBar::ComputeLayout(P, 11.2f);
+	const GenCastBar::FLayout After = GenCastBar::ComputeLayout(P, 12.f);
+	TestTrue(TEXT("se vide (UI §4.5)"), Start.bDrain);
+	TestFalse(TEXT("pas un sort nourri"), Start.bFed);
+	TestEqual(TEXT("pleine au début"), Start.Fill, 1.f, 0.001f);
+	TestEqual(TEXT("moitié"), Mid.Fill, 0.5f, 0.001f);
+	TestEqual(TEXT("vide à la fin"), End.Fill, 0.f, 0.001f);
+	TestEqual(TEXT("reste vide après"), After.Fill, 0.f, 0.001f);
+	TestEqual(TEXT("ni cran"), Mid.Ticks.Num(), 0);
+	TestEqual(TEXT("ni compteur"), Mid.Counter, 0);
+	TestEqual(TEXT("durée = fenêtre"), Mid.TotalDuration, 1.2f, 0.001f);
+
+	// Une canalisation n'est jamais nourrie, même si des crans traînent dans les paramètres
+	P.FeedSlots = 3;
+	P.FeedInterval = 0.3f;
+	const GenCastBar::FLayout Ignored = GenCastBar::ComputeLayout(P, 10.6f);
+	TestTrue(TEXT("crans ignorés : toujours une canalisation"), Ignored.bDrain && !Ignored.bFed && Ignored.Ticks.Num() == 0);
+	TestEqual(TEXT("crans ignorés : moitié"), Ignored.Fill, 0.5f, 0.001f);
+
+	// Durée nulle : vide
+	GenCastBar::FParams Zero;
+	Zero.bChannel = true;
+	TestEqual(TEXT("durée nulle : vide"), GenCastBar::ComputeLayout(Zero, 5.f).Fill, 0.f, 0.001f);
+
+	// Incantation normale : se remplit (inchangé)
+	P.bChannel = false;
+	P.FeedSlots = 0;
+	TestFalse(TEXT("incantation : ne se vide pas"), GenCastBar::ComputeLayout(P, 10.6f).bDrain);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCastBarElapsedFractionTest, "Gen.CastBar.ElapsedFraction",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenCastBarElapsedFractionTest::RunTest(const FString& Parameters)
+{
+	// Horloge des télégraphes : grandit de 0 à 1, que la barre se remplisse ou se vide
+	TestEqual(TEXT("début"), GenCastBar::GetElapsedFraction(10.f, 0.5f, 10.f), 0.f, 0.0001f);
+	TestEqual(TEXT("milieu"), GenCastBar::GetElapsedFraction(10.f, 0.5f, 10.25f), 0.5f, 0.0001f);
+	TestEqual(TEXT("fin"), GenCastBar::GetElapsedFraction(10.f, 0.5f, 10.5f), 1.f, 0.0001f);
+	TestEqual(TEXT("après : borné"), GenCastBar::GetElapsedFraction(10.f, 0.5f, 11.f), 1.f, 0.0001f);
+	TestEqual(TEXT("horloge en retard : borné à 0"), GenCastBar::GetElapsedFraction(10.f, 0.5f, 9.9f), 0.f, 0.0001f);
+	TestEqual(TEXT("durée nulle"), GenCastBar::GetElapsedFraction(10.f, 0.f, 11.f), 0.f, 0.0001f);
+
+	// Canalisation : remplissage de la barre = 1 - part écoulée
+	GenCastBar::FParams P;
+	P.CastTime = 0.5f;
+	P.StartTime = 10.f;
+	P.bChannel = true;
+	for (const float Now : { 10.f, 10.1f, 10.35f, 10.5f })
+	{
+		TestEqual(FString::Printf(TEXT("barre + horloge = 1 à %.2f"), Now),
+			GenCastBar::ComputeLayout(P, Now).Fill + GenCastBar::GetElapsedFraction(P.StartTime, P.CastTime, Now), 1.f, 0.0001f);
+	}
+	return true;
+}
+
 #endif
