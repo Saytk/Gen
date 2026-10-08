@@ -30,7 +30,7 @@ Gen is a top-down 3v3 arena brawler inspired by Battlerite. The UI has to show c
 |---|---|---|
 | P1 | **Gameplay first** | Every element explains gameplay state. If removing an element costs the player no decision, remove it. Ornament is never a reason for an element to exist. |
 | P2 | **Information lives where the eyes are** | Combat-critical information sits on the character (overhead stack) and on the floor (telegraphs, pickup timers). Screen edges hold only stable, learned information: frames, score and the ability bar. The centre of the screen stays clear. |
-| P3 | **Quiet chrome, loud meaning** | Combat HUD panels are cool, desaturated, translucent navy or slate with 1 px lines. Menus use flat, bright, cool-toned panels (Art Bible §9). Saturated colour appears only on small marks that carry meaning: team, health, energy, ready and danger. |
+| P3 | **Quiet chrome, loud meaning** | All UI chrome is **dark and warm** ([TASTE #1], [TASTE #2], [TASTE #3]): low-chroma umber (red-brown) panels, warm peach-cream text and 1 px copper-bronze lines. Combat HUD panels are translucent; menus use the same family, made opaque (Art Bible §9). Saturated colour appears only on small marks that carry meaning: team, health, energy, ready and danger. |
 | P4 | **Attention matches importance** | Only critical events get motion, saturation or size: own low HP, crowd control on self, an enemy cast starting, ultimate ready. Routine updates change value with no fanfare. Every animation has a gameplay cause. |
 | P5 | **Readable by everyone** | Colour is never the only cue. The UI meets minimum text size and contrast, can be scaled, has colour presets, and offers reduced motion and reduced flashes. |
 
@@ -61,14 +61,14 @@ Tiers apply to **states and events**, not to widgets. One widget can show events
 - **Team colours are the Art Bible's** (§4.3): self off-white, ally sky blue, enemy vermillion (the last two from the Okabe-Ito palette). Self moved from yellow to off-white so it no longer shares a hue with fire, stun and heal VFX. Battlerite's own team hues are unverified (Art Bible §12 Q5).
 - **Team frames in the top corners**: allies on the left, enemies on the right. Battlerite's exact frame placement is unverified. Its top plaque is documented.
 - **Counter sits below hard CC, silence and root** in the state-word priority list (§4.6).
-- **Untargetable characters are dimmed, not hidden** (§4.4).
+- **Untouchable characters are dimmed, not hidden** (§4.4).
 
 **Avoid (documented Battlerite criticisms):**
 - An ability bar too small to read in peripheral vision. We use larger slots and a one-shot ready flash.
 - HUD scale available only through a config edit. We ship the slider from day one.
 - A health bar whose maximum visibly shrinks, which confused newcomers. Our bar keeps a fixed width and hatches the permanently lost portion.
-- "Generic" fonts and "gloomy", "empty" menus. We use one deliberate type family, flat, bright, cool menu panels and blurred arena backdrops (Art Bible §9).
-- Royale-style filigree chrome and heavy fantasy-RPG frames, which "told the wrong story" in Stunlock's testing (Art Bible §9). We use a 1 px cool line.
+- "Generic" fonts and "gloomy", "empty" menus. We use one deliberate type family and flat, dark, warm menu panels over a lit, blurred arena backdrop with 3D champions (Art Bible §9). Dark, but never an empty black screen.
+- Royale-style filigree chrome and heavy fantasy-RPG frames, which "told the wrong story" in Stunlock's testing (Art Bible §9). We use a 1 px bronze line.
 - A minimap. Battlerite Arena had none, and the arena fits on one screen.
 - Cosmetics that change an ability's silhouette, colour family or telegraph.
 
@@ -99,50 +99,54 @@ Two exceptions, both owned by the Art Bible:
 
 | Token | Hex (sRGB) | FLinearColor (R, G, B) | Alpha | Use |
 |---|---|---|---|---|
-| `bg.panel` | `#141A24` | (0.007, 0.010, 0.018) | 0.80 | Persistent HUD panels: bottom bar, top plaque, frames |
-| `bg.panelRaised` | `#1C2330` | (0.012, 0.017, 0.030) | 0.88 | Tooltips, menu cards, scoreboard, kill-feed rows |
-| `bg.hover` | `#262F3E` | (0.019, 0.028, 0.048) | 0.92 | Hover state of enabled cards and buttons only |
-| `bg.scrim` | `#0A0D12` | (0.003, 0.004, 0.006) | 0.60 | Behind modals |
-| `bar.track` | `#111419` | (0.006, 0.007, 0.010) | 0.90 | Empty part of **every** bar. Always a neutral near-black, **never a dark tint of the team colour** |
-| `line.metal` | `#8A96A8` | (0.254, 0.305, 0.392) | 0.35 | 1 px panel outline (the "cool metal" edge) |
-| `line.outline` | `#05070A` | (0.002, 0.002, 0.003) | 0.90 | 1 px outline around world-space bars, text outlines, the dark separator inside the self bar frame (§4.4), and the dark keyline on team strokes (Art Bible §4.3) |
+| `bg.panel` | `#20160F` | (0.014, 0.008, 0.005) | 0.80 | Persistent HUD panels: bottom bar, top plaque, frames |
+| `bg.panelRaised` | `#2B1E16` | (0.024, 0.013, 0.008) | 0.88 | Tooltips, menu cards, scoreboard, kill-feed rows |
+| `bg.hover` | `#3A291F` | (0.042, 0.022, 0.014) | 0.92 | Hover state of enabled cards and buttons only |
+| `bg.scrim` | `#110C09` | (0.006, 0.004, 0.003) | 0.60 | Behind modals |
+| `bar.track` | `#141411` | (0.007, 0.007, 0.006) | 0.90 | Empty part of **every** bar. Always a neutral near-black, **never a dark tint of the team colour** |
+| `line.bronze` | `#B07A52` | (0.434, 0.195, 0.084) | 0.35 | 1 px panel outline (the warm copper-bronze edge, [TASTE #3]) |
+| `line.outline` | `#070705` | (0.002, 0.002, 0.002) | 0.90 | 1 px outline around world-space bars, text outlines, the dark separator inside the self bar frame (§4.4), and the dark keyline on team strokes (Art Bible §4.3) |
 | `line.keylineLight` | `#FFFFFF` | (1.000, 1.000, 1.000) | 1.0 | Light keyline on world team strokes (rings, telegraph borders) on arenas whose floor band max is V ≤ 40%. Polarity is set per arena by Art Bible §4.3. Never used for text |
 | `line.highlight` | `#FFFFFF` | (1.000, 1.000, 1.000) | 0.06 | Optional 1 px inner top rim on panels |
 
-**Menu surfaces** (menus, champion select, settings, post-match; **never the combat HUD**). Art Bible §9 asks for flat, bright, cool-toned menu panels, so menus use a light set of tokens. All are opaque and flat: no gradients, no textures, no frames.
+**Menu surfaces** (menus, champion select, settings, post-match; **never the combat HUD**). **Dark, warm theme [TASTE #1, #2, #3]:** menus use the same dark, warm, low-chroma umber family as the HUD ([TASTE #2]; values sampled from the colour reference in [TASTE #3]), but opaque, so the UI reads as one system and the screen never flashes bright between menus and matches. All are flat: no gradients, no textures, no frames. To keep dark menus from feeling "gloomy" or "empty" (a Battlerite criticism, §1.3), the life comes from the **backdrop**: 3D champions with a cool rim light over a lit, blurred arena (§4.13), never from brighter panels.
 
 | Token | Hex (sRGB) | FLinearColor (R, G, B) | Contrast | Use |
 |---|---|---|---|---|
-| `menu.panel` | `#E8EDF3` | (0.807, 0.847, 0.896) | — | Menu cards, side panels, settings rows |
-| `menu.panelHover` | `#D5DEE8` | (0.665, 0.730, 0.807) | 1.16:1 vs `menu.panel` (the hover is a secondary cue; focus uses `menu.accent`) | Hover state of enabled cards and buttons |
-| `menu.text.primary` | `#1C2330` | (0.012, 0.017, 0.030) | 13.4:1 on `menu.panel`, 11.6:1 on hover | Titles, body text, names on menu panels |
-| `menu.text.secondary` | `#4A5566` | (0.068, 0.091, 0.133) | 6.4:1 on `menu.panel`, 5.6:1 on hover | Labels, descriptions |
-| `menu.text.disabled` | `#7A8494` | (0.195, 0.231, 0.296) | 3.2:1 on `menu.panel` | Inactive items only (disabled controls never take hover) |
-| `menu.line` | `#A9B6C6` | (0.397, 0.468, 0.565) | 1.75:1 on `menu.panel` (decorative divider, no contrast floor) | 1 px dividers and card edges |
-| `menu.accent` | `#3A5577` | (0.042, 0.091, 0.184) | 6.5:1 on `menu.panel` | 2 px focus and selection outline. OKLCH chroma 0.065, so it is exempt from the reserved-hue rule and never reads as the ally blue |
+| `menu.scrim` | `#150F0B` | (0.007, 0.005, 0.003) | — | α 0.45 (tunable) over the blurred arena backdrop, behind panels only, never over the champions |
+| `menu.panel` | `#241912` | (0.018, 0.010, 0.006) | — | Menu cards, side panels, settings rows. Opaque |
+| `menu.panelHover` | `#33241A` | (0.033, 0.018, 0.010) | 1.15:1 vs `menu.panel` (the hover is a secondary cue; focus uses `menu.accent`) | Hover state of enabled cards and buttons |
+| `menu.text.primary` | = `text.primary` `#F3DEC9` | (0.896, 0.730, 0.584) | 13.2:1 on `menu.panel`, 11.4:1 on hover | Titles, body text |
+| `menu.text.secondary` | = `text.secondary` `#C2A893` | (0.539, 0.392, 0.292) | 7.6:1 on `menu.panel`, 6.6:1 on hover | Labels, descriptions |
+| `menu.text.disabled` | `#907A6A` | (0.279, 0.195, 0.144) | 4.2:1 on `menu.panel` | Inactive items only (disabled controls never take hover) |
+| `menu.line` | `#4E3828` | (0.076, 0.040, 0.021) | 1.57:1 on `menu.panel` (decorative divider, no contrast floor) | 1 px dividers and card edges |
+| `menu.accent` | = `accent.brass` `#D6A47C` | (0.672, 0.371, 0.202) | 7.7:1 on `menu.panel` | 2 px focus and selection outline. See `accent.brass` (§2.2) for its reserved-hue note |
+| `menu.cta` | `#7A4A2E` | (0.195, 0.068, 0.027) | `menu.text.primary` on it 5.7:1; 2.33:1 vs `menu.panel` | Fill of the **one** primary call-to-action per screen (Play, Ready, Confirm), with `menu.text.primary` label and a 1 px `line.bronze` edge. Flat, no gradient. OKLCH C 0.077, below the 0.10 reserved-hue threshold [TASTE #3] |
+
+Team colours on `menu.panel`: self 15.3:1, ally 7.4:1, enemy 4.4:1, so relation stripes need no extra keyline in menus.
 
 ### 2.2 Colour: text and accent
 
 | Token | Hex | FLinearColor | On `bg.panel` (opaque) | On `bg.panel` α 0.70 over `ref.floorMax` | Use |
 |---|---|---|---|---|---|
-| `text.primary` | `#E6E8EB` | (0.791, 0.807, 0.831) | 14.2:1 | 9.0:1 | Resting text and numbers. Never pure white |
-| `text.secondary` | `#A8ADB5` | (0.392, 0.418, 0.462) | 7.7:1 | 4.9:1 | Labels, "/200", buff borders |
-| `text.disabled` | `#767B84` | (0.181, 0.198, 0.231) | 4.1:1 (3.7 on `bg.panelRaised`, 3.2 on `bg.hover`) | 2.6:1, so **not allowed on HUD panels** | Disabled or inactive menu items only |
-| `accent.steel` | `#9FB4D0` | (0.347, 0.456, 0.631) | 8.2:1 | — | The **only** brand accent on dark surfaces: focus, selection and links in the in-match game menu and tooltips. Light menu panels use its dark twin `menu.accent` (§2.1). OKLCH chroma 0.047, so it never competes with the ally blue |
+| `text.primary` | `#F3DEC9` | (0.896, 0.730, 0.584) | 13.6:1 | 8.7:1 | Resting text and numbers. Never pure white |
+| `text.secondary` | `#C2A893` | (0.539, 0.392, 0.292) | 7.9:1 | 5.0:1 | Labels, "/200", buff borders |
+| `text.disabled` | `#8C7666` | (0.262, 0.181, 0.133) | 4.1:1 (3.8 on `bg.panelRaised`, 3.2 on `bg.hover`) | 2.6:1, so **not allowed on HUD panels** | Disabled or inactive menu items only |
+| `accent.brass` | `#D6A47C` | (0.672, 0.371, 0.202) | 8.0:1 | — | The **only** brand accent on dark surfaces: focus, selection and links in the in-match game menu and tooltips. Menus use the same value as `menu.accent` (§2.1). A copper-brass ([TASTE #3]): OKLCH chroma 0.08 (hue 60°), below the 0.10 reserved-hue threshold. It sits between enemy vermillion (hue 48°, chroma 0.17) and energy amber `#FFC233` (hue 83°, chroma 0.16) but is half as saturated as either, and it **never appears in the ability bar, any bar or any world element**, so it can't read as enemy or energy. Never push its chroma above 0.10: the saturated gold and orange highlights of the colour reference stay out of UI chrome for this reason |
 | `flash.white` | `#FFFFFF` | (1.000, 1.000, 1.000) | — | — | Momentary flashes only (ready flash, hit flash). Never resting text |
 
 **Relation-tinted text** (names in overheads, team frames, the kill feed and the scoreboard, all on dark surfaces) always uses the same mix: `text.primary` blended 60% toward the relation colour in sRGB. `UGenUISubsystem` derives these at runtime from the active `DA_TeamColours` preset; the values below are the Default preset, for reference:
 
 | Token | Hex | FLinearColor | On `bg.panelRaised` | On `line.outline` |
 |---|---|---|---|---|
-| `text.relation.self` | `#EDEEEF` | (0.847, 0.855, 0.863) | 13.6:1 | 17.4:1 |
-| `text.relation.ally` | `#90C9EA` | (0.279, 0.584, 0.823) | 8.8:1 | 11.3:1 |
-| `text.relation.enemy` | `#DC955E` | (0.716, 0.301, 0.112) | 6.4:1 | 8.2:1 |
-| `text.relation.neutral` | `#CBC0AA` | (0.597, 0.527, 0.402) | 8.8:1 | 11.2:1 |
+| `text.relation.self` | `#F2EAE2` | (0.888, 0.823, 0.761) | 13.6:1 | 16.9:1 |
+| `text.relation.ally` | `#95C5DC` | (0.301, 0.558, 0.716) | 8.7:1 | 10.8:1 |
+| `text.relation.enemy` | `#E19150` | (0.753, 0.283, 0.080) | 6.4:1 | 8.0:1 |
+| `text.relation.neutral` | `#D0BD9C` | (0.631, 0.509, 0.332) | 8.8:1 | 11.0:1 |
 
 - Presets recompute these with the same 60% rule.
 - The self tint is almost `text.primary`, because self is off-white. That is intended: self is identified by position (first team-frame slot, no overhead name) and shape, never by name colour.
-- On light menu panels, names use `menu.text.primary`. The relation is shown by the stripe or ring next to the name (§4.13), because tinted light text fails contrast on a light panel.
+- Menu panels are dark too, so names in champion select and post-match use the same relation tint (on `menu.panel`: self 14.4:1, ally 9.2:1, enemy 6.8:1, neutral 9.4:1), always next to the relation stripe or ring (§4.13), never as the only cue.
 
 ### 2.3 Colour: team relation
 
@@ -198,12 +202,12 @@ Never "fix" a CVD preset by moving `heal` or `status.*` into blue: that lands wi
 | `bg.panel`, `bg.panelRaised` | `#000000`, α 1.0 | (0.000, 0.000, 0.000) | — |
 | `bar.track` | `#000000`, α 1.0 | (0.000, 0.000, 0.000) | — |
 | `text.primary` | `#FFFFFF` | (1.000, 1.000, 1.000) | 21:1 |
-| `text.secondary` | `#D0D4DA` | (0.631, 0.658, 0.701) | 14.1:1 |
-| `text.disabled` | `#A8ADB5` | (0.392, 0.418, 0.462) | 9.3:1 |
-| `line.metal` | `#C8D0DC`, α 1.0 | (0.578, 0.631, 0.716) | 13.5:1 |
+| `text.secondary` | `#E6D2BE` | (0.791, 0.644, 0.515) | 14.3:1 |
+| `text.disabled` | `#C2A893` | (0.539, 0.392, 0.292) | 9.3:1 |
+| `line.bronze` | `#E2C4A4`, α 1.0 | (0.761, 0.552, 0.371) | 12.7:1 |
 | `status.debuff` | 2 px `#FFFFFF` border plus the down-chevron | (1.000, 1.000, 1.000) | 21:1 |
-| `status.buff` | `#D0D4DA` | (0.631, 0.658, 0.701) | 14.1:1 |
-| `hp.recoverable` | `#5A5F68` | (0.102, 0.114, 0.138) | 3.3:1 (exempt; see below) |
+| `status.buff` | `#E6D2BE` | (0.791, 0.644, 0.515) | 14.3:1 |
+| `hp.recoverable` | `#635E58` | (0.125, 0.112, 0.098) | 3.3:1 (exempt; see below) |
 | `cooldown.overlay` | `#000000`, α 0.80 | (0.000, 0.000, 0.000) | — |
 
 - No HC override is needed for the reserved hues: `energy.*` `#FFC233` is 13.0:1 on black, `heal` `#7FD14F` 11.1:1, `status.danger` `#FF8FB0` 9.8:1.
@@ -222,15 +226,15 @@ Never "fix" a CVD preset by moving `heal` or `status.*` into blue: that lands wi
 | Token | Hex | FLinearColor | Alpha | Use |
 |---|---|---|---|---|
 | `hp.fill.*` | = `team.*` (from `DA_TeamColours`) | — | 1.0 | Current HP. The fill colour **is** the relation colour (Art Bible §9). The self fill is therefore off-white |
-| `hp.recoverable` | `#2E333C` | (0.027, 0.033, 0.045) | 1.0 | Healable missing HP, up to the heal cap. Dark grey |
+| `hp.recoverable` | `#37322C` | (0.038, 0.032, 0.025) | 1.0 | Healable missing HP, up to the heal cap. Dark grey |
 | `hp.lost` | `bar.track` with a 45° hatch in `hp.recoverable`, 1 px lines at 4 px pitch | — | 1.0 | Permanently lost HP (beyond the heal cap). Dark hatch |
-| `hp.trail` | `#A0A4AB` | (0.352, 0.371, 0.407) | 1.0 | Recent-damage ghost. Neutral grey: 5.07:1 vs `hp.recoverable`, 1.94:1 vs `hp.shield`, 2.24:1 vs `team.self`, 7.4:1 vs track. It is close to `team.ally` (1.08:1) and `team.neutral` (1.05:1) in lightness but differs in hue, and the 1 px fill-end divider separates them |
+| `hp.trail` | `#A8A39D` | (0.392, 0.366, 0.337) | 1.0 | Recent-damage ghost. Neutral grey: 5.07:1 vs `hp.recoverable`, 1.94:1 vs `hp.shield`, 2.24:1 vs `team.self`, 7.4:1 vs track. It is close to `team.ally` (1.08:1) and `team.neutral` (1.05:1) in lightness but differs in hue, and the 1 px fill-end divider separates them |
 | `hp.shield` | `#F0E2B6` with **−45° stripes** of `line.outline`, 1 px at 4 px pitch | (0.871, 0.761, 0.468) | 1.0 | Shield or absorb overlay. White-gold, low chroma (OKLCH C 0.059), matching the Art Bible §7.6 `State.Shielded` hue. It is only 1.15:1 against the off-white self fill, so the **stripes are the shield cue**, not the colour |
 | `hp.pending` | — | — | — | **Reserved, not in v1.** Add it only when a mechanic needs it, with a named data source |
 | `hp.tick` | `line.outline` | — | 0.55 thin / 0.90 heavy | Segment ticks (§4.3) |
 | `energy.charging` | `#FFC233` (= Art Bible §4.3 energy orb) | (1.000, 0.539, 0.033) | 1.0 | Energy below 100% (11.4:1 on track). **Amber means energy.** OKLCH hue 83°, 35° from the enemy vermillion (48°), so it clears the Art Bible's ≥ 30° reserved-hue separation |
 | `energy.full` | = `energy.charging` + a 1 px `text.primary` outline on every segment | — | 1.0 | Energy at 100%, ultimate ready, ultimate ring. Same hue **by design**: a separate "full" yellow would sit next to stun `#FFE07A`, and a darker "charging" amber collapses into the enemy vermillion under deuteranope simulation (ΔE 7). "Full" is shown by the outline, the complete segment count and the one-shot brighten (§4.2) |
-| `heal` | `#7FD14F` (= Art Bible §4.3 heal / health orb) | (0.212, 0.638, 0.078) | 1.0 | Heal numbers, health pickups, `State.Healing` icon. **Never** a team colour. Always paired with a "+" prefix or plus glyph |
+| `heal` | `#7FD14F` (= Art Bible §4.3 heal) | (0.212, 0.638, 0.078) | 1.0 | Heal numbers, the heal part of the centre-orb reward, `State.Healing` icon. **Never** a team colour. Always paired with a "+" prefix or plus glyph |
 | `cast.fill` | `#E9DFC8` | (0.815, 0.738, 0.578) | 1.0 | Cast and channel fill for every relation (13.9:1 on track). Low chroma (OKLCH C 0.033). Always in its own bar row, never inside an HP bar, so it cannot be mistaken for the off-white self fill (1.18:1) |
 | `cast.interrupted` | = `status.danger` | — | 1.0 | Interrupt or cancel flash |
 
@@ -246,18 +250,18 @@ Contrast notes:
 
 | Token | Hex | FLinearColor | Alpha | Use |
 |---|---|---|---|---|
-| `status.duration` | = `text.primary` `#E6E8EB` | (0.791, 0.807, 0.831) | 0.80 | Draining line under the overhead state word. Neutral, so it never reads as a team mark |
-| `status.buff` | = `text.secondary` `#A8ADB5` | (0.392, 0.418, 0.462) | 1.0 | Buff icon border (1 px) |
-| `status.debuff` | = `text.primary` `#E6E8EB` | (0.791, 0.807, 0.831) | 1.0 | Debuff icon border (**2 px**), plus an 8 px down-chevron. Neutral **by design**: the icon glyph already carries its Art Bible §7.6 hue, and an orange border would read as "enemy". Buff vs debuff is told apart by border width and the chevron |
+| `status.duration` | = `text.primary` `#F3DEC9` | (0.896, 0.730, 0.584) | 0.80 | Draining line under the overhead state word. Neutral, so it never reads as a team mark |
+| `status.buff` | = `text.secondary` `#C2A893` | (0.539, 0.392, 0.292) | 1.0 | Buff icon border (1 px) |
+| `status.debuff` | = `text.primary` `#F3DEC9` | (0.896, 0.730, 0.584) | 1.0 | Debuff icon border (**2 px**), plus an 8 px down-chevron. Neutral **by design**: the icon glyph already carries its Art Bible §7.6 hue, and an orange border would read as "enemy". Buff vs debuff is told apart by border width and the chevron |
 | `status.danger` | `#FF8FB0` | (1.000, 0.275, 0.434) | 1.0 | Self low-HP outline and HP number, interrupt flash, damage-taken numbers, errors. Rose, OKLCH hue 2°: 46° from the enemy vermillion, 62° from poison/silence, 1.81:1 lighter than enemy. 5.2:1 on `bg.panel` at α 0.70 over `ref.floorMax`, 8.6:1 on track, 9.8:1 on black (so it also serves High contrast). Never shown without a form cue (pulse, glyph, "−" prefix or the interrupt snap) |
 | `status.success` | = `heal` | — | 1.0 | Confirmations |
-| `cooldown.overlay` | `#0A0D12` | (0.003, 0.004, 0.006) | **0.75** | Radial cooldown sweep. The swept region's luminance is ≤ 35% of the unswept region (7–16% measured) |
+| `cooldown.overlay` | `#110C09` | (0.006, 0.004, 0.003) | **0.75** | Radial cooldown sweep. The swept region's luminance is ≤ 35% of the unswept region (7–16% measured) |
 | `cooldown.noEnergy` | `#2E4A78` | (0.027, 0.068, 0.188) | 0.45 | "Not enough energy" wash |
-| `cooldown.locked` | `#0A0D12` with a 45° hatch | (0.003, 0.004, 0.006) | 0.70 | Silenced or stunned slot |
-| `world.boundary` | = `text.primary` `#E6E8EB` | (0.791, 0.807, 0.831) | 0.90 | Sudden-death or shrinking-zone edge line, drawn **dashed** (8 px dash, 8 px gap) so a long near-white line never reads as the off-white self ring. Neutral, never "mine". Round-flow visuals are still open (Art Bible §12 Q19) |
-| `pickup.health` | = `heal` `#7FD14F` (Art Bible §4.3 health orb), with a white plus glyph | — | — | Health orb UI marks (timer ring, icon) |
-| `pickup.energy` | = `energy.charging` `#FFC233` (Art Bible §4.3 energy orb), with a bolt glyph | — | — | Energy orb UI marks (timer ring, icon) |
-| `proximity.far` / `.mid` / `.near` | = `text.primary` | (0.791, 0.807, 0.831) | 0.50 / 0.75 / 1.00 | Stealth proximity. Shown as **1 / 2 / 3 chevrons**; the count is the cue, not a colour ramp |
+| `cooldown.locked` | `#110C09` with a 45° hatch | (0.006, 0.004, 0.003) | 0.70 | Silenced or stunned slot |
+| `world.boundary` | = `text.primary` `#F3DEC9` | (0.896, 0.730, 0.584) | 0.90 | Sudden-death or shrinking-zone edge line, drawn **dashed** (8 px dash, 8 px gap) so a long near-white line never reads as the off-white self ring. Neutral, never "mine". Round-flow visuals are still open (Art Bible §12 Q19) |
+| `pickup.centreOrb` | = `energy.charging` `#FFC233`, with a bolt-and-plus glyph | — | — | Centre orb UI marks (spawn timer ring, icon): +20 energy and a small heal for the team that lands the last hit (CharacterGuidelines §4.2). Gen has no health orb |
+| `pickup.energy` | = `energy.charging` `#FFC233` (Art Bible §4.3 energy orbs), with a bolt glyph | — | — | Death orb UI marks: half the dead player's energy, for their allies only (CharacterGuidelines §4.2) |
+| `proximity.far` / `.mid` / `.near` | = `text.primary` | (0.880, 0.791, 0.723) | 0.50 / 0.75 / 1.00 | Stealth proximity. Shown as **1 / 2 / 3 chevrons**; the count is the cue, not a colour ramp |
 
 There is **no `status.warning` token.** At 10 s or less, the round timer stays `text.primary` and switches its format to `s.s`. Other warnings use `text.primary` plus a glyph. This keeps orange for the enemy and amber for energy only.
 
@@ -265,8 +269,8 @@ There is **no `status.warning` token.** At 10 s or less, the round timer stays `
 
 | Art Bible use | Hex | OKLCH hue | Where the UI uses it |
 |---|---|---|---|
-| Energy orb | `#FFC233` | 83° | `energy.*`, `pickup.energy` |
-| Heal / health orb | `#7FD14F` | 136° | `heal`, `status.success`, `pickup.health`, `State.Healing` icon |
+| Energy orbs (centre, death) | `#FFC233` | 83° | `energy.*`, `pickup.energy`, `pickup.centreOrb` |
+| Heal | `#7FD14F` | 136° | `heal`, `status.success`, `State.Healing` icon |
 | Stun | `#FFE07A` | 93° | `State.Stunned` status icon glyph |
 | Poison / silence | `#9E7BD9` | 300° | `State.Silenced` (and poison) status icon glyph |
 | Fire body | `#F5B82E` | 82° | `State.Burning` status icon glyph |
@@ -347,7 +351,7 @@ Base unit 4 px. In `DA_UIMetrics`: `Space_0_5` = 2, `Space_1` = 4, `Space_2` = 8
   - Default border: 1 px.
   - 2 px is reserved for state rings (ultimate, recast or active, focus or selected), debuff borders and high-contrast mode.
 - **No glows** anywhere.
-- **Panels:** 1 px `line.metal` at α 0.35, plus an optional 1 px `line.highlight` top rim. **No drop shadows on panels.** An optional vertical gradient of at most 6% value is allowed.
+- **Panels:** 1 px `line.bronze` at α 0.35, plus an optional 1 px `line.highlight` top rim. **No drop shadows on panels.** An optional vertical gradient of at most 6% value is allowed.
 - **World-space bars:** a 1 px `line.outline` around the whole bar, so it reads over bright floors and VFX.
 - **Text over the arena:** every string drawn over the 3D world gets a 1 px `line.outline` outline (UMG Font → Outline Settings, Size 1). The alternative is a 1 px offset shadow at α 0.6. Text never sits on the arena without an outline or a backing plate.
 - **Frame vs fill:** a bar's stated size is its **track** (the fill area). Outlines, and the self frame (§4.4), sit **outside** the track and never eat into the fill. Inside the track, only 1 px dividers, ticks and the shield stripes are allowed.
@@ -366,7 +370,7 @@ Base unit 4 px. In `DA_UIMetrics`: `Space_0_5` = 2, `Space_1` = 4, `Space_2` = 8
 | State-duration line | 0.80 | fixed |
 | Off-screen edge indicators | 0.70 | fixed (enemy ultimate arrow 1.0) |
 | Disabled controls | Text uses `text.disabled`. Never lower opacity instead | — |
-| Untargetable character's overhead stack | 0.30 | fixed (§4.4) |
+| Untouchable character's overhead stack | 0.30 | fixed (§4.4) |
 
 **Measuring HUD panel text:** set the panel to its minimum opacity (0.70) and measure over `ref.floorMax` `#8C8C8C`. At that setting, `text.primary` is 9.0:1 and `text.secondary` is 4.9:1. Lowering opacity must never push essential information below **3:1** (graphics) or **4.5:1** (text).
 
@@ -376,7 +380,7 @@ Base unit 4 px. In `DA_UIMetrics`: `Space_0_5` = 2, `Space_1` = 4, `Space_2` = 8
 - Author at 256 px. Display at 64 px, or 72 px for the ultimate.
 - Each set uses one light direction (top-left), one rendering style and a limited palette per champion.
 - Before approval, an icon must pass three tests: **greyscale**, **Gaussian blur 2 px** and **32 px**.
-- Show the ability type with frame or corner marks, never with colour alone. For example, an EX variant gets an 8 px corner chevron.
+- Show the ability type with frame or corner marks, never with colour alone. For example, the energy spell (R) carries its cost arc (§4.1). Gen has no EX variants (CharacterGuidelines §2).
 
 **Status icons** (Art Bible §9: "status icons repeat the §7.6 shape motifs, so the world and the HUD speak one vocabulary"):
 - 32 px single-colour solid glyphs on a `bg.panelRaised` tile.
@@ -502,7 +506,7 @@ x=0                                                                   x=1920
 
 ### 4.1 Ability bar and slots
 
-**Slot order:** LMB, RMB, Space, Ability 1, Ability 2, Ability 3, Ultimate (F). These map to `InputTag.Ability.Primary / Secondary / Mobility / 1 / 2 / 3 / Ultimate`.
+**Slot order:** LMB, RMB, Space, Q, E, R, F, the kit from CharacterGuidelines §2: basic attack, signature skillshot, mobility, defensive tool, utility, energy spell (costs 25) and ultimate (costs 100). They map to `InputTag.Ability.Primary / Secondary / Mobility / Defensive / Utility / Energy / Ultimate`. Primary, Secondary, Mobility and Ultimate exist in code; the other three names are proposals.
 
 **Geometry:**
 
@@ -513,8 +517,8 @@ x=0                                                                   x=1920
 | Ability row width | 6×64 + 72 + 6×12 = **528 px** |
 | Key label | `TS_Label` (20 px), centred **above** the slot, 2 px gap |
 | Label source | The live Enhanced Input mapping, resolved through `DA_UIKeyGlyphs`. Mouse buttons use glyphs. Space shows "SPC" (tunable). Never hard-coded |
-| Energy-cost arc | Under the slot: a 120° arc, 4 px thick, 4 segments (one per 25% energy) with 4° gaps. **Shown only while Shift (EX mode) is held, plus always on the ultimate slot.** Funded segments use `energy.charging`. Unfunded segments are a 1 px hollow outline in `text.secondary`. A fully funded ultimate arc uses `energy.full` |
-| Slot rim | 1 px `line.metal`. Ultimate: 2 px ring in `energy.full` at α 0.5 |
+| Energy-cost arc | Under the slot: a 120° arc, 4 px thick, 4 segments (one per 25% energy) with 4° gaps. **Always shown on the two energy slots, and only there:** R shows one segment (its 25 cost), F shows all four (100). Funded segments use `energy.charging`. Unfunded segments are a 1 px hollow outline in `text.secondary`. A fully funded ultimate arc uses `energy.full` |
+| Slot rim | 1 px `line.bronze`. Ultimate: 2 px ring in `energy.full` at α 0.5 |
 
 **States.** These are mutually exclusive except where marked "+".
 
@@ -523,11 +527,10 @@ x=0                                                                   x=1920
 | **Ready** | Icon at full brightness | — | — |
 | **Activating** (late-commit abilities only: between `TryActivateAbility` and `CommitAbility`) | Icon at 60% brightness, no number | Brightness | Within 100 ms of the press, client-side |
 | **Cooldown** | `cooldown.overlay` radial sweep: a dark wedge that starts at 12 o'clock and shrinks **clockwise**, the same direction everywhere. Icon desaturated 70% | **Mandatory:** a number in `TS_Cooldown`, centred and outlined, plus the desaturation. Whole seconds rounded up while ≥ 1 s; one decimal under 1 s ("0.6"). The number is hidden for total cooldowns under 2 s (tunable); desaturation and sweep remain | Sweep is linear (real time) |
-| **Not enough energy** | `cooldown.noEnergy` wash; icon brightness 55% | Brightness drop. While Shift is held, unfunded arc segments show hollow | None |
-| **Locked** (`State.Stunned`, future `State.Silenced`) | `cooldown.locked` hatch | 20 px lock glyph, centred | None |
+| **Not enough energy** | `cooldown.noEnergy` wash; icon brightness 55% | Brightness drop, plus hollow unfunded arc segments (R and F) | None |
+| **Locked** (CC that blocks casting: `State.Stunned`, `State.Incapacitated`, `State.Feared`, `State.Silenced`; CharacterGuidelines §3.2. Root does not lock) | `cooldown.locked` hatch | 20 px lock glyph, centred | None |
 | **Charges** + | — | Up to 3 pips (6 px circles, `text.primary`) on the top-right of the rim. 4 or more charges show a number in `TS_Label`. While at least 1 charge is left, the icon stays bright and only the sweep shows the next charge | — |
 | **Active / recast window** + | 2 px `text.primary` ring on the rim that drains **counter-clockwise**. The interior stays bright | Ring on the rim vs sweep on the interior: the two never look alike | Ring drains linearly |
-| **EX variant** (while Shift is held) | Icon and tooltip swap to the EX version; cost arcs appear | 8 px corner chevron | 100 ms cross-fade |
 | **Ultimate ready** | Ring goes from α 0.5 to `energy.full` at α 1.0. The cost arc is complete. **No glow** | Ring opacity and the complete arc | One 300 ms pulse on becoming ready, plus a sound. **No idle loop** |
 
 **Ready flash:**
@@ -605,7 +608,7 @@ Rows, from top to bottom. Every row is **always reserved**: hide content with `H
   - Positions snap to whole physical px (§8.5). **No smoothing or lag.**
 - **Z-order when stacks overlap:** allies at the bottom, enemies above them, self on top. **No automatic declutter or offset.**
 - **No HP numbers overhead.** Numbers appear only in the vitals block. The prototype's overhead HP number is removed.
-- **Untargetable** (`State.Untargetable`): the whole stack drops to α 0.30. We dim instead of hiding so that a moving character can still be tracked. `State.Leaping` dims only if the ability also grants `State.Untargetable`.
+- **Untouchable** (`State.Untouchable`, ≤ 0.5 s, CharacterGuidelines §3.5): the whole stack drops to α 0.30. We dim instead of hiding so that a moving character can still be tracked. `State.Leaping` dims only if the ability also grants `State.Untouchable`.
 - **Enemy ultimate-ready marker:** a 6 px `energy.full` dot at the right end of the energy bar while that champion's energy is at 100%. It can be toggled in settings.
 - **Off-screen characters:** the stack is hidden and an edge indicator appears instead (§4.14).
 - **Dead characters:** the stack is hidden (`State.Dead`).
@@ -638,18 +641,20 @@ Rows, from top to bottom. Every row is **always reserved**: hide content with `H
 
 **Overhead (all characters):**
 - One state word at a time, chosen by priority.
-- Words are short CAPS: STUNNED, SILENCED, ROOTED, COUNTER, SLOWED, HASTE. The word is the non-colour cue.
+- Words are short CAPS: STUNNED, FEARED, SILENCED, ROOTED, COUNTER, SLOWED, WEAKENED, HASTE. The word is the non-colour cue.
 
 | Priority | Category | Tags (create missing ones under `State.*`) | Word |
 |---|---|---|---|
-| 1 | Hard CC | `State.Stunned` (exists), `State.Incapacitated`, `State.Petrified` | STUNNED… |
+| 1 | Hard CC | `State.Stunned` (exists), `State.Incapacitated` (ends on any damage), `State.Feared` (CharacterGuidelines §3.2) | STUNNED (stun and incapacitate), FEARED |
 | 2 | Silence | `State.Silenced` | SILENCED |
 | 3 | Root | `State.Rooted` | ROOTED |
-| 4 | Counter or parry stance | `State.Counter` | COUNTER |
+| 4 | Counter or parry stance | `State.Countering` | COUNTER |
 | 5 | Snare or slow | `State.Slowed` (driven by the move-speed GE) | SLOWED |
-| 6 | Notable buffs | `State.Buff.*` | e.g. HASTE |
-| — | Airborne (leap) | `State.Leaping` (exists) | No word. Dims only with `State.Untargetable` |
-| — | Immune or untargetable | `State.Untargetable` | No word. The stack dims (§4.4) |
+| 6 | Weaken (−25 % damage dealt) | `State.Weakened` | WEAKENED |
+| 7 | Notable buffs | `State.Buff.*` | e.g. HASTE |
+| — | Airborne (leap) | `State.Leaping` (exists) | No word. Dims only with `State.Untouchable` |
+| — | Untouchable | `State.Untouchable` | No word. The stack dims (§4.4) |
+| — | CC immunity (Resilience) | `State.CCImmune` (CharacterGuidelines §3.3) | IMMUNE for the first 1 s, then no word; the world halo (Art Bible §7.6) shows the rest of the 1.5 s |
 
 - **Decision (Gen):** Counter sits under hard CC, silence and root, because imposed control matters more to the reader than a chosen stance.
 - The table lives in `DA_UIStatusPriority` (Gameplay Tag → priority, label `FText`, category, icon), not in widget code.
@@ -687,7 +692,7 @@ Rows, from top to bottom. Every row is **always reserved**: hide content with `H
 
 ### 4.8 Round plaque (top centre)
 
-- **Panel:** 480 × 56 px, `bg.panel`, `radius.panel`, 1 px `line.metal`.
+- **Panel:** 480 × 56 px, `bg.panel`, `radius.panel`, 1 px `line.bronze`.
 - **Layout:** `[ally pips] [ally team HP %] [timer] [enemy team HP %] [enemy pips]`.
 - **Timer:**
   - `TS_Timer` 28 px, format `m:ss`.
@@ -723,7 +728,7 @@ Rows, from top to bottom. Every row is **always reserved**: hide content with `H
 
 ### 4.10 Kill feed (spectator or opt-in only)
 
-In a 3v3, a death is already shown by the skull on the team frame, the overhead stack disappearing and the death time-slow. Battlerite's feed is undocumented, so the feed is **not** part of the default player HUD.
+In a 3v3, a death is already shown by the skull on the team frame, the overhead stack disappearing and the death flash and puff (Art Bible §7.9). Gen has no death time-slow: world time dilation is ruled out (Art Bible §8). Battlerite's feed is undocumented, so the feed is **not** part of the default player HUD.
 
 - **Availability:** always on in spectator mode. For players, "Kill feed" is a setting, **off by default**.
 - **Position:** top-right, under the enemy frames: x 1588, y 196, 300 px wide. This clears the clear zone at both 16:9 and 16:10.
@@ -742,7 +747,7 @@ In a 3v3, a death is already shown by the skull on the team frame, the overhead 
 | Strip | 640 × 64 px `bg.panel`, fixed α 0.90 | 640 × 96 px `bg.panel`, fixed α 0.90 |
 | Content | `TS_Banner` 48 px: "ROUND WON" (`team.ally`, 6.7:1), "ROUND LOST" (`team.enemy`, 4.0:1; large text needs ≥ 3:1), "SUDDEN DEATH" (`text.primary`). The banner strip is fixed at α 0.90 and ignores the panel-opacity setting: at α 0.70 the vermillion would drop to 2.9:1. Ratios are measured over `ref.floorMax` | `TS_Label` "ROUND 2" above a `TS_Banner` countdown 3 → 2 → 1, in `text.primary` |
 | Timing | Fade in over 200 ms with an 8 px rise, hold **1200 ms**, fade out over 150 ms (1.55 s) | 1000 ms per digit. Digits cut with a 100 ms cross-fade. The strip fades in during the first 200 ms and fades out over the last 150 ms. **Total ≤ 3 s** |
-| Also | Paired with the round sound cue and the existing death time-slow | Enemy loadout icons fade into the enemy team frames (200 ms) during the intro |
+| Also | Paired with the round sound cue and the cosmetic last-kill hit-stop (Art Bible §7.9, ≤ 120 ms) | Enemy loadout icons fade into the enemy team frames (200 ms) during the intro |
 
 - Neither sequence exceeds 3 s.
 - Neither is a full-screen panel. Rewards and stats live on the post-match screen only.
@@ -786,16 +791,18 @@ Ground indicators are specified by **Art Bible §7.5** (and §4.3 for colours an
 
 ### 4.13 Menus and champion select
 
-Menus follow **Art Bible §9**: flat, bright, cool-toned panels, so the champion models stand out against a cool backdrop; heroes shown in 3D over a blurred arena; **no heavy fantasy-RPG frames**.
+Menus follow **Art Bible §9**: flat, **dark, warm** panels ([TASTE #1], [TASTE #2], [TASTE #3]), so the champion models stand out against the backdrop; heroes shown in 3D over a blurred arena; **no heavy fantasy-RPG frames**.
 
-- **Backdrop:** a cool blue or teal blurred arena (UMG BackgroundBlur strength 10, tunable) behind the 3D champions. Never a flat black, empty screen.
-  - Nav bars and text bars over imagery use a flat `menu.panel` backing (with a background blur if the panel is not fully opaque).
+- **Backdrop:** a warm-lit blurred arena (low sun or torchlight; UMG BackgroundBlur strength 10, tunable), lit at the arena's normal exposure, behind the 3D champions. Mood per [TASTE #3]: dusk plum-brown sky, torches and drifting embers; the saturated gold and orange live **here, in the 3D scene**, never in the panels. Champions get a soft, slightly cool rim light so they separate from the warm, dark panels. Never a flat black, empty screen.
+  - `menu.scrim` sits behind panel areas only, so the champions stay at full brightness.
+  - Nav bars and text bars over imagery use a flat `menu.panel` backing.
 - **Panels and cards:** flat `menu.panel`, `radius.panel`, 16 px padding, 12 px gutters, 1 px `menu.line` edge. No gradients, bevels, filigree, ornamental corners or painted textures.
   - **Text:** `menu.text.primary` and `menu.text.secondary` (§2.1).
   - **Hover:** `menu.panelHover`, 100 ms.
   - **Selected or focused:** 2 px `menu.accent` outline.
+  - **Primary action:** one `menu.cta` button per screen (§2.1); every other button is a `menu.panel` card.
   - **Disabled:** `menu.text.disabled` plus a lock glyph or "Not available" text. **Disabled controls never take the hover state.**
-- **In-match game menu** (`WBP_GameMenu`, over live gameplay): uses the dark HUD tokens (`bg.panelRaised`, `text.*`, `accent.steel`) so it does not flash the screen bright mid-match.
+- **In-match game menu** (`WBP_GameMenu`, over live gameplay): uses the HUD tokens (`bg.panelRaised`, `text.*`, `accent.brass`), translucent over the match instead of opaque.
 - **Navigation:**
   - Full keyboard and controller navigation from day one.
   - Every activatable screen defines `GetDesiredFocusTarget`.
@@ -803,8 +810,8 @@ Menus follow **Art Bible §9**: flat, bright, cool-toned panels, so the champion
 - **Champion select:**
   - Both teams' slots side by side: allies left, enemies right.
   - Each slot has a 4 px relation-colour top stripe (a fill, not a border) and a lock-in state (filled stripe plus a check glyph).
-  - The stripe gets a 1 px `line.outline` keyline: the off-white self stripe is only 1.05:1 against `menu.panel` (ally 1.96:1, enemy 3.29:1) without it. Shape cues as elsewhere: the self stripe is 6 px instead of 4 (thicker), ally stripes are plain, enemy stripes end in the chevron point.
-  - Names on slots use `menu.text.primary`, not the relation tint (§2.2).
+  - On the dark `menu.panel` the stripes need no keyline (self 15.3:1, ally 7.4:1, enemy 4.4:1). Shape cues as elsewhere: the self stripe is 6 px instead of 4 (thicker), ally stripes are plain, enemy stripes end in the chevron point.
+  - Names on slots use the relation tint (§2.2), next to the stripe.
   - Loadout presets are selectable in one click.
   - Champion name in `TS_Title`; descriptions in `TS_Body`, sentence case, left-aligned.
 - **Notifications:** prefer non-blocking toasts. Use a modal (`UI.Layer.Modal`) only for destructive confirmations such as "Leave match?".
@@ -919,8 +926,8 @@ While the local player is dead (`UI.State.Dead` → `UI.State.Spectating`):
 
 ### 5.4 Flash and pulse limits
 
-- No element may flash or pulse faster than **3 Hz**. Default pulses are 1 Hz.
-- No flashing element may cover more than **20%** of the screen.
+- Flashes follow the **Art Bible §9.1** photosensitivity rule (WCAG 2.3.1): at most **3 flashes in any 1 s** within any **341 × 256 px** box at 1080p, unless the flash covers ≤ 25 % of that box (≈ 21 800 px, about 1 % of the screen). UI flashes count **together** with world impact flashes, and the Art Bible flash governor applies to both. A 64 px slot-rim flash is well under the area limit; a full-width banner must fade, never flash.
+- No element may pulse faster than **3 Hz**. Default pulses are 1 Hz.
 - **No saturated full-screen red flashes.** An optional damage vignette is edge-only, at most α 0.15, lasts 300 ms, and can be turned off ("Full-screen effects" 0%).
 - Use eased fades, never hard on/off blinks.
 - No flashing sequence may last longer than 5 s.
@@ -991,7 +998,7 @@ While the local player is dead (`UI.State.Dead` → `UI.State.Spectating`):
 | Minimum graphic sizes | Bars ≥ 4 px tall, gaps ≥ 2 px, lines ≥ 1 physical px |
 | High-contrast mode | ≥ 7:1 for text and for every bar fill, outline and glyph against its immediate background, except the documented exemptions (§2.3) |
 | Colour | No essential information by colour alone (§6, Art Bible §4.3). In every preset, ally vs enemy is ≥ 1.5:1 contrast and ΔE2000 ≥ 20, and every saturated UI hue is ≥ 30° (OKLCH) from each team hue |
-| Flashes | ≤ 3 Hz, ≤ 20% of the screen, no saturated full-screen red |
+| Flashes | ≤ 3 flashes in any 1 s per 341 × 256 px box (Art Bible §9.1), pulses ≤ 3 Hz, no saturated red flashes |
 | Text blocks | Sentence case, left-aligned, 1.5× line height, ≤ 80 characters per line |
 | Captions | ≤ 40 characters per line, ≤ 2 lines, a speaker prefix, backing opacity 0–100% (default 80%; text keeps its outline at any opacity). **On by default** for announcer events |
 | Critical audio cues | Each has a visual equivalent: the edge arrow for off-screen enemy ultimate wind-ups (§4.14), a caption for objective spawns |
@@ -1294,8 +1301,8 @@ Source/Gen/UI/   UGenPrimaryGameLayout, UGenHUDLayout, UGenUserWidget (base), UG
 | `EnemyColor (0.95, 0.2, 0.2)` | `#F97C7C` | `team.enemy` from `DA_TeamColours` (Default `#D55E00`, linear (0.665, 0.112, 0.000)) + the chevron cap | Okabe-Ito vermillion. Never hard-code any of the three: read them through `UGenUISubsystem` |
 | `EnergyColor (1.0, 0.75, 0.1)` | `#FFE159` | `energy.charging` `#FFC233`, linear (1.000, 0.539, 0.033) (= Art Bible energy orb); `energy.full` = same + segment outline | Now 4 segments. Amber, 35° (OKLCH) from the enemy hue |
 | `CastColor (1.0, 0.55, 0.1)` | `#FFC459` | `cast.fill` `#E9DFC8`, `cast.interrupted` (= `status.danger` `#FF8FB0`) | No longer competes with energy or the enemy colour |
-| `DrawBar` background `(0, 0, 0, 0.7)` | black 70% | `bar.track` `#111419` α 0.90 + 1 px `line.outline` | Never pure black |
-| `FLinearColor::White` text | `#FFFFFF` | `text.primary` `#E6E8EB` | |
+| `DrawBar` background `(0, 0, 0, 0.7)` | black 70% | `bar.track` `#141411` α 0.90 + 1 px `line.outline` | Never pure black |
+| `FLinearColor::White` text | `#FFFFFF` | `text.primary` `#F3DEC9` | |
 | Cooldown text `(0.6, 0.6, 0.6)` | `#CBCBCB` | Slot states (§4.1); labels use `TS_LabelSecondary` | |
 | Death text in `EnemyColor` | red | `UI.State.Dead` → spectating line (§4.17) in `text.primary` | Don't use the enemy colour for your own state |
 | `OverheadBarSize (90, 9)` | — | 80 × 8 track for everyone (Art Bible §9); self adds the 1 px separator + 2 px off-white frame (86 × 14 footprint); enemy adds the 4 px chevron cap. Energy 80 × 4 directly below | `DA_UIMetrics` |
@@ -1333,7 +1340,7 @@ Copy this into the PR description and tick each item.
 - [ ] **Telegraphs (Art Bible §7.5):** `M_VFX_Telegraph`, unlit, border 2–4 px, fill 15–30%, enemy chevron or static hazard stripes. Same value in the sun band and the shadow band (Art Bible §10 #13).
 - [ ] **Colourblind:** screenshots under Deuteranope, Protanope and Tritanope simulation (Severity 1, correction off). No collisions between enemy and status, debuff, heal or energy in any preset. Ally vs enemy ≥ 1.5:1 and ΔE ≥ 20 in every preset.
 - [ ] **High contrast:** ≥ 7:1 measured for text, fills, outlines and glyphs (exemptions per §2.3).
-- [ ] **Menus (Art Bible §9):** flat, bright, cool `menu.*` panels; heroes in 3D over a blurred arena; no heavy fantasy-RPG frames, filigree or painted bevels.
+- [ ] **Menus (Art Bible §9):** flat, dark, warm, opaque `menu.*` panels ([TASTE #1], [TASTE #2], [TASTE #3]); `bg.*` and `menu.*` stay low-chroma umber, never navy or pure grey; UI chrome chroma stays below 0.10 (saturated gold and orange only in the 3D backdrop); one `menu.cta` per screen; heroes in 3D over a lit, blurred arena, never an empty black screen; no heavy fantasy-RPG frames, filigree or painted bevels.
 
 **Scale and layout**
 - [ ] **Scale:** HUD 75% and 150%; text 200% at HUD 100% and text 150% at HUD 150%, within the §7.2 scopes.
@@ -1341,7 +1348,7 @@ Copy this into the PR description and tick each item.
 - [ ] **Overhead clump test:** all 6 characters stacked within one screen area. Z-order is correct (self on top) and nothing shifts while casting.
 
 **Motion and audio**
-- [ ] **Motion:** durations, classes and easing match §5.1–5.2. Nothing from §5.3 animates. Pulses ≤ 3 Hz. Reduce-motion and flash-intensity settings are respected.
+- [ ] **Motion:** durations, classes and easing match §5.1–5.2. Nothing from §5.3 animates. Pulses ≤ 3 Hz; flashes within the Art Bible §9.1 limit. Reduce-motion and flash-intensity settings are respected.
 - [ ] **Audio:** key events trigger sound and visual in the same frame, and every sound has a visual. UI sounds use `SC_UI`.
 
 **Engineering**
