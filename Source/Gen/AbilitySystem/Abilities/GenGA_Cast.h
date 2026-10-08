@@ -399,12 +399,15 @@ private:
 #if !UE_BUILD_SHIPPING
 	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
 	bool bWarnedPhaseSlotGroups = false;
+#endif
 
-	/** Départ (temps du monde) du dernier CastMontage de cette instance ; gardé d'une activation à l'autre (auto-répétition). */
+	/**
+	 * Départ (temps du monde) du dernier CastMontage de cette instance ; gardé d'une activation à l'autre (auto-répétition).
+	 * Revue finale, C-1 : hors du #if, c'est du gameplay (ordonnancement des montages), pas du débogage.
+	 */
 	double LastCastMontageTime = -1.0;
 	/** Retard de la charge en cours d'attente (OnChargeDelayFinished). */
 	float PendingChargeDelay = 0.f;
-#endif
 	/** Tâche de visée en cours (serveur pour un client distant : attend la visée). */
 	UPROPERTY(Transient)
 	TObjectPtr<UGenAbilityTask_TargetDataUnderCursor> AimTask;
