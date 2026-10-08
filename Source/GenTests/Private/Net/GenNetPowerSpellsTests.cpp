@@ -35,11 +35,6 @@ using namespace GenNetTest;
  */
 namespace GenPowerSpellTest
 {
-	FGameplayTag Tag(const TCHAR* Name)
-	{
-		return FGameplayTag::RequestGameplayTag(Name);
-	}
-
 	UAbilitySystemComponent* LocalASC(const FBasePIENetworkComponentState& Client)
 	{
 		const APlayerController* PC = GetLocalController(Client);
@@ -65,20 +60,6 @@ namespace GenPowerSpellTest
 	{
 		const ACharacter* Character = ASC ? Cast<ACharacter>(ASC->GetAvatarActor()) : nullptr;
 		return Character && Character->GetCharacterMovement() ? Character->GetCharacterMovement()->MaxWalkSpeed : -1.f;
-	}
-
-	void PlaceOnFloor(ACharacter* Character, float X, float Y)
-	{
-		Character->TeleportTo(FVector(X, Y, StandingHeight), FRotator::ZeroRotator, false, true);
-		Character->GetCharacterMovement()->StopMovementImmediately();
-	}
-
-	/** Serveur : dégâts de Source sur Target (GE de dégâts du projet). */
-	void ApplyDamage(UAbilitySystemComponent* Source, UAbilitySystemComponent* Target, float Amount)
-	{
-		const FGameplayEffectSpecHandle Spec = Source->MakeOutgoingSpec(UGenGE_Damage::StaticClass(), 1.f, Source->MakeEffectContext());
-		Spec.Data->SetSetByCallerMagnitude(Tag(TEXT("SetByCaller.Damage")), Amount);
-		Target->ApplyGameplayEffectSpecToSelf(*Spec.Data);
 	}
 
 	/** Appui (bPressed) ou relâché d'une touche de sort sur le client, traité dans la foulée comme le ferait le PC. */

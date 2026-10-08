@@ -35,11 +35,6 @@ using namespace GenNetTest;
  */
 namespace GenCurffeSpellTest
 {
-	FGameplayTag Tag(const TCHAR* Name)
-	{
-		return FGameplayTag::RequestGameplayTag(Name);
-	}
-
 	UAbilitySystemComponent* GetLocalASC(const FBasePIENetworkComponentState& Client)
 	{
 		const APlayerController* PC = GetLocalController(Client);
@@ -57,35 +52,6 @@ namespace GenCurffeSpellTest
 	{
 		FGameplayAbilitySpec* Spec = FindAbilitySpec(ASC, T::StaticClass());
 		return Spec ? Cast<T>(Spec->GetPrimaryInstance()) : nullptr;
-	}
-
-	/** Le serveur a lancé le personnage (repoussement) dans cette image. */
-	bool IsBeingLaunched(const ACharacter* Character)
-	{
-		return Character && !Character->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero();
-	}
-
-	/** Serveur : dégâts de Source sur Target (GE de dégâts du projet). */
-	void ApplyDamage(UAbilitySystemComponent* Source, UAbilitySystemComponent* Target, float Amount)
-	{
-		const FGameplayEffectSpecHandle Spec = Source->MakeOutgoingSpec(UGenGE_Damage::StaticClass(), 1.f, Source->MakeEffectContext());
-		Spec.Data->SetSetByCallerMagnitude(Tag(TEXT("SetByCaller.Damage")), Amount);
-		Target->ApplyGameplayEffectSpecToSelf(*Spec.Data);
-	}
-
-	/** Serveur : gain (ou perte si négatif) d'énergie et de ressource. */
-	void ApplyGain(UAbilitySystemComponent* ASC, float Energy, float Resource)
-	{
-		const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(UGenGE_Gain::StaticClass(), 1.f, ASC->MakeEffectContext());
-		UGenGE_Gain::SetMagnitudes(*Spec.Data, Energy, Resource);
-		ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data);
-	}
-
-	/** Pose le pion debout sur le sol de test en (X, Y). */
-	void PlaceOnFloor(ACharacter* Character, float X, float Y)
-	{
-		Character->TeleportTo(FVector(X, Y, StandingHeight), FRotator::ZeroRotator, false, true);
-		Character->GetCharacterMovement()->StopMovementImmediately();
 	}
 
 	/** Appui ou relâché d'une touche de sort sur le client, traité dans la foulée comme le ferait le PC. */

@@ -3,6 +3,8 @@
 #if ENABLE_PIE_NETWORK_TEST
 
 #include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/Effects/GenGE_Damage.h"
+#include "AbilitySystem/Effects/GenGE_Gain.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "Character/GenPlayerCharacter.h"
@@ -11,12 +13,43 @@
 #include "Net/GenNetTestFloor.h"
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/GenPlayerState.h"
 
 namespace GenNetTest
 {
+	FGameplayTag Tag(const TCHAR* Name)
+	{
+		return FGameplayTag::RequestGameplayTag(Name);
+	}
+
+	void ApplyDamage(UAbilitySystemComponent* Source, UAbilitySystemComponent* Target, float Amount)
+	{
+		const FGameplayEffectSpecHandle Spec = Source->MakeOutgoingSpec(UGenGE_Damage::StaticClass(), 1.f, Source->MakeEffectContext());
+		Spec.Data->SetSetByCallerMagnitude(Tag(TEXT("SetByCaller.Damage")), Amount);
+		Target->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+	}
+
+	void ApplyGain(UAbilitySystemComponent* ASC, float Energy, float Resource)
+	{
+		const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(UGenGE_Gain::StaticClass(), 1.f, ASC->MakeEffectContext());
+		UGenGE_Gain::SetMagnitudes(*Spec.Data, Energy, Resource);
+		ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+	}
+
+	void PlaceOnFloor(ACharacter* Character, float X, float Y)
+	{
+		Character->TeleportTo(FVector(X, Y, StandingHeight), FRotator::ZeroRotator, false, true);
+		Character->GetCharacterMovement()->StopMovementImmediately();
+	}
+
+	bool IsBeingLaunched(const ACharacter* Character)
+	{
+		return Character && !Character->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero();
+	}
+
 	TSubclassOf<AGameModeBase> LoadGameModeClass()
 	{
 		return LoadClass<AGameModeBase>(nullptr, TEXT("/Game/Gen/Core/BP_GenGameMode.BP_GenGameMode_C"));

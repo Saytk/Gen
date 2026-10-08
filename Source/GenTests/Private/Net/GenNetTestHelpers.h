@@ -6,8 +6,10 @@
 #if ENABLE_PIE_NETWORK_TEST
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Templates/SubclassOf.h"
 
+class ACharacter;
 class AGameModeBase;
 class AGenPlayerCharacter;
 class AGenPlayerState;
@@ -91,6 +93,23 @@ namespace GenNetTest
 
 	/** Hauteur où poser un pion de Curffe debout sur le sol de test (centre de sa capsule, un peu au-dessus). */
 	inline constexpr float StandingHeight = 100.f;
+
+	// Outils communs des tests de sorts (revue finale, M-6 : une seule définition, sans conflit en build unity)
+
+	/** Tag par son nom (les tags de Gen et de Curffe ne sont pas exportés par le module Gen). */
+	FGameplayTag Tag(const TCHAR* Name);
+
+	/** Serveur : dégâts de Source sur Target (GE de dégâts du projet). */
+	void ApplyDamage(UAbilitySystemComponent* Source, UAbilitySystemComponent* Target, float Amount);
+
+	/** Serveur : gain (ou perte si négatif) d'énergie et de ressource. */
+	void ApplyGain(UAbilitySystemComponent* ASC, float Energy, float Resource);
+
+	/** Pose le pion debout sur le sol de test en (X, Y). */
+	void PlaceOnFloor(ACharacter* Character, float X, float Y);
+
+	/** Le serveur a lancé le personnage (repoussement) dans cette image. */
+	bool IsBeingLaunched(const ACharacter* Character);
 }
 
 #endif // ENABLE_PIE_NETWORK_TEST

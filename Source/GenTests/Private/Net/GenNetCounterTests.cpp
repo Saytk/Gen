@@ -91,12 +91,6 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 		return Defence == EDefence::Countering ? CounteringTag() : UntouchableTag();
 	}
 
-	/** Le serveur a lancé le personnage (repoussement) dans cette image. */
-	static bool IsBeingLaunched(const ACharacter* Character)
-	{
-		return !Character->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero();
-	}
-
 	void RemoveBlockedHandler()
 	{
 		if (ServerCountererASC.IsValid() && BlockedHandle.IsValid())
