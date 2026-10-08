@@ -551,12 +551,12 @@ void UGenGA_Cast::MarkFeedEnded(int32 Count, bool bFinal)
 	}
 }
 
-void UGenGA_Cast::SetFedVisual(int32 Count)
+void UGenGA_Cast::SetFedVisual(int32 Count, bool bSpent)
 {
 	FedVisualCount = Count;
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		Character->SetFedResource(this, static_cast<uint8>(FMath::Clamp(Count, 0, 255)));
+		Character->SetFedResource(this, static_cast<uint8>(FMath::Clamp(Count, 0, 255)), bSpent);
 	}
 }
 
@@ -946,7 +946,8 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	{
 		SpendResource(Fed);
 	}
-	SetFedVisual(0);
+	// Revue V6-V8, I-3 : lancer => les unités sont dans le sort (le Foyer ne les fait pas revenir), répliqué avec le compte
+	SetFedVisual(0, /*bSpent*/ true);
 	bReleased = true;
 
 	GEN_CAST_LOG(Verbose, "Visée reçue : %s, nourri : %d", *Hit->Location.ToCompactString(), Fed);

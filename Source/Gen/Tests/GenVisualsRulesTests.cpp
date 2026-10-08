@@ -169,6 +169,12 @@ bool FGenLeapAimTest::RunTest(const FString& Parameters)
 	FGenAimGeometry G;
 	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector(1500.f, 0.f, 0.f), P, 3, G);
 	TestEqual(TEXT("atterrissage borné à 7 m"), G.TargetCenter.X, 700.0, 0.01);
+
+	// Revue V6-V8, M-4 : curseur sur le lanceur => direction = son avant (comme le client et le serveur)
+	FGenAimGeometry OnSelf;
+	GenIndicatorRules::ComputeLeapAim(FVector::ZeroVector, FVector::ZeroVector, P, 1, OnSelf, FVector(0.f, -1.f, 0.f));
+	TestTrue(TEXT("curseur sur le lanceur : son avant"), OnSelf.Direction.Equals(FVector(0.f, -1.f, 0.f), 0.001f));
+	TestTrue(TEXT("repli nul : axe X"), GenIndicatorRules::FlatDirection(FVector::ZeroVector, FVector::UpVector).Equals(FVector(1.f, 0.f, 0.f), 0.001f));
 	TestEqual(TEXT("rayon d'atterrissage"), G.TargetRadius, 150.f, 0.01f);
 	TestEqual(TEXT("arc de portée"), G.RangeArcRadius, 700.f, 0.01f);
 	TestEqual(TEXT("3 flammes : 3 amorces"), G.StubDirections.Num(), 3);
@@ -217,11 +223,6 @@ bool FGenHearthFlightsTest::RunTest(const FString& Parameters)
 	GetSocketStates(5, 2, 5, States);
 	TestTrue(TEXT("emplacement de la 2e flamme : dans le sort"), States[GetFedSocketIndex(5, 1, 5)] == ESocket::InSpell);
 	TestTrue(TEXT("emplacement suivant : encore allumé"), States[GetFedSocketIndex(5, 2, 5)] == ESocket::Lit);
-
-	TestTrue(TEXT("lancer : 3 nourries, 3 dépensées"), IsFedSpent(5, 2, 3));
-	TestFalse(TEXT("annulation : rien dépensé"), IsFedSpent(5, 5, 3));
-	TestFalse(TEXT("flammes illimitées : rien dépensé"), IsFedSpent(4, 4, 2));
-	TestFalse(TEXT("aucune baisse"), IsFedSpent(5, 2, 0));
 	return true;
 }
 

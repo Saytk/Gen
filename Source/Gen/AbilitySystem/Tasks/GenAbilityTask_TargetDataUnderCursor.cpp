@@ -4,6 +4,7 @@
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "AbilitySystem/Abilities/GenGA_Cast.h"
 #include "AbilitySystem/GenTargetData.h"
+#include "Character/GenCharacterBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/GenPlayerController.h"
 
@@ -84,6 +85,11 @@ void UGenAbilityTask_TargetDataUnderCursor::SendCursorData()
 	if (!ActorInfo->IsNetAuthority())
 	{
 		UE_LOG(LogGenTargetData, Verbose, TEXT("[CLIENT] Envoi de la visée au serveur (clé %s)"), *GetActivationPredictionKey().ToString());
+		// Revue V6-V8, I-2 : la visée retire le ralenti d'incantation sur le serveur ; les mouvements faits ralentis partent avant
+		if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(ActorInfo->AvatarActor.Get()))
+		{
+			Character->FlushMovesToServer();
+		}
 		ASC->CallServerSetReplicatedTargetData(GetAbilitySpecHandle(), GetActivationPredictionKey(), DataHandle, FGameplayTag(), ASC->ScopedPredictionKey);
 	}
 

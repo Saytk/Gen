@@ -128,10 +128,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Flight")
 	TObjectPtr<UNiagaraSystem> FeedReturnSystem;
 
-	/** Autres joueurs : délai pour savoir si une baisse du compte nourri est un lancer (Resource répliquée à part). */
-	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Flight", meta = (Units = "s"))
-	float SpentGrace = 0.25f;
-
 	/** Recharge de 3 flammes ou plus d'un coup (Living Flame) : les emplacements s'allument un par un. */
 	UPROPERTY(EditDefaultsOnly, Category = "Hearth", meta = (Units = "s"))
 	float RefillStagger = 0.05f;
@@ -175,25 +171,12 @@ private:
 		bool bNiagaraVisual = false;
 	};
 
-	/** Baisse du compte nourri pas encore tranchée (autres joueurs : la Resource répliquée peut arriver après). */
-	struct FPendingDrop
-	{
-		bool bActive = false;
-		int32 FirstFedIndex = 0;
-		int32 Count = 0;
-		int32 FlamesWhileFeeding = 0;
-		double Deadline = 0.0;
-	};
-
 	void OnFedResourceChanged(AGenCharacterBase* Character, int32 Old, int32 New);
 	void OnFedThresholdReached(AGenCharacterBase* Character, int32 NewCount);
 
 	/** Les unités FirstFedIndex .. FirstFedIndex + Count − 1 reviennent au Foyer. */
 	void StartReturnFlights(int32 FirstFedIndex, int32 Count, int32 FeedingFlames);
 	void StartFlight(int32 Socket, bool bReturning, FName SpellSocket);
-
-	/** Emplacements tenus éteints par une baisse en attente (bits). */
-	uint8 GetPendingDropSockets() const;
 
 	FVector GetFlameSocketLocation(int32 Socket) const;
 	FVector GetSpellLocation(FName SpellSocket) const;
@@ -213,9 +196,8 @@ private:
 	FGameplayTag LivingFlameTag;
 
 	FFlight Flights[3];
-	FPendingDrop PendingDrop;
-	/** Baisse totale du compte nourri en attente (comparée à la baisse de ressource d'un lancer). */
-	int32 DropAmount = 0;
+	/** Mort : instances déjà cachées (une seule mise à jour). */
+	bool bHiddenForDeath = false;
 	/** Socket du sort du dernier nourrissage (cible des vols de retour). */
 	FName LastSpellSocket;
 

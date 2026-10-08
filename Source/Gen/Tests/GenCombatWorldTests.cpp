@@ -286,6 +286,19 @@ bool FGenFedResourceEventTest::RunTest(const FString& Parameters)
 	// Pop seulement quand le compte augmente : jamais au lancer (3 -> 0) ni à la remise à zéro
 	TestEqual(TEXT("3 pops"), Pops.Num(), 3);
 	TestTrue(TEXT("pops 1, 3, 2"), Pops == TArray<int32>({ 1, 3, 2 }));
+
+	// Revue V6-V8, I-3 : une baisse est un lancer seulement si le sort le dit (pas de déduction par la ressource)
+	Dummy->SetFedResource(Source, 3);
+	Dummy->SetFedResource(Source, 0, /*bSpent*/ true);
+	TestTrue(TEXT("lancer : baisse dépensée"), Dummy->WasLastFedDropSpent());
+	Dummy->SetFedResource(Source, 2);
+	TestFalse(TEXT("une hausse n'est pas un lancer"), Dummy->WasLastFedDropSpent());
+	Dummy->SetFedResource(Source, 0);
+	TestFalse(TEXT("annulation : rendue"), Dummy->WasLastFedDropSpent());
+	const UObject* OtherSource = GetTransientPackage();
+	Dummy->SetFedResource(Source, 2);
+	Dummy->SetFedResource(OtherSource, 0, /*bSpent*/ true);
+	TestFalse(TEXT("un autre sort ne dépense pas l'affichage d'un autre"), Dummy->WasLastFedDropSpent());
 	return true;
 }
 

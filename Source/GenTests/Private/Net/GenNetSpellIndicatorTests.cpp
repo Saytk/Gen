@@ -126,11 +126,12 @@ NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 				APawn* Caster = FindPlayerStateById(Client.World, CasterPlayerId)->GetPawn();
 				UGenSpellIndicatorComponent* Indicator = GetIndicator(Caster);
 				ASSERT_THAT(IsNotNull(Indicator, TEXT("Le personnage porte son indicateur")));
-				ASSERT_THAT(IsTrue(Indicator->IsComponentTickEnabled(), TEXT("Les clients font tourner les télégraphes centrés, vus par tous")));
+				ASSERT_THAT(IsFalse(Indicator->IsComponentTickEnabled(), TEXT("Revue V6-V8, M-5 : rien à dessiner, pas de tick")));
 
 				Indicator->BeginAim(Ability);
 				const bool bOwnClient = Client.ClientIndex == 0;
 				ASSERT_THAT(AreEqual(bOwnClient, Indicator->IsAiming(), TEXT("Visée ouverte seulement sur le client qui contrôle le pion")));
+				ASSERT_THAT(AreEqual(bOwnClient, Indicator->IsComponentTickEnabled(), TEXT("Tick seulement pour une visée ouverte")));
 
 				// La fin de visée d'un autre sort ne ferme pas celle-ci ; la sienne la ferme
 				Indicator->EndAim(OtherAbility);

@@ -1,4 +1,5 @@
 #include "Character/GenCharacterBase.h"
+#include "Character/GenCharacterMovementComponent.h"
 #include "Character/GenSpellIndicatorComponent.h"
 
 #include "Abilities/GameplayAbilityTypes.h"
@@ -26,7 +27,7 @@
 #include "NiagaraFunctionLibrary.h"
 
 AGenCharacterBase::AGenCharacterBase(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UGenCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -64,6 +65,7 @@ void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AGenCharacterBase, bIsDead);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, CastInfo, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedResource, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedSpentCount, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, LeapTarget, COND_SkipOwner);
 }
 
@@ -85,6 +87,7 @@ void AGenCharacterBase::StartCast(UClass* Ability, float Duration, UNiagaraSyste
 
 	SetFaceAim(true);
 	UpdateCastFX();
+	WakeSpellIndicator();
 }
 
 void AGenCharacterBase::StartFeedCast(UClass* Ability, int32 FeedSlots, float FeedInterval, float CastTime, UNiagaraSystem* FX, FName FXSocket)
@@ -128,6 +131,7 @@ void AGenCharacterBase::StartChannel(UClass* Ability, float Duration)
 	CastInfo.StartTime = GetCastClockSeconds();
 	CastInfo.bChannel = true;
 	UpdateCastFX(); // éteint l'effet d'une incantation précédente
+	WakeSpellIndicator();
 }
 
 float AGenCharacterBase::GetCastElapsedFraction() const
@@ -139,6 +143,20 @@ void AGenCharacterBase::SetLeapTarget(const FGenLeapTarget& Target)
 {
 	LeapTarget = Target;
 	LeapTarget.StartTime = GetCastClockSeconds();
+	WakeSpellIndicator();
+}
+
+void AGenCharacterBase::OnRep_LeapTarget()
+{
+	WakeSpellIndicator();
+}
+
+void AGenCharacterBase::WakeSpellIndicator()
+{
+	if (SpellIndicator)
+	{
+		SpellIndicator->Wake();
+	}
 }
 
 void AGenCharacterBase::ClearLeapTarget(UClass* Ability)
@@ -194,6 +212,7 @@ void AGenCharacterBase::OnRep_CastInfo(const FGenCastInfo& OldCastInfo)
 
 	// Autres clients : la rotation arrive déjà par le mouvement répliqué, seul l'effet est à gérer
 	UpdateCastFX();
+	WakeSpellIndicator();
 }
 
 void AGenCharacterBase::UpdateCastFX()
@@ -343,9 +362,16 @@ float AGenCharacterBase::GetMaxResource() const
 	return AttributeSet ? AttributeSet->GetMaxResource() : 0.f;
 }
 
-void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)
+void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count, bool bSpent)
 {
 	const uint8 Old = FedResource;
+	// Revue V6-V8, I-3 : un lancer (baisse dépensée) fait tourner le compteur répliqué avec le compte
+	const bool bSpentDrop = bSpent && Count < Old && FedDisplay.Source == FObjectKey(Source);
+	if (bSpentDrop)
+	{
+		++FedSpentCount;
+	}
+	bLastFedDropSpent = bSpentDrop;
 	// Revue V2-V4, M1 : un autre sort prend l'affichage (ex : B nourrit pendant le départ différé de A, qui garde ses
 	// flammes affichées) => son compte part de 0, son premier seuil fait son pop au lieu d'un "2 -> 1" muet
 	const bool bNewSource = Count > 0 && FedDisplay.Source != FObjectKey(Source);
@@ -370,6 +396,7 @@ void AGenCharacterBase::ResetFedResource()
 	const uint8 Old = FedResource;
 	FedDisplay = GenFeeding::FFedDisplay();
 	FedResource = 0;
+	bLastFedDropSpent = false;
 	if (Old != 0)
 	{
 		NotifyFedResourceChanged(Old, 0);
@@ -389,6 +416,10 @@ void AGenCharacterBase::OnRep_FedResource(uint8 OldValue)
 	// Revue V2-V4, M2 : pop seulement pour une hausse vue APRÈS l'incantation (reçue dans une image précédente). Reçus
 	// ensemble (personnage devenu pertinent en plein nourrissage), le compte s'affiche sans pop.
 	const bool bAllowPop = bCasting && CastInfoRepFrame != GFrameCounter;
+
+	// Revue V6-V8, I-3 : le compteur de lancers, reçu avec le compte, dit si une baisse est un lancer
+	bLastFedDropSpent = FedSpentCount != LastSeenFedSpentCount;
+	LastSeenFedSpentCount = FedSpentCount;
 
 	if (FedResource != Old)
 	{
@@ -663,8 +694,14 @@ void AGenCharacterBase::SetLocalMoveSpeedMultiplier(const UObject* Source, FName
 		Entry->Source = Key;
 		Entry->Reason = Reason;
 	}
-	Entry->Multiplier = FMath::Max(Multiplier, 0.f);
+	const float NewMultiplier = FMath::Max(Multiplier, 0.f);
+	const bool bChanged = Entry->Multiplier != NewMultiplier;
+	Entry->Multiplier = NewMultiplier;
 	RefreshMaxWalkSpeed();
+	if (bChanged)
+	{
+		NoteLocalSpeedChange();
+	}
 }
 
 void AGenCharacterBase::ClearLocalMoveSpeedMultiplier(const UObject* Source, FName Reason)
@@ -673,6 +710,29 @@ void AGenCharacterBase::ClearLocalMoveSpeedMultiplier(const UObject* Source, FNa
 	if (LocalMoveSpeedMultipliers.RemoveAll([&Key, Reason](const FLocalMoveSpeedMultiplier& Item) { return Item.Source == Key && Item.Reason == Reason; }) > 0)
 	{
 		RefreshMaxWalkSpeed();
+		NoteLocalSpeedChange();
+	}
+}
+
+void AGenCharacterBase::NoteLocalSpeedChange()
+{
+	// Revue V6-V8, I-2 : serveur d'un client distant, grâce des corrections autour de la borne du ralenti
+	if (UGenCharacterMovementComponent* Movement = Cast<UGenCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		Movement->NoteLocalSpeedChange();
+	}
+}
+
+void AGenCharacterBase::FlushMovesToServer()
+{
+	// Revue V6-V8, I-2 : client propriétaire (pas l'hôte) : le mouvement en attente part AVANT la RPC qui suit (activation,
+	// visée), pour que le serveur le simule avec le même ralenti que le client
+	if (GetLocalRole() == ROLE_AutonomousProxy && IsLocallyControlled())
+	{
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->FlushServerMoves();
+		}
 	}
 }
 

@@ -38,13 +38,4 @@ namespace CurffeHearthRules
 		const int32 Index = FMath::Min(Flames, Sockets) - 1 - FedIndex;
 		return Index >= 0 && Index < Sockets ? Index : INDEX_NONE;
 	}
-
-	/**
-	 * Le compte nourri baisse de FedDrop : flammes dépensées (lancer : la ressource a baissé d'autant depuis le
-	 * nourrissage, rien ne vole) ou rendues (annulation, interruption, flammes illimitées : elles reviennent au Foyer).
-	 */
-	inline bool IsFedSpent(int32 FlamesWhileFeeding, int32 FlamesNow, int32 FedDrop)
-	{
-		return FedDrop > 0 && FlamesWhileFeeding - FlamesNow >= FedDrop;
-	}
 }

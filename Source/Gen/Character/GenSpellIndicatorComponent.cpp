@@ -59,7 +59,8 @@ using namespace GenSpellIndicatorPrivate;
 UGenSpellIndicatorComponent::UGenSpellIndicatorComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.bStartWithTickEnabled = true;
+	// Revue V6-V8, M-5 : rien à dessiner au repos, réveillé par Wake
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 	// Après le mouvement de l'image : l'indicateur suit le personnage sans une image de retard
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 
@@ -76,7 +77,18 @@ void UGenSpellIndicatorComponent::BeginPlay()
 
 	// Purement cosmétique : rien sur un serveur dédié (GetNetMode, valable aussi en PIE, Art Bible §8.5)
 	bDisabled = GetNetMode() == NM_DedicatedServer;
-	SetComponentTickEnabled(!bDisabled);
+	if (bDisabled)
+	{
+		SetComponentTickEnabled(false);
+	}
+}
+
+void UGenSpellIndicatorComponent::Wake()
+{
+	if (!bDisabled && !IsComponentTickEnabled())
+	{
+		SetComponentTickEnabled(true);
+	}
 }
 
 void UGenSpellIndicatorComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
@@ -106,6 +118,7 @@ void UGenSpellIndicatorComponent::BeginAim(const UGenGameplayAbility* Ability)
 	if (!bDisabled && Ability && Pawn && Pawn->IsLocallyControlled())
 	{
 		AimAbility = Ability;
+		Wake();
 	}
 }
 
@@ -132,6 +145,12 @@ void UGenSpellIndicatorComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		DrawLeapTarget(*Caster);
 	}
 	HideUnshownParts();
+
+	// Revue V6-V8, M-5 : plus rien d'affiché ni de visée => plus de tick jusqu'au prochain Wake
+	if (VisibleParts == 0 && !AimAbility.IsValid())
+	{
+		SetComponentTickEnabled(false);
+	}
 }
 
 void UGenSpellIndicatorComponent::DrawAim(const AGenCharacterBase& Caster)

@@ -260,7 +260,7 @@ NETWORK_TEST_CLASS(PowerVisuals, "Gen.Net")
 				const AGenCharacterBase* Caster = GetCasterIn(Client.World);
 				return Caster && Caster->GetFedResource() == 0;
 			}, DefaultWait());
-		// Plus long que SpentGrace (0.25 s) : un observateur aurait déjà lancé ses vols de retour
+		// Laisse le temps à un vol de retour de partir chez chaque client (il ne doit pas y en avoir)
 		QueueClientWait(TEXT("Client 0 : 0.4 s"), 0.4f);
 		Network.ThenClients(TEXT("Clients : flammes illimitées, rien ne revient, Foyer toujours plein"), [this](FBasePIENetworkComponentState& Client)
 		{

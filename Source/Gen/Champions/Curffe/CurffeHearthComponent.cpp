@@ -40,6 +40,8 @@ using namespace CurffeHearthPrivate;
 UCurffeHearthComponent::UCurffeHearthComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	// Revue V6-V8, M-6 : après l'animation (sockets du sort à jour) et le mouvement, comme les indicateurs
+	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 
 	// L'orbite ne tourne pas avec le personnage quand il se retourne
 	SetUsingAbsoluteRotation(true);
@@ -156,7 +158,6 @@ void UCurffeHearthComponent::OnFedResourceChanged(AGenCharacterBase* Character, 
 	if (IsUnlimited())
 	{
 		FlownCount = FMath::Min(FlownCount, New);
-		PendingDrop.bActive = false;
 		return;
 	}
 
@@ -164,29 +165,15 @@ void UCurffeHearthComponent::OnFedResourceChanged(AGenCharacterBase* Character, 
 	const int32 ReturnCount = FMath::Max(FMath::Min(Old, FlownCount) - New, 0);
 	FlownCount = FMath::Min(FlownCount, New);
 
-	// Lancer : la ressource a baissé d'autant, les flammes sont dans le sort, rien ne vole. Serveur et client propriétaire
-	// dépensent avant d'effacer l'affichage (UGenGA_Cast::ReleaseCast) : la réponse est connue tout de suite
-	const int32 Drop = Old - New;
-	if (CurffeHearthRules::IsFedSpent(FlamesWhileFeeding, GetFlamesNow(), Drop) || ReturnCount == 0)
+	// Lancer : les flammes sont dans le sort, rien ne vole. Revue V6-V8, I-3 : le personnage le sait (lancer marqué par le
+	// sort, répliqué avec le compte nourri aux autres joueurs), sans deviner par la ressource
+	if ((Character && Character->WasLastFedDropSpent()) || ReturnCount == 0)
 	{
 		return;
 	}
 
-	const bool bDecidesNow = Character && (Character->HasAuthority() || Character->IsLocallyControlled());
-	if (bDecidesNow)
-	{
-		StartReturnFlights(New, ReturnCount, FlamesWhileFeeding);
-		return;
-	}
-
-	// Autres joueurs : Resource (PlayerState) et compte nourri (personnage) arrivent par deux acteurs, sans ordre garanti.
-	// On attend SpentGrace la baisse de ressource d'un lancer ; sans elle, c'est une annulation et les flammes reviennent
-	PendingDrop.bActive = true;
-	PendingDrop.FirstFedIndex = New;
-	PendingDrop.Count = ReturnCount;
-	PendingDrop.FlamesWhileFeeding = FlamesWhileFeeding;
-	PendingDrop.Deadline = GetNow() + SpentGrace;
-	DropAmount = Drop;
+	// Annulation, interruption : les flammes reviennent au Foyer
+	StartReturnFlights(New, ReturnCount, FlamesWhileFeeding);
 }
 
 void UCurffeHearthComponent::OnFedThresholdReached(AGenCharacterBase* Character, int32 NewCount)
@@ -263,20 +250,6 @@ void UCurffeHearthComponent::StartFlight(int32 Socket, bool bReturning, FName Sp
 	}
 }
 
-uint8 UCurffeHearthComponent::GetPendingDropSockets() const
-{
-	uint8 Sockets = 0;
-	if (PendingDrop.bActive)
-	{
-		for (int32 FedIndex = PendingDrop.FirstFedIndex; FedIndex < PendingDrop.FirstFedIndex + PendingDrop.Count; ++FedIndex)
-		{
-			const int32 Socket = CurffeHearthRules::GetFedSocketIndex(PendingDrop.FlamesWhileFeeding, FedIndex, SocketCount);
-			Sockets |= Socket != INDEX_NONE ? SocketBit(Socket) : 0;
-		}
-	}
-	return Sockets;
-}
-
 bool UCurffeHearthComponent::IsUnlimited() const
 {
 	const AGenCharacterBase* Character = OwnerCharacter.Get();
@@ -320,17 +293,21 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	const AGenCharacterBase* Character = OwnerCharacter.Get();
 	if (!Character || Character->IsDead())
 	{
-		// Mort : plus rien (ni flamme, ni braise, ni vol)
-		VisibleFlames = 0;
-		for (FFlight& Flight : Flights)
+		// Mort : plus rien (ni flamme, ni braise, ni vol). Une seule mise à jour : ensuite tout est déjà caché
+		if (!bHiddenForDeath)
 		{
-			Flight.bActive = false;
+			VisibleFlames = 0;
+			for (FFlight& Flight : Flights)
+			{
+				Flight.bActive = false;
+			}
+			ShownLitSockets = 0;
+			Flames->BatchUpdateInstancesTransforms(0, Transforms, /*bWorldSpace*/ true, /*bMarkRenderStateDirty*/ false, /*bTeleport*/ true);
+			bHiddenForDeath = true;
 		}
-		PendingDrop.bActive = false;
-		ShownLitSockets = 0;
-		Flames->BatchUpdateInstancesTransforms(0, Transforms, /*bWorldSpace*/ true, /*bMarkRenderStateDirty*/ true, /*bTeleport*/ true);
 		return;
 	}
+	bHiddenForDeath = false;
 
 	const double Now = GetNow();
 	const int32 FlamesNow = GetFlamesNow();
@@ -340,22 +317,8 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	// Flammes illimitées (Combustion, Curffe-Visuals.md §5) : une flamme nourrie part et son emplacement se rallume aussitôt
 	const int32 ShownFed = IsUnlimited() ? 0 : Fed;
 
-	// Baisse en attente (autres joueurs) : lancer si la ressource a baissé d'autant, sinon les flammes reviennent
-	if (PendingDrop.bActive)
-	{
-		if (CurffeHearthRules::IsFedSpent(PendingDrop.FlamesWhileFeeding, FlamesNow, DropAmount))
-		{
-			PendingDrop.bActive = false;
-		}
-		else if (Now >= PendingDrop.Deadline)
-		{
-			PendingDrop.bActive = false;
-			StartReturnFlights(PendingDrop.FirstFedIndex, PendingDrop.Count, PendingDrop.FlamesWhileFeeding);
-		}
-	}
-
 	// Vols : fin, et emplacements tenus éteints jusqu'à l'arrivée d'une flamme qui revient
-	uint8 HeldDim = GetPendingDropSockets();
+	uint8 HeldDim = 0;
 	ArrivedSockets = 0;
 	for (FFlight& Flight : Flights)
 	{
@@ -524,6 +487,7 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 
-	// Une mise à jour groupée par image (marque aussi les données par instance)
-	Flames->BatchUpdateInstancesTransforms(0, Transforms, /*bWorldSpace*/ true, /*bMarkRenderStateDirty*/ true, /*bTeleport*/ true);
+	// Une mise à jour groupée par image. Revue V6-V8, I-4 : sans MarkRenderStateDirty (qui recrée le proxy à chaque image) :
+	// transformées et données par instance passent par le chemin delta des instances (MarkRenderInstancesDirty)
+	Flames->BatchUpdateInstancesTransforms(0, Transforms, /*bWorldSpace*/ true, /*bMarkRenderStateDirty*/ false, /*bTeleport*/ true);
 }

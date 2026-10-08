@@ -83,6 +83,12 @@ public:
 	/** Ferme la visée d'Ability (nullptr : quelle qu'elle soit). Sans effet si une autre visée l'a remplacée. */
 	void EndAim(const UGenGameplayAbility* Ability);
 
+	/**
+	 * Revue V6-V8, M-5 : quelque chose peut être à dessiner (incantation ou bond qui commence, visée). Le composant ne tourne
+	 * que dans ce cas et s'arrête dès qu'il n'affiche plus rien. Appelé par le personnage (CastInfo, LeapTarget) et BeginAim.
+	 */
+	void Wake();
+
 	UFUNCTION(BlueprintPure, Category = "Gen|Indicator")
 	bool IsAiming() const { return AimAbility.IsValid(); }
 

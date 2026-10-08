@@ -192,6 +192,15 @@ void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 		}
 	}
 
+	// Revue V6-V8, I-2 : les mouvements en attente partent avant les RPC d'activation (ralentis locaux à la borne)
+	if (AbilitiesToActivate.Num() > 0)
+	{
+		if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetAvatarActor()))
+		{
+			Character->FlushMovesToServer();
+		}
+	}
+
 	for (const FGameplayAbilitySpecHandle& SpecHandle : AbilitiesToActivate)
 	{
 		TryActivateAbility(SpecHandle);

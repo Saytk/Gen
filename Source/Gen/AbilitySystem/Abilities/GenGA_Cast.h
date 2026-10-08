@@ -32,7 +32,7 @@ struct FGenCastRelease
 	int32 Fed = 0;
 	/**
 	 * Bond annoncé par la visée du client (FGenTargetData_Aim::LeapDistance / LeapYaw), < 0 = aucun. Le sort le valide
-	 * (GenAreaRules::AcceptClientLeap) : revue Plan 2 Tasks 7-8, I-1.
+	 * (GenAreaRules::AcceptClientLeap : portée, et atterrissage à 150 cm près depuis le serveur) : revue V6-V8, I-1.
 	 */
 	float ClientLeapDistance = -1.f;
 	float ClientLeapYaw = 0.f;
@@ -300,7 +300,7 @@ private:
 	/** Client (ou hôte) : fin du nourrissage => prévient le serveur puis incante. */
 	void StopFeedingLocal();
 	void EndFeedTasks();
-	void SetFedVisual(int32 Count);
+	void SetFedVisual(int32 Count, bool bSpent = false);
 	/**
 	 * Serveur pour un client distant : recalcule l'affichage (estimation ou annonce du client bornée par le temps,
 	 * jamais en recul, GenFeeding::ReconcileDisplayedFed), l'applique et le renvoie.
