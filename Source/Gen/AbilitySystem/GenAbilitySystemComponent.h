@@ -44,6 +44,12 @@ public:
 	bool IsAnotherAbilityCasting(FGameplayAbilitySpecHandle Except) const;
 
 	/**
+	 * Serveur : clé de prédiction portée par la dernière visée (target data) reçue du client pour ce sort et cette
+	 * activation, sinon une clé invalide. Sert à reporter son acquittement (UGenGA_Projectile, visée en avance).
+	 */
+	FPredictionKey GetReplicatedTargetDataKey(FGameplayAbilitySpecHandle Handle, FPredictionKey ActivationKey) const;
+
+	/**
 	 * Sorts accordés ou retirés (respawn, changement de champion) : l'interface se recâble dessus au lieu d'interroger
 	 * l'ASC. Retrait : diffusé AVANT que le spec quitte la liste des sorts activables.
 	 */

@@ -133,6 +133,12 @@ bool UGenAbilitySystemComponent::IsAnotherAbilityCasting(FGameplayAbilitySpecHan
 	return false;
 }
 
+FPredictionKey UGenAbilitySystemComponent::GetReplicatedTargetDataKey(FGameplayAbilitySpecHandle Handle, FPredictionKey ActivationKey) const
+{
+	const TSharedPtr<FAbilityReplicatedDataCache> Cached = AbilityTargetDataMap.Find(FGameplayAbilitySpecHandleAndPredictionKey(Handle, ActivationKey));
+	return Cached.IsValid() ? Cached->PredictionKey : FPredictionKey();
+}
+
 void UGenAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGamePaused)
 {
 	// Mort ou étourdi : on jette les inputs (les sorts sont de toute façon bloqués par ActivationBlockedTags)

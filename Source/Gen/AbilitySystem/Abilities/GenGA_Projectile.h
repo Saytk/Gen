@@ -28,8 +28,9 @@ struct FGameplayAbilityTargetData;
  *     avec le nombre d'unités nourries) => on vise à la FIN de l'incantation.
  *     Serveur pour un client distant : pas de minuteur propre, c'est l'arrivée de la visée qui
  *     termine l'incantation (durée vérifiée à CastTimeTolerance près, voir GenFeeding::GetServerCastWait).
- *     Visée arrivée trop tôt : le tir est lancé tout de suite (coût, cooldown) mais le projectile attend
- *     la fin de l'incantation, et les autres sorts du joueur ne peuvent plus annuler ce tir.
+ *     Visée arrivée trop tôt : le serveur garde toute l'incantation jusqu'à sa propre fin (barre et effet vus
+ *     par les autres, ralenti, interruption par un étourdissement), puis lance le tir (coût, cooldown) et le
+ *     projectile. Une seule visée par activation ; les autres sorts du joueur ne peuvent plus annuler ce tir.
  *  3. CommitAbility + dépense de la ressource nourrie au lancer : une incantation interrompue ne coûte rien.
  *  4. Le personnage se tourne vers la cible, joue un montage optionnel
  *  5. Le serveur fait apparaître le projectile répliqué, mis à l'échelle par le nourrissage
@@ -51,6 +52,9 @@ public:
 	/** Faux sur le serveur pendant l'attente d'un projectile différé : le tir est parti côté client. */
 	virtual bool CanBeCanceled() const override;
 
+	/** Serveur : visée reçue en avance, le tir attend la fin de l'incantation mesurée par le serveur (tests). */
+	bool IsWaitingForDeferredLaunch() const { return bServerShotLocked && PendingAimData.Num() > 0; }
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
@@ -70,7 +74,7 @@ protected:
 	UFUNCTION()
 	void OnServerAimReceived(const FGameplayAbilityTargetDataHandle& DataHandle);
 
-	/** Serveur : visée arrivée trop tôt, fin de l'incantation => le projectile part. */
+	/** Serveur : visée arrivée trop tôt, fin de l'incantation du serveur => le tir (coût, cooldown) et le projectile partent. */
 	UFUNCTION()
 	void OnServerLaunchDelayFinished();
 
@@ -216,8 +220,14 @@ private:
 	/** Fait apparaître le projectile (serveur) et termine le sort. */
 	void LaunchShot(const FVector& Direction, int32 Fed);
 
-	/** Nombre d'unités nourries retenu pour ce tir (borné côté serveur). */
-	int32 ResolveFedCount(const FGameplayAbilityTargetData* Data) const;
+	/** Nombre d'unités nourries retenu pour ce tir (borné côté serveur). bLog = faux : sans journal (affichage). */
+	int32 ResolveFedCount(const FGameplayAbilityTargetData* Data, bool bLog = true) const;
+
+	/** Serveur : journal d'une visée en avance (Warning limité si elle est très en avance, GenFeeding::IsAimSuspiciouslyEarly). */
+	void LogEarlyAim(float Elapsed, float Wait) const;
+
+	/** Serveur : acquitte la clé de prédiction d'une visée différée (le client retire ses valeurs prédites). */
+	void AcknowledgeDeferredAim();
 	void SpendResource(int32 Amount);
 
 	FActiveGameplayEffectHandle CastSlowHandle;
@@ -244,7 +254,8 @@ private:
 	float CastStartTime = 0.f;
 	/** Serveur : visée du client reçue, le tir est parti (le sort n'est plus annulable par un autre sort). */
 	bool bServerShotLocked = false;
-	/** Serveur : projectile différé (visée reçue en avance), direction et nourrissage retenus au lancer. */
-	FVector PendingLaunchDirection = FVector::ZeroVector;
-	int32 PendingLaunchFed = 0;
+	/** Serveur : visée reçue en avance, traitée (coût, cooldown, projectile) à la fin de l'incantation du serveur. */
+	FGameplayAbilityTargetDataHandle PendingAimData;
+	/** Serveur : clé de prédiction de la visée différée, acquittée au départ du tir ou à son annulation. */
+	FPredictionKey DeferredAimKey;
 };
