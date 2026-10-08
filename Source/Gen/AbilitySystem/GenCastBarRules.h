@@ -22,7 +22,7 @@ namespace GenCastBar
 		float StartTime = 0.f;
 		/** Fin du nourrissage (temps serveur). 0 = nourrissage en cours. */
 		float FeedEndTime = 0.f;
-		/** Flammes nourries, connues à la fin du nourrissage. */
+		/** Flammes nourries : en direct pendant le nourrissage, définitives après. */
 		int32 FedCount = 0;
 	};
 
@@ -48,7 +48,8 @@ namespace GenCastBar
 	 * - Incantation normale (S = 0, ou I ≤ 0) : total = C, remplissage = (Now − début) / C,
 	 *   ni cran ni compteur.
 	 * - Nourrissage en cours (Te = 0) : total T_S = S·I + C, remplissage = écoulé / T_S,
-	 *   crans à k·I / T_S (k = 1..S), compteur = seuils franchis (écoulé / I arrondi vers le bas, borné à S).
+	 *   crans à k·I / T_S (k = 1..S), compteur = N (flammes réellement nourries, en direct). Le compteur
+	 *   n'est pas déduit du temps : il ne recule jamais au relâché et suit les flammes de l'orbite.
 	 * - Nourrissage terminé à Te avec N flammes : le total passe linéairement de T_S à T_N = N·I + C
 	 *   en CollapseDuration à partir de Te ; p = clamp(Now − Te, 0, C) ; remplissage = (N·I + p) / total ;
 	 *   crans à k·I / total (k = 1..N) ; compteur = N.
@@ -83,10 +84,7 @@ namespace GenCastBar
 		{
 			Layout.TotalDuration = FeedingTotal;
 			Shown = Elapsed;
-
-			// Petite marge : pile sur un seuil, Elapsed / Interval peut valoir 1.99999
-			constexpr float ThresholdMargin = 1.e-3f;
-			Layout.Counter = FMath::Clamp(FMath::FloorToInt32(Elapsed / Interval + ThresholdMargin), 0, Slots);
+			Layout.Counter = FMath::Clamp(Params.FedCount, 0, Slots);
 		}
 		else
 		{

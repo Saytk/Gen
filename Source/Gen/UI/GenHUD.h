@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
-#include "UI/GenCastBarRules.h"
+#include "AbilitySystem/GenCastBarRules.h"
 #include "GenHUD.generated.h"
 
 class AGenCharacterBase;
@@ -53,7 +53,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	FLinearColor CastColor = FLinearColor(1.f, 0.55f, 0.1f);
 
-	/** Crans et compteur des sorts nourris (token text.primary, UI_Guidelines §2.2 et §4.5). */
+	/** Fond et contour des barres ; aussi les crans déjà franchis par le remplissage. */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD")
+	FLinearColor BarBackgroundColor = FLinearColor(0.f, 0.f, 0.f, 0.7f);
+
+	/** Crans pas encore atteints et compteur des sorts nourris (token text.primary, UI_Guidelines §2.2 et §4.5). */
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	FLinearColor CastTickColor = FLinearColor(0.791f, 0.807f, 0.831f);
 };

@@ -3,6 +3,7 @@
 #include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenCastBarRules.h"
 #include "AbilitySystem/GenKnockback.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -185,12 +186,14 @@ bool AGenCharacterBase::GetCastBarLayout(GenCastBar::FLayout& OutLayout) const
 	Params.StartTime = CastInfo.StartTime;
 	if (CastInfo.FeedSlots > 0)
 	{
-		// Sort nourri : Duration est la longueur du nourrissage, l'incantation en est le reste
+		// Sort nourri : Duration est la longueur du nourrissage (cf. StartFeedCast), l'incantation en est le reste
+		const float Interval = FMath::Max(CastInfo.FeedInterval, 0.f);
 		Params.FeedSlots = CastInfo.FeedSlots;
-		Params.FeedInterval = CastInfo.FeedInterval;
-		Params.CastTime = FMath::Max(CastInfo.Duration - CastInfo.FeedSlots * CastInfo.FeedInterval, 0.f);
+		Params.FeedInterval = Interval;
+		Params.CastTime = FMath::Max(CastInfo.Duration - CastInfo.FeedSlots * Interval, 0.f);
 		Params.FeedEndTime = CastInfo.FeedEndTime;
-		Params.FedCount = CastInfo.FedCount;
+		// Pendant le nourrissage : flammes nourries en direct (celles qui quittent l'orbite), sinon le compte final
+		Params.FedCount = CastInfo.FeedEndTime > 0.f ? CastInfo.FedCount : FedResource;
 	}
 	else
 	{

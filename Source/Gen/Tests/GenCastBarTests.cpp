@@ -2,7 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "UI/GenCastBarRules.h"
+#include "AbilitySystem/GenCastBarRules.h"
 
 namespace GenCastBarTests
 {
@@ -49,17 +49,27 @@ bool FGenCastBarFeedingTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	const GenCastBar::FLayout Mid = GenCastBar::ComputeLayout(Params, 10.3f);
+	// Pendant le nourrissage, FedCount = flammes réellement nourries (en direct) : le compteur les montre
+	// telles quelles, sans les déduire du temps, pour ne jamais reculer au relâché
+	GenCastBar::FParams Live = Params;
+	Live.FedCount = 1;
+	const GenCastBar::FLayout Mid = GenCastBar::ComputeLayout(Live, 10.3f);
 	TestEqual(TEXT("remplissage en temps réel"), Mid.Fill, 0.3f / 1.5f, Tolerance);
-	TestEqual(TEXT("1 flamme passée"), Mid.Counter, 1);
+	TestEqual(TEXT("1 flamme nourrie"), Mid.Counter, 1);
 	TestEqual(TEXT("les crans ne bougent pas pendant le nourrissage"), Mid.Ticks.Num(), 5);
 
-	TestEqual(TEXT("seuil exact : 2 flammes"), GenCastBar::ComputeLayout(Params, 10.4f).Counter, 2);
-	TestEqual(TEXT("juste avant le seuil : 1 flamme"), GenCastBar::ComputeLayout(Params, 10.39f).Counter, 1);
+	TestEqual(TEXT("tick en retard : le compteur attend la vraie flamme"), GenCastBar::ComputeLayout(Live, 10.45f).Counter, 1);
+	TestEqual(TEXT("le remplissage, lui, suit le temps"), GenCastBar::ComputeLayout(Live, 10.45f).Fill, 0.45f / 1.5f, Tolerance);
 
-	// Fin du nourrissage pas encore connue (signal du client en route) : le compteur plafonne, la barre continue
-	const GenCastBar::FLayout Late = GenCastBar::ComputeLayout(Params, 11.2f);
-	TestEqual(TEXT("compteur plafonné aux flammes disponibles"), Late.Counter, 5);
+	Live.FedCount = 7;
+	TestEqual(TEXT("compte en direct borné aux emplacements"), GenCastBar::ComputeLayout(Live, 10.3f).Counter, 5);
+	Live.FedCount = -1;
+	TestEqual(TEXT("compte en direct négatif"), GenCastBar::ComputeLayout(Live, 10.3f).Counter, 0);
+
+	// Fin du nourrissage pas encore connue (signal du client en route) : la barre continue
+	Live.FedCount = 5;
+	const GenCastBar::FLayout Late = GenCastBar::ComputeLayout(Live, 11.2f);
+	TestEqual(TEXT("compteur au maximum"), Late.Counter, 5);
 	TestEqual(TEXT("la barre continue dans l'incantation"), Late.Fill, 1.2f / 1.5f, Tolerance);
 	TestEqual(TEXT("remplissage borné à 1"), GenCastBar::ComputeLayout(Params, 12.f).Fill, 1.f, Tolerance);
 	TestEqual(TEXT("horloge en retard sur le début : vide"), GenCastBar::ComputeLayout(Params, 9.9f).Fill, 0.f, Tolerance);
@@ -143,6 +153,13 @@ bool FGenCastBarEdgeTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("N = 0 : aucun cran"), Layout.Ticks.Num(), 0);
 		TestEqual(TEXT("N = 0 : compteur"), Layout.Counter, 0);
 		TestTrue(TEXT("N = 0 : toujours un sort nourri"), Layout.bFed);
+
+		// Au milieu du repli (alpha = 0.5) : total entre 1.5 et 0.5 s
+		const GenCastBar::FLayout Collapsing = GenCastBar::ComputeLayout(Params, 10.15f);
+		TestEqual(TEXT("N = 0, mi-repli : total"), Collapsing.TotalDuration, 1.f, Tolerance);
+		TestEqual(TEXT("N = 0, mi-repli : remplissage = p / total"), Collapsing.Fill, 0.05f / 1.f, Tolerance);
+		TestEqual(TEXT("N = 0, mi-repli : aucun cran"), Collapsing.Ticks.Num(), 0);
+		TestEqual(TEXT("N = 0, mi-repli : compteur"), Collapsing.Counter, 0);
 	}
 
 	// N = FeedSlots : rien à replier

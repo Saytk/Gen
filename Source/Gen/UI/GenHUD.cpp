@@ -35,7 +35,7 @@ void AGenHUD::DrawHUD()
 
 void AGenHUD::DrawBar(float X, float Y, float Width, float Height, float Percent, const FLinearColor& FillColor)
 {
-	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), X - 1.f, Y - 1.f, Width + 2.f, Height + 2.f);
+	DrawRect(BarBackgroundColor, X - 1.f, Y - 1.f, Width + 2.f, Height + 2.f);
 	DrawRect(FillColor, X, Y, Width * FMath::Clamp(Percent, 0.f, 1.f), Height);
 }
 
@@ -48,12 +48,14 @@ void AGenHUD::DrawCastBar(float X, float Y, float Width, float Height, const Gen
 		return;
 	}
 
-	// Un cran par seuil de flamme (celui qui tombe sur le bout de la barre est déjà marqué par le bord)
+	// Un cran par seuil de flamme (celui qui tombe sur le bout de la barre est déjà marqué par le bord).
+	// Clair devant le remplissage ; sombre une fois franchi, sinon presque invisible sur la couleur de cast.
 	for (const float Tick : Layout.Ticks)
 	{
 		if (Tick < 1.f)
 		{
-			DrawRect(CastTickColor, FMath::RoundToFloat(X + Width * Tick), Y, 1.f, Height);
+			const FLinearColor& TickColor = Tick <= Layout.Fill ? BarBackgroundColor : CastTickColor;
+			DrawRect(TickColor, FMath::RoundToFloat(X + Width * Tick), Y, 1.f, Height);
 		}
 	}
 

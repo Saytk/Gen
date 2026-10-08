@@ -5,7 +5,6 @@
 #include "ActiveGameplayEffectHandle.h"
 #include "GameFramework/Character.h"
 #include "GameplayAbilitySpecHandle.h"
-#include "UI/GenCastBarRules.h"
 #include "GenCharacterBase.generated.h"
 
 class UGameplayEffect;
@@ -15,6 +14,11 @@ class UGenAbilitySystemComponent;
 class UGenAttributeSet;
 class UGenGameplayAbility;
 struct FOnAttributeChangeData;
+
+namespace GenCastBar
+{
+	struct FLayout;
+}
 
 /** Équipe "neutre" : ennemie de tout le monde (mannequins d'entraînement, monstres...). */
 inline constexpr uint8 GenNoTeam = 255;
