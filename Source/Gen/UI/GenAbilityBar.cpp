@@ -1,7 +1,10 @@
 #include "UI/GenAbilityBar.h"
 
+#include "Components/PanelWidget.h"
+#include "Components/Spacer.h"
 #include "GenGameplayTags.h"
 #include "UI/GenAbilitySlot.h"
+#include "UI/GenUIDataAssets.h"
 #include "UI/GenUISubsystem.h"
 
 void UGenAbilityBar::NativeConstruct()
@@ -23,6 +26,22 @@ void UGenAbilityBar::NativeConstruct()
 		Entry.Key->InputTag = Entry.Value;
 		Entry.Key->bIsUltimate = (Entry.Key == SlotUltimate);
 	}
+
+	// Espacements depuis DA_UIMetrics (§3.1, §9 Jetons) : écart entre emplacements (espaceurs de la rangée) et marge
+	// d'écran sous la barre, la même que lit AGenHUD::GetAbilityBarTop. Les valeurs du WBP ne servent qu'à l'aperçu.
+	const UGenUISubsystem* UIForMetrics = UGenUISubsystem::Get(this);
+	const UGenUIMetrics* Metrics = UIForMetrics && UIForMetrics->GetMetrics() ? UIForMetrics->GetMetrics() : GetDefault<UGenUIMetrics>();
+	if (const UPanelWidget* Row = SlotPrimary->GetParent())
+	{
+		for (UWidget* Child : Row->GetAllChildren())
+		{
+			if (USpacer* Gap = Cast<USpacer>(Child))
+			{
+				Gap->SetSize(FVector2D(Metrics->SlotGap, Gap->GetSize().Y));
+			}
+		}
+	}
+	SetPadding(FMargin(0.f, 0.f, 0.f, Metrics->ScreenMargin));
 
 	if (UGenUISubsystem* UI = UGenUISubsystem::Get(this))
 	{
