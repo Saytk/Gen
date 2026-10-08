@@ -25,6 +25,25 @@ namespace GenMontageTiming
 		return FMath::Clamp(AuthoredLength / TargetDuration, MinPlayRate, MaxPlayRate);
 	}
 
+	/**
+	 * Vitesse attendue du montage de nourrissage (sections d'UN intervalle de base chacune) : 1 au rythme normal,
+	 * 2 en nourrissage rapide (intervalle actif divisé par deux). Sert à ne pas avertir pour un x2 voulu.
+	 */
+	inline float GetExpectedFeedRate(float BaseInterval, float ActiveInterval)
+	{
+		return BaseInterval > KINDA_SMALL_NUMBER && ActiveInterval > KINDA_SMALL_NUMBER ? BaseInterval / ActiveInterval : 1.f;
+	}
+
+	/**
+	 * Le montage de charge est-il calé sur CastTime ? Seulement si le sort le demande ET a un montage de lancer à part :
+	 * sans CastMontage, le montage de charge est l'ancien montage unique (préparation + lancer, Plan 1), joué à vitesse 1,
+	 * sinon son geste de lancer serait comprimé dans l'incantation.
+	 */
+	inline bool ShouldScaleChargeToCastTime(bool bScaleChargeToCastTime, bool bHasCastMontage, float CastTime)
+	{
+		return bScaleChargeToCastTime && bHasCastMontage && CastTime > KINDA_SMALL_NUMBER;
+	}
+
 	/** Vrai si PlayRate s'écarte trop de la vitesse attendue (1, ou 2 pour le nourrissage rapide voulu). */
 	inline bool ShouldWarn(float PlayRate, float ExpectedRate = 1.f)
 	{

@@ -7,6 +7,7 @@
 #include "GenGA_Cast.generated.h"
 
 class AGenProjectile;
+class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitDelay;
 class UAbilityTask_WaitInputRelease;
 class UAnimMontage;
@@ -156,9 +157,10 @@ protected:
 	bool bTurnToAim = true;
 
 	/**
-	 * Montage d'incantation (optionnel, répliqué par le GAS) : joué dès le début de l'incantation,
-	 * préparation puis geste de lancer. Le régler pour que le lancer tombe à CastTime.
-	 * Coupé si l'incantation est interrompue. Ignoré si CastTime = 0 (utiliser CastMontage).
+	 * Montage d'incantation (optionnel, répliqué par le GAS) : joué dès le début de l'incantation (après le nourrissage).
+	 * Avec un CastMontage : préparation seule, calée sur CastTime (bScaleChargeMontageToCastTime).
+	 * Sans CastMontage (montage unique du Plan 1) : préparation puis geste de lancer, à vitesse 1 ; le régler pour que
+	 * le lancer tombe à CastTime. Coupé si l'incantation est interrompue. Ignoré si CastTime = 0 (utiliser CastMontage).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "CastTime > 0"))
 	TObjectPtr<UAnimMontage> ChargeMontage;
@@ -174,6 +176,48 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float CastMontageRootMotionScale = 1.f;
+
+	// --- Plan Visuals V3 : phases de montage calées sur le sort (Feed -> Charge -> Cast) ---
+	// Sans FeedMontage ni CastMontage, le comportement du Plan 1 reste : ChargeMontage unique à vitesse 1.
+
+	/**
+	 * Montage de nourrissage (optionnel, répliqué par le GAS) : joué dès le début du nourrissage, pour que tout le monde
+	 * voie le geste (Art Bible §12 Q41). Sections Feed_1..Feed_N d'UN intervalle de base chacune, enchaînées, la dernière
+	 * en boucle (sécurité) : à la bonne vitesse les frontières tombent sur les seuils. Vitesse = longueur de Feed_1 /
+	 * intervalle actif (x2 en nourrissage rapide). Python : feed_montage.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (EditCondition = "bFeedable"))
+	TObjectPtr<UAnimMontage> FeedMontage;
+
+	/**
+	 * ChargeMontage dure exactement CastTime (vitesse = longueur / CastTime, Art Bible §8.3). Seulement avec un
+	 * CastMontage à part : sinon ChargeMontage est l'ancien montage unique (préparation + lancer), joué à vitesse 1
+	 * (GenMontageTiming::ShouldScaleChargeToCastTime). Python : scale_charge_montage_to_cast_time.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation")
+	bool bScaleChargeMontageToCastTime = true;
+
+	/**
+	 * Coupe CastMontage quand le sort se termine (posture tenue : contre). Faux = le geste continue après le sort.
+	 * Python : stop_cast_montage_with_ability.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation")
+	bool bStopCastMontageWithAbility = false;
+
+	/**
+	 * Durée de jeu de la phase lancée, à laquelle CastMontage est calé (0 = vitesse 1 : geste au lancer puis suivi).
+	 * Surcharges prévues : bond -> durée du vol ; contre -> fenêtre ; Living Flame -> forme.
+	 */
+	virtual float GetCastMontageTargetDuration() const { return 0.f; }
+
+	/**
+	 * Joue un montage de phase à Rate (répliqué aux autres joueurs par le GAS), avec CastMontageRootMotionScale.
+	 * nullptr si Montage est nul (asset pas encore créé) : l'appelant n'a rien d'autre à faire.
+	 */
+	UAbilityTask_PlayMontageAndWait* PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds);
+
+	/** Vitesse calée sur TargetDuration ; avertit si le clip devrait être recalé (hors Shipping). */
+	float GetPhaseRate(const UAnimMontage* Montage, float AuthoredLength, float TargetDuration, float ExpectedRate) const;
 
 	/** Maintenir la touche nourrit le sort avec la ressource du champion (attribut Resource). */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Feeding")

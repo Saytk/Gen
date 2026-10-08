@@ -2,9 +2,11 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenMontageTiming.h"
 #include "Champions/Curffe/CurffeHearthRules.h"
+#include "Champions/Curffe/CurffeTuning.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenMontageTimingTest, "Gen.Visuals.MontageTiming",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -24,6 +26,47 @@ bool FGenMontageTimingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("borne basse"), GenMontageTiming::GetPlayRate(0.1f, 1.f), GenMontageTiming::MinPlayRate, 0.0001f);
 	TestEqual(TEXT("durée nulle : vitesse 1"), GenMontageTiming::GetPlayRate(0.5f, 0.f), 1.f, 0.0001f);
 	TestEqual(TEXT("clip vide : vitesse 1"), GenMontageTiming::GetPlayRate(0.f, 0.5f), 1.f, 0.0001f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenMontagePhaseRatesTest, "Gen.Visuals.MontagePhaseRates",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenMontagePhaseRatesTest::RunTest(const FString& Parameters)
+{
+	// Feed : section Feed_1 d'un intervalle de base (0.3 s), jouée sur l'intervalle actif figé au début du nourrissage
+	const float Base = CurffeTuning::FeedInterval;
+	const float Section = Base;
+	for (const bool bFast : { false, true })
+	{
+		const float Active = GenFeeding::GetFeedInterval(Base, bFast);
+		const float Rate = GenMontageTiming::GetPlayRate(Section, Active);
+		const float Expected = GenMontageTiming::GetExpectedFeedRate(Base, Active);
+		const TCHAR* Mode = bFast ? TEXT("rapide") : TEXT("normal");
+
+		TestEqual(FString::Printf(TEXT("%s : vitesse"), Mode), Rate, bFast ? 2.f : 1.f, 0.0001f);
+		TestEqual(FString::Printf(TEXT("%s : vitesse attendue"), Mode), Expected, Rate, 0.0001f);
+		TestFalse(FString::Printf(TEXT("%s : pas d'avertissement"), Mode), GenMontageTiming::ShouldWarn(Rate, Expected));
+
+		// Les frontières de section tombent sur les seuils, N = 0..MaxFeed : l'anticipation ne dépasse jamais le nourrissage
+		for (int32 N = 0; N <= CurffeTuning::MaxFeedPerSpell; ++N)
+		{
+			TestEqual(FString::Printf(TEXT("%s : fin de Feed_%d au seuil %d"), Mode, N, N), N * Section / Rate, N * Active, 0.0001f);
+		}
+	}
+	TestEqual(TEXT("seuils rapides = CurffeTuning::FastFeedInterval"), GenFeeding::GetFeedInterval(Base, true), CurffeTuning::FastFeedInterval, 0.0001f);
+	TestEqual(TEXT("intervalle nul : vitesse attendue 1"), GenMontageTiming::GetExpectedFeedRate(Base, 0.f), 1.f, 0.0001f);
+
+	// Charge : calée sur CastTime seulement avec un CastMontage à part (sinon montage unique du Plan 1, vitesse 1)
+	TestTrue(TEXT("phases séparées : calée"), GenMontageTiming::ShouldScaleChargeToCastTime(true, true, 0.5f));
+	TestFalse(TEXT("montage unique : vitesse 1"), GenMontageTiming::ShouldScaleChargeToCastTime(true, false, 0.5f));
+	TestFalse(TEXT("désactivé par le sort"), GenMontageTiming::ShouldScaleChargeToCastTime(false, true, 0.5f));
+	TestFalse(TEXT("sort instantané"), GenMontageTiming::ShouldScaleChargeToCastTime(true, true, 0.f));
+	// Charge de 0.45 s pour la grande boule de feu (0.5 s) : x0.9, sans avertissement
+	const float ChargeRate = GenMontageTiming::GetPlayRate(0.45f, 0.5f);
+	TestEqual(TEXT("charge : longueur / CastTime"), ChargeRate, 0.9f, 0.0001f);
+	TestEqual(TEXT("charge : finit au lancer"), 0.45f / ChargeRate, 0.5f, 0.0001f);
+	TestFalse(TEXT("charge x0.9 : pas d'avertissement"), GenMontageTiming::ShouldWarn(ChargeRate, 1.f));
 	return true;
 }
 

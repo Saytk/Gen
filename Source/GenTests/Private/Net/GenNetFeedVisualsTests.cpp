@@ -4,7 +4,9 @@
 #if ENABLE_PIE_NETWORK_TEST
 
 #include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/Abilities/GenGA_Cast.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
+#include "Animation/AnimMontage.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/World.h"
@@ -20,6 +22,7 @@ using namespace GenNetTest;
  * - Le seuil (OnFedThresholdReached, joué avec le GameplayCue local GameplayCue.Feed.Threshold) part sur le client
  *   du lanceur (compte prédit) et chez l'observateur (compte répliqué, OnRep_FedResource), seulement quand le compte
  *   augmente ; jamais au lancer (retour à 0) et jamais sur le serveur dédié.
+ * - V3 : le montage de nourrissage part dès l'appui et l'observateur le voit pendant le nourrissage.
  */
 NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 {
@@ -187,6 +190,84 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 					ASSERT_THAT(IsTrue(Pops >= 1 && Pops <= 2, TEXT("L'observateur voit le seuil")));
 				}
 			});
+	}
+
+	// --- Montage de nourrissage (V3) ------------------------------------------------------------------------
+
+	/** Pose FeedMontage sur l'instance du sort (pas le CDO) : les assets des phases arrivent avec la Task E5. */
+	static bool SetFeedMontage(UAbilitySystemComponent* ASC, TSubclassOf<UGameplayAbility> AbilityClass, UAnimMontage* Montage)
+	{
+		FGameplayAbilitySpec* Spec = FindAbilitySpec(ASC, AbilityClass);
+		UGameplayAbility* Instance = Spec ? Spec->GetPrimaryInstance() : nullptr;
+		FObjectProperty* Property = FindFProperty<FObjectProperty>(UGenGA_Cast::StaticClass(), TEXT("FeedMontage"));
+		if (!Instance || !Property)
+		{
+			return false;
+		}
+		Property->SetObjectPropertyValue_InContainer(Instance, Montage);
+		return true;
+	}
+
+	/** Montage en cours du lanceur vu par la machine (ASC du PlayerState). */
+	UAnimMontage* GetCasterMontage(const UWorld* World) const
+	{
+		const UAbilitySystemComponent* ASC = GetASC(FindPlayerStateById(World, CasterPlayerId));
+		return ASC ? ASC->GetCurrentMontage() : nullptr;
+	}
+
+	/**
+	 * Art Bible §12 Q41 : le geste de nourrissage part dès l'appui et se réplique, l'observateur le voit PENDANT le
+	 * nourrissage (avant le montage de charge). Le montage de la boule de feu sert de geste de nourrissage reconnaissable
+	 * (la grande boule de feu joue AM_GreatFireball en charge).
+	 */
+	TEST_METHOD(FeedMontage_ObserverSeesTheFeedingPoseDuringTheFeed)
+	{
+		// Clip non calé sur l'intervalle : avertissement "recaler le clip" attendu
+		TestRunner->AddExpectedMessage(TEXT("recaler le clip"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, -1);
+		UAnimMontage* FeedPose = LoadObject<UAnimMontage>(nullptr, TEXT("/Game/Gen/Champions/Curffe/Animations/AM_Fireball.AM_Fireball"));
+
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : montage de nourrissage sur le sort du lanceur"), [this, FeedPose](FBasePIENetworkComponentState& Server)
+			{
+				ASSERT_THAT(IsNotNull(FeedPose, TEXT("AM_Fireball introuvable")));
+				ASSERT_THAT(IsNotNull(GreatFireballClass.Get(), TEXT("GA_GreatFireball introuvable")));
+				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
+				AGenPlayerCharacter* Other = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Caster));
+				ASSERT_THAT(IsNotNull(Other));
+				CasterPlayerId = Caster->GetPlayerState()->GetPlayerId();
+				Other->TeleportTo(Caster->GetActorLocation() + FVector(0.f, 5000.f, 0.f), Other->GetActorRotation(), false, true);
+				ASSERT_THAT(IsTrue(SetFeedMontage(Caster->GetAbilitySystemComponent(), GreatFireballClass, FeedPose)));
+			})
+			.UntilClients(TEXT("Clients : le pion du lanceur est connu"), [this](FBasePIENetworkComponentState& Client) { return FindCaster(Client.World) != nullptr; }, DefaultWait())
+			.ThenClient(TEXT("Client 0 : montage posé, visée déterministe, appuie"), 0, [this, FeedPose](FBasePIENetworkComponentState& Client)
+			{
+				ASSERT_THAT(IsTrue(SetFeedMontage(GetLocalGenASC(Client), GreatFireballClass, FeedPose)));
+				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
+				ASSERT_THAT(IsNotNull(PC));
+				PC->bDebugAimOverride = true;
+				PC->DebugAimLocation = PC->GetPawn()->GetActorLocation() + FVector(1000.f, 0.f, 0.f);
+				SendInput(Client, GreatFireballClass, true);
+				ASSERT_THAT(IsTrue(GetCasterMontage(Client.World) == FeedPose, TEXT("Le client du lanceur joue le geste dès l'appui (prédit)")));
+			})
+			// Touche toujours tenue : le nourrissage dure jusqu'à 3 flammes (0.9 s)
+			.UntilClient(TEXT("Client 1 : voit le geste de nourrissage"), 1, [this, FeedPose](FBasePIENetworkComponentState& Client)
+			{
+				return GetCasterMontage(Client.World) == FeedPose;
+			}, DefaultWait())
+			.ThenClient(TEXT("Client 0 : toujours en nourrissage"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				const AGenCharacterBase* Caster = FindCaster(Client.World);
+				ASSERT_THAT(IsNotNull(Caster));
+				ASSERT_THAT(IsTrue(Caster->GetCastInfo().FeedEndTime <= 0.f, TEXT("Le geste a été vu pendant le nourrissage")));
+				SendInput(Client, GreatFireballClass, false);
+			})
+			.UntilClient(TEXT("Client 1 : le geste de nourrissage est remplacé (charge, lancer)"), 1, [this, FeedPose](FBasePIENetworkComponentState& Client)
+			{
+				return GetCasterMontage(Client.World) != FeedPose;
+			}, DefaultWait());
 	}
 };
 

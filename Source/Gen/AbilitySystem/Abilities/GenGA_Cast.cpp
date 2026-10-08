@@ -10,6 +10,7 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenFeeding.h"
+#include "AbilitySystem/GenMontageTiming.h"
 #include "AbilitySystem/GenTargetData.h"
 #include "AbilitySystem/Tasks/GenAbilityTask_TargetDataUnderCursor.h"
 #include "AbilitySystemComponent.h"
@@ -217,6 +218,15 @@ void UGenGA_Cast::StartFeeding()
 		Character->StartFeedCast(GetClass(), FeedSlotsAtPress, ActiveFeedInterval, CastTime, CastFX, CastFXSocket);
 	}
 
+	// V3 : geste de nourrissage dès l'appui, sur le client du lanceur (prédit) ET sur le serveur (copie répliquée aux
+	// autres joueurs, Art Bible §12 Q41). Une section par seuil : Feed_1 dure un intervalle de base, x2 si rapide.
+	if (FeedMontage && FeedSlotsAtPress > 0)
+	{
+		const float StepLength = FeedMontage->GetSectionLength(0);
+		const float Rate = GetPhaseRate(FeedMontage, StepLength, ActiveFeedInterval, GenMontageTiming::GetExpectedFeedRate(FeedInterval, ActiveFeedInterval));
+		PlayPhaseMontage(FeedMontage, Rate, /*bStopWhenAbilityEnds*/ true);
+	}
+
 	if (IsLocallyControlled())
 	{
 		if (FeedSlotsAtPress == 0)
@@ -367,6 +377,17 @@ void UGenGA_Cast::OnFeedSynced()
 	}
 	MarkFeedEnded(FedVisualCount);
 
+	// V3 : rien ne remplace le geste de nourrissage (pas de ChargeMontage joué) => on l'arrête, sinon la boucle de
+	// sécurité de sa dernière section continuerait jusqu'au CastMontage ou à la fin du sort
+	if (FeedMontage && (CastTime <= 0.f || !ChargeMontage))
+	{
+		UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+		if (ASC && ASC->GetCurrentMontage() == FeedMontage)
+		{
+			ASC->CurrentMontageStop(0.1f);
+		}
+	}
+
 	if (CastTime > 0.f)
 	{
 		StartCasting();
@@ -424,11 +445,13 @@ void UGenGA_Cast::StartCasting()
 
 	// Le geste continue après la fin normale du sort (le lancer tombe à la fin de l'incantation).
 	// Une annulation (contrôle dur, mort) le coupe quand même : la tâche écoute OnGameplayAbilityCancelled.
+	// V3 : calé sur CastTime quand le lancer est un CastMontage à part ; montage unique du Plan 1 : vitesse 1.
 	if (ChargeMontage)
 	{
-		UAbilityTask_PlayMontageAndWait* ChargeTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, ChargeMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false, CastMontageRootMotionScale);
-		ChargeTask->ReadyForActivation();
+		const float Rate = GenMontageTiming::ShouldScaleChargeToCastTime(bScaleChargeMontageToCastTime, CastMontage != nullptr, CastTime)
+			? GetPhaseRate(ChargeMontage, ChargeMontage->GetPlayLength(), CastTime, 1.f)
+			: 1.f;
+		PlayPhaseMontage(ChargeMontage, Rate, /*bStopWhenAbilityEnds*/ false);
 	}
 
 	CastStartTime = GetWorld()->GetTimeSeconds();
@@ -770,14 +793,41 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 		Avatar->SetActorRotation(OutRelease.AimDirection.Rotation());
 	}
 
+	// V3 : vitesse 1 (geste au lancer puis suivi), sauf si la phase lancée a une durée de jeu (vol, fenêtre, forme)
 	if (CastMontage)
 	{
-		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, CastMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false, CastMontageRootMotionScale);
-		MontageTask->ReadyForActivation();
+		const float Target = GetCastMontageTargetDuration();
+		const float Rate = Target > 0.f ? GetPhaseRate(CastMontage, CastMontage->GetPlayLength(), Target, 1.f) : 1.f;
+		PlayPhaseMontage(CastMontage, Rate, bStopCastMontageWithAbility);
 	}
 
 	return true;
+}
+
+float UGenGA_Cast::GetPhaseRate(const UAnimMontage* Montage, float AuthoredLength, float TargetDuration, float ExpectedRate) const
+{
+	const float Rate = GenMontageTiming::GetPlayRate(AuthoredLength, TargetDuration);
+#if !UE_BUILD_SHIPPING
+	if (TargetDuration > 0.f && GenMontageTiming::ShouldWarn(Rate, ExpectedRate))
+	{
+		GEN_CAST_LOG(Warning, "%s joué à x%.2f pour %.2fs (attendu x%.2f) : recaler le clip (Art Bible §8.2)",
+			*GetNameSafe(Montage), Rate, TargetDuration, ExpectedRate);
+	}
+#endif
+	return Rate;
+}
+
+UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Montage, float Rate, bool bStopWhenAbilityEnds)
+{
+	if (!Montage)
+	{
+		return nullptr;
+	}
+
+	UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		this, NAME_None, Montage, Rate, NAME_None, bStopWhenAbilityEnds, CastMontageRootMotionScale);
+	Task->ReadyForActivation();
+	return Task;
 }
 
 void UGenGA_Cast::StopClientCastMontages()
@@ -789,7 +839,7 @@ void UGenGA_Cast::StopClientCastMontages()
 		return;
 	}
 
-	for (UAnimMontage* Montage : { ChargeMontage.Get(), CastMontage.Get() })
+	for (UAnimMontage* Montage : { FeedMontage.Get(), ChargeMontage.Get(), CastMontage.Get() })
 	{
 		if (Montage)
 		{
