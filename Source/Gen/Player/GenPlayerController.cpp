@@ -3,6 +3,7 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Character/GenCharacterBase.h"
+#include "Character/GenStatusVisualsComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -46,6 +47,16 @@ void AGenPlayerController::AcknowledgePossession(APawn* P)
 		{
 			UISubsystem->NotifyAbilitySystemReady(ASC);
 		}
+	}
+}
+
+void AGenPlayerController::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	if (IsLocalController())
+	{
+		UGenStatusVisualsComponent::RefreshAllViewerRelations(GetWorld());
 	}
 }
 

@@ -46,6 +46,9 @@ protected:
 	 */
 	virtual void AcknowledgePossession(APawn* P) override;
 
+	/** Le joueur local change de PlayerState : les relations par point de vue des corps (soi, allié, ennemi) sont recalculées. */
+	virtual void OnRep_PlayerState() override;
+
 	/**
 	 * La rotation de contrôle suit le curseur. Elle part au serveur avec chaque mouvement,
 	 * ce qui permet au personnage de faire face à la visée pendant une incantation.

@@ -65,6 +65,9 @@ struct FGenStatusVisual
 	TObjectPtr<UMaterialInterface> OwnerMeshMaterial;
 };
 
+/** Emplacement de Custom Primitive Data du corps qui porte la relation au joueur local (M_VFX_GhostDither). */
+inline constexpr int32 GenOwnerMeshRelationDataIndex = 0;
+
 /**
  * Formes d'état du personnage (contre, étourdi, intouchable...) : suit les tags de l'ASC, répliqués
  * à tous les clients. Purement cosmétique : rien sur un serveur dédié. À remplacer par la bibliothèque
@@ -89,6 +92,17 @@ public:
 	/** Flash d'apparition de l'état Tag en cours (lu par les tests et le PIE). */
 	UFUNCTION(BlueprintPure, Category = "Gen|Status")
 	bool IsStatusFlashing(FGameplayTag Tag) const;
+
+	/**
+	 * Corps sous un matériau imposé (OwnerMeshMaterial) : écrit la relation au joueur local (1 soi, 2 allié, 3 ennemi,
+	 * 4 neutre, comme RelationIndex de M_VFX_Telegraph) dans la Custom Primitive Data GenOwnerMeshRelationDataIndex du
+	 * corps. Rien sans substitution, rien sur un serveur dédié. Appelé à chaque substitution et quand une équipe ou le
+	 * joueur local change (RefreshAllViewerRelations).
+	 */
+	void RefreshViewerRelation();
+
+	/** Rafraîchit RefreshViewerRelation sur tous les personnages du monde (changement d'équipe ou de joueur local). */
+	static void RefreshAllViewerRelations(const UWorld* World);
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

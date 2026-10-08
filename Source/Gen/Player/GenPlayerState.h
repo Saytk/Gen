@@ -29,7 +29,7 @@ public:
 	uint8 GetTeamId() const { return TeamId; }
 
 	/** Serveur uniquement. */
-	void SetTeamId(uint8 NewTeamId) { TeamId = NewTeamId; }
+	void SetTeamId(uint8 NewTeamId);
 
 	UFUNCTION(BlueprintPure, Category = "Gen|Team", meta = (DisplayName = "Get Team Id"))
 	int32 K2_GetTeamId() const { return TeamId; }
@@ -43,6 +43,10 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UGenAttributeSet> AttributeSet;
 
-	UPROPERTY(Replicated)
+	/** Une équipe change : les couleurs par point de vue des corps (relation au joueur local) sont recalculées. */
+	UFUNCTION()
+	void OnRep_TeamId();
+
+	UPROPERTY(ReplicatedUsing = OnRep_TeamId)
 	uint8 TeamId = 255;
 };

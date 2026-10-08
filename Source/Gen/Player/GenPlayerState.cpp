@@ -2,6 +2,7 @@
 
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "Character/GenStatusVisualsComponent.h"
 #include "Net/UnrealNetwork.h"
 
 AGenPlayerState::AGenPlayerState()
@@ -28,4 +29,15 @@ void AGenPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AGenPlayerState, TeamId);
+}
+
+void AGenPlayerState::SetTeamId(uint8 NewTeamId)
+{
+	TeamId = NewTeamId;
+	OnRep_TeamId(); // Les RepNotify ne s'exécutent pas sur le serveur : appel manuel (listen server)
+}
+
+void AGenPlayerState::OnRep_TeamId()
+{
+	UGenStatusVisualsComponent::RefreshAllViewerRelations(GetWorld());
 }
