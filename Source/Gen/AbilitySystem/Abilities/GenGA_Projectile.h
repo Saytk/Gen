@@ -6,6 +6,7 @@
 #include "GenGA_Projectile.generated.h"
 
 class AGenProjectile;
+struct FGenProjectileShotParams;
 class UGameplayEffect;
 
 /**
@@ -22,6 +23,17 @@ class GEN_API UGenGA_Projectile : public UGenGA_Cast
 
 public:
 	UGenGA_Projectile();
+
+	/** Dégâts d'un tir avec Fed unités nourries : le tir (SpawnProjectile) et l'infobulle lisent cette valeur. */
+	float GetShotDamage(int32 Fed, int32 Level = 1) const;
+
+	/** Vitesse, taille, explosion et repoussement d'un tir avec Fed unités nourries (tir et infobulle). */
+	FGenProjectileShotParams GetShotParams(int32 Fed) const;
+
+	//~ UGenGameplayAbility (infobulle) : {Damage} (sans flamme), {DamageMax}, {Range}, {ExplosionRadius}, {Knockback}, {EnergyOnHit}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipRange() const override;
+	virtual FText GetFeedTooltipLines(int32 Fed) const override;
 
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;

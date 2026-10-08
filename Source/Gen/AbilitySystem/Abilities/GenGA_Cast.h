@@ -72,6 +72,15 @@ public:
 	/** Serveur : visée reçue en avance, le lancer attend la fin de l'incantation mesurée par le serveur (tests). */
 	bool IsWaitingForDeferredLaunch() const { return bServerShotLocked && PendingAimData.Num() > 0; }
 
+	/** Durée d'incantation (après le nourrissage). */
+	float GetCastTime() const { return CastTime; }
+
+	//~ UGenGameplayAbility (infobulle) : {CastTime}, {FeedInterval}, {MaxFeed}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipCastTime() const override { return CastTime; }
+	virtual int32 GetTooltipMaxFeed() const override { return bFeedable ? MaxFeed : 0; }
+	virtual float GetTooltipFeedInterval() const override { return FeedInterval; }
+
 	//~ UGameplayAbility
 	/** Faux sur le serveur entre la visée du client et le départ du sort : le client a déjà lancé. */
 	virtual bool CanBeCanceled() const override;

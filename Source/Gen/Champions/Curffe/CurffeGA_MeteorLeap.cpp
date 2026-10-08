@@ -1,5 +1,6 @@
 #include "Champions/Curffe/CurffeGA_MeteorLeap.h"
 
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/GenAreaRules.h"
 #include "AbilitySystem/GenSalvo.h"
@@ -37,3 +38,25 @@ void UCurffeGA_MeteorLeap::OnLeapLanded(const FGenCastRelease& Release, const FV
 
 	UE_LOG(LogCurffeMeteorLeap, Verbose, TEXT("%s : anneau de %d boule(s) de feu"), *GetName(), Release.Fed);
 }
+
+#define LOCTEXT_NAMESPACE "CurffeGA_MeteorLeap"
+
+void UCurffeGA_MeteorLeap::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Super::GetTooltipArgs(Args);
+	Args.Add(TEXT("RingDamage"), GenAbilityTooltip::Number(RingDamage));
+}
+
+FText UCurffeGA_MeteorLeap::GetFeedTooltipLines(int32 Fed) const
+{
+	const FText TakeOff = Super::GetFeedTooltipLines(Fed);
+	if (Fed <= 0 || !RingProjectileClass)
+	{
+		return TakeOff;
+	}
+	// Une boule par flamme (GenAreaRules::GetRingDirections(Release.Fed)), RingDamage chacune, une seule par ennemi (salve)
+	return FText::Format(LOCTEXT("Ring", "{0} + anneau de {1} {1}|plural(one=boule,other=boules) de feu ({2} dégâts, un coup par ennemi)"),
+		TakeOff, Fed, GenAbilityTooltip::Number(RingDamage));
+}
+
+#undef LOCTEXT_NAMESPACE

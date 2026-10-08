@@ -20,6 +20,18 @@ class GEN_API UGenGA_GroundArea : public UGenGA_Cast
 public:
 	UGenGA_GroundArea();
 
+	/** Rayon de la zone avec Fed unités nourries : la zone posée (OnCastLaunched) et l'infobulle lisent cette valeur. */
+	float GetAreaRadius(int32 Fed) const;
+
+	/** Dégâts de la zone avec Fed unités nourries (zone et infobulle). */
+	float GetAreaDamage(int32 Fed, int32 Level = 1) const;
+
+	//~ UGenGameplayAbility (infobulle) : {Damage}, {Radius} (sans flamme), {RadiusMax}, {Range}, {Stun}, {Delay}, {Knockback}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipRange() const override { return Range; }
+	virtual FText GetFeedTooltipLines(int32 Fed) const override;
+	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;

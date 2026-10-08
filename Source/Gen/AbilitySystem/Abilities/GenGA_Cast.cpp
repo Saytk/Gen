@@ -9,6 +9,7 @@
 #include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenMontageTiming.h"
 #include "AbilitySystem/GenTargetData.h"
@@ -37,6 +38,14 @@ UGenGA_Cast::UGenGA_Cast()
 	MaxFeed = CurffeTuning::MaxFeedPerSpell;
 
 	ActivationOwnedTags.AddTag(GenGameplayTags::State_Casting);
+}
+
+void UGenGA_Cast::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Super::GetTooltipArgs(Args);
+	Args.Add(TEXT("CastTime"), GenAbilityTooltip::Seconds(CastTime));
+	Args.Add(TEXT("FeedInterval"), GenAbilityTooltip::Seconds(FeedInterval));
+	Args.Add(TEXT("MaxFeed"), MaxFeed);
 }
 
 void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)

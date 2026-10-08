@@ -26,6 +26,13 @@ namespace GenUITokens
 	/** cooldown.noEnergy (§2.5) : voile « pas assez d'énergie ». */
 	inline const TCHAR* const CooldownNoEnergyHex = TEXT("#2E4A78");
 	inline constexpr float CooldownNoEnergyAlpha = 0.45f;
+
+	/** bg.panelRaised (§2.1) : fond des infobulles, cartes de menu, tableau des scores. */
+	inline const TCHAR* const BgPanelRaisedHex = TEXT("#2B1E16");
+	inline constexpr float BgPanelRaisedAlpha = 0.88f;
+
+	/** accent.brass (§2.2) : seul accent de marque sur fond sombre (focus, sélection, liens des menus et infobulles). */
+	inline const TCHAR* const AccentBrassHex = TEXT("#D6A47C");
 }
 
 /** Règles pures de l'interface, testées hors monde. */

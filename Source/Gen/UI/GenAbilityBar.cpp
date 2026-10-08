@@ -3,6 +3,8 @@
 #include "Components/PanelWidget.h"
 #include "Components/Spacer.h"
 #include "GenGameplayTags.h"
+#include "Player/GenPlayerController.h"
+#include "UI/GenAbilityTooltip.h"
 #include "UI/GenAbilitySlot.h"
 #include "UI/GenUIDataAssets.h"
 #include "UI/GenUISubsystem.h"
@@ -47,6 +49,16 @@ void UGenAbilityBar::NativeConstruct()
 	{
 		ReadyHandle = UI->CallOrRegister_OnAbilitySystemReady(FGenOnAbilitySystemReady::FDelegate::CreateUObject(this, &ThisClass::HandleAbilitySystemReady));
 	}
+
+	// Touche « détails des sorts » : le contrôleur diffuse, la barre affiche (le jeu ne connaît aucun widget, §8.1)
+	if (AGenPlayerController* PC = Cast<AGenPlayerController>(GetOwningPlayer()))
+	{
+		ShowDetailsHandle = PC->OnShowAbilityDetailsChanged.AddUObject(this, &ThisClass::SetAbilityDetailsShown);
+	}
+	if (DetailsPanel)
+	{
+		DetailsPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void UGenAbilityBar::NativeDestruct()
@@ -55,6 +67,11 @@ void UGenAbilityBar::NativeDestruct()
 	{
 		UI->UnregisterOnAbilitySystemReady(ReadyHandle);
 	}
+	if (AGenPlayerController* PC = Cast<AGenPlayerController>(GetOwningPlayer()))
+	{
+		PC->OnShowAbilityDetailsChanged.Remove(ShowDetailsHandle);
+	}
+	ShowDetailsHandle.Reset();
 	for (UGenAbilitySlot* SlotWidget : GetSlots())
 	{
 		SlotWidget->Unbind();
@@ -73,4 +90,48 @@ void UGenAbilityBar::HandleAbilitySystemReady(UAbilitySystemComponent* ASC)
 TArray<UGenAbilitySlot*> UGenAbilityBar::GetSlots() const
 {
 	return { SlotPrimary, SlotSecondary, SlotMobility, Slot1, Slot2, Slot3, SlotUltimate };
+}
+
+void UGenAbilityBar::SetAbilityDetailsShown(bool bShown)
+{
+	if (bDetailsShown == bShown)
+	{
+		return;
+	}
+	bDetailsShown = bShown;
+
+	const bool bInPlace = DetailsPanel == nullptr;
+	for (UGenAbilitySlot* SlotWidget : GetSlots())
+	{
+		SlotWidget->SetDetailsShown(bShown, bInPlace);
+	}
+	if (bInPlace)
+	{
+		return;
+	}
+
+	if (bShown)
+	{
+		// Une carte par sort, recréée à chaque appui : les valeurs suivent le sort et la touche du moment
+		DetailsPanel->ClearChildren();
+		for (UGenAbilitySlot* SlotWidget : GetSlots())
+		{
+			if (UGenAbilityTooltip* Tooltip = SlotWidget->CreateFilledTooltip())
+			{
+				DetailsPanel->AddChild(Tooltip);
+				Tooltip->Show(0.f);
+			}
+		}
+		DetailsPanel->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+	else
+	{
+		for (UWidget* Child : DetailsPanel->GetAllChildren())
+		{
+			if (UGenAbilityTooltip* Tooltip = Cast<UGenAbilityTooltip>(Child))
+			{
+				Tooltip->Hide();
+			}
+		}
+	}
 }

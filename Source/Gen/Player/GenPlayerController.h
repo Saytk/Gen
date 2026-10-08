@@ -9,6 +9,9 @@ class UGenAbilitySystemComponent;
 class UGenInputConfig;
 struct FInputActionValue;
 
+/** Touche « détails des sorts » maintenue (vrai) ou relâchée (faux) : l'interface affiche toutes les infobulles. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FGenOnShowAbilityDetailsChanged, bool /*bShown*/);
+
 /**
  * Contrôleur joueur : curseur visible, déplacement ZQSD relatif à la caméra,
  * et transmission des touches de sorts à l'ASC sous forme d'InputTags.
@@ -26,6 +29,12 @@ public:
 	bool GetCursorLocationOnPlane(float PlaneZ, FVector& OutLocation) const;
 
 	const UGenInputConfig* GetInputConfig() const { return InputConfig; }
+
+	/** Touche « détails des sorts » maintenue (UGenInputConfig::ShowTooltipsAction). */
+	bool IsShowingAbilityDetails() const { return bShowingAbilityDetails; }
+
+	/** Diffusé quand la touche « détails des sorts » change ; l'interface s'y abonne (le jeu ne connaît aucun widget). */
+	FGenOnShowAbilityDetailsChanged OnShowAbilityDetailsChanged;
 
 	/** Tests PIE : viser DebugAimLocation au lieu du curseur (ignoré en Shipping). */
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "Gen|Debug")
@@ -60,9 +69,16 @@ protected:
 	void AbilityInputReleased(FGameplayTag InputTag);
 	/** Touche d'annulation : annule l'incantation en cours (UGenAbilitySystemComponent::CancelPendingCasts). */
 	void CancelCast();
+	/** Touche « détails des sorts » : appui et relâché. */
+	void ShowAbilityDetailsPressed();
+	void ShowAbilityDetailsReleased();
+	void SetShowAbilityDetails(bool bShown);
 
 	UGenAbilitySystemComponent* GetGenAbilitySystemComponent() const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Input")
 	TObjectPtr<UGenInputConfig> InputConfig;
+
+private:
+	bool bShowingAbilityDetails = false;
 };

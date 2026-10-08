@@ -17,6 +17,12 @@ class GEN_API UCurffeGA_MeteorLeap : public UGenGA_Leap
 {
 	GENERATED_BODY()
 
+public:
+	//~ UGenGameplayAbility (infobulle) : en plus du bond, {RingDamage}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	/** Décollage puis anneau de Fed boules de feu (une par flamme). */
+	virtual FText GetFeedTooltipLines(int32 Fed) const override;
+
 protected:
 	virtual void OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation) override;
 
