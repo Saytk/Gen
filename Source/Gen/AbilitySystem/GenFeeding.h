@@ -105,6 +105,12 @@ namespace GenFeeding
 		return Threshold > 0 && Fed >= Threshold;
 	}
 
+	/** Rayon d'explosion d'un tir : FedRadius dès ExplosionMinFeed unités, sinon BaseRadius (0 = pas d'explosion, ex : Pyroblast 120 cm). */
+	inline float GetShotExplosionRadius(int32 Fed, int32 ExplosionMinFeed, float FedRadius, float BaseRadius)
+	{
+		return ReachesThreshold(Fed, ExplosionMinFeed) ? FedRadius : FMath::Max(BaseRadius, 0.f);
+	}
+
 	/**
 	 * Affichage des unités nourries (elles quittent l'orbite) : un seul sort à la fois en est propriétaire.
 	 * Un sort qui n'affiche rien (annulé avant de nourrir) ne peut pas effacer l'affichage d'un autre.

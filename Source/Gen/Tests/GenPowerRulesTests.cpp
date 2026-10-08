@@ -104,4 +104,19 @@ bool FGenUntouchableRuleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenShotExplosionTest, "Gen.Feeding.ShotExplosionRadius",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenShotExplosionTest::RunTest(const FString& Parameters)
+{
+	// GetShotExplosionRadius(Fed, ExplosionMinFeed, FedRadius, BaseRadius)
+	TestEqual(TEXT("Pyroblast : explose toujours (1.2 m)"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, 120.f), 120.f);
+	TestEqual(TEXT("grosse boule de feu, 3 flammes"), GenFeeding::GetShotExplosionRadius(3, 3, 150.f, 0.f), 150.f);
+	TestEqual(TEXT("grosse boule de feu, 2 flammes"), GenFeeding::GetShotExplosionRadius(2, 3, 150.f, 0.f), 0.f);
+	TestEqual(TEXT("grosse boule de feu, 2 flammes, avec une base"), GenFeeding::GetShotExplosionRadius(2, 3, 150.f, 120.f), 120.f);
+	TestEqual(TEXT("boule de feu"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, 0.f), 0.f);
+	TestEqual(TEXT("base négative ignorée"), GenFeeding::GetShotExplosionRadius(0, 0, 150.f, -10.f), 0.f);
+	return true;
+}
+
 #endif
