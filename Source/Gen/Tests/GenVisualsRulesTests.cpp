@@ -46,6 +46,27 @@ bool FGenMontageTimingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("borne basse"), GenMontageTiming::GetPlayRate(0.1f, 1.f), GenMontageTiming::MinPlayRate, 0.0001f);
 	TestEqual(TEXT("durée nulle : vitesse 1"), GenMontageTiming::GetPlayRate(0.5f, 0.f), 1.f, 0.0001f);
 	TestEqual(TEXT("clip vide : vitesse 1"), GenMontageTiming::GetPlayRate(0.f, 0.5f), 1.f, 0.0001f);
+
+	// PIE : avec 2 flammes, le lanceur ne joue jamais Feed_3 (section tenue = dernier seuil atteignable)
+	TestEqual(TEXT("2 flammes sur 3 sections : Feed_2 tenue"), GenMontageTiming::GetFeedHoldSection(2, 3), 2);
+	TestTrue(TEXT("2 flammes : boucle de Feed_2 imposée"), GenMontageTiming::ShouldHoldFeedSection(2, 3));
+	TestEqual(TEXT("1 flamme : Feed_1 tenue"), GenMontageTiming::GetFeedHoldSection(1, 3), 1);
+	TestFalse(TEXT("3 flammes : Feed_3 boucle déjà (dernière)"), GenMontageTiming::ShouldHoldFeedSection(3, 3));
+	TestEqual(TEXT("plus de flammes que de sections : la dernière"), GenMontageTiming::GetFeedHoldSection(5, 3), 3);
+	TestFalse(TEXT("rien à nourrir : rien à tenir"), GenMontageTiming::ShouldHoldFeedSection(0, 3));
+	TestFalse(TEXT("montage sans section Feed_N"), GenMontageTiming::ShouldHoldFeedSection(2, 0));
+
+	// PIE : clic gauche maintenu, la charge suivante ne coupe pas le geste de lancer (0.15 s protégées)
+	TestEqual(TEXT("une image après le lancer : charge retardée"), GenMontageTiming::GetChargeStartDelay(0.016f, 0.4f, 0.15f), 0.134f, 0.0001f);
+	TestEqual(TEXT("geste fini depuis longtemps : pas de retard"), GenMontageTiming::GetChargeStartDelay(0.3f, 0.4f, 0.15f), 0.f, 0.0001f);
+	TestEqual(TEXT("aucun geste en cours : pas de retard"), GenMontageTiming::GetChargeStartDelay(-1.f, 0.4f, 0.15f), 0.f, 0.0001f);
+	TestEqual(TEXT("retard borné à la moitié de l'incantation"), GenMontageTiming::GetChargeStartDelay(0.f, 0.2f, 0.15f), 0.1f, 0.0001f);
+	TestEqual(TEXT("sans protection : pas de retard"), GenMontageTiming::GetChargeStartDelay(0.f, 0.4f, 0.f), 0.f, 0.0001f);
+	// La charge retardée finit toujours à CastTime : clip de 0.4 s, retard 0.134 s => joué sur 0.266 s
+	const float Delay = GenMontageTiming::GetChargeStartDelay(0.016f, 0.4f, 0.15f);
+	const float Rate = GenMontageTiming::GetDelayedChargeRate(0.4f, 0.4f, Delay);
+	TestEqual(TEXT("charge retardée : finit à CastTime"), Delay + 0.4f / Rate, 0.4f, 0.0001f);
+	TestEqual(TEXT("sans retard : vitesse normale"), GenMontageTiming::GetDelayedChargeRate(0.4f, 0.4f, 0.f), 1.f, 0.0001f);
 	return true;
 }
 

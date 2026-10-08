@@ -1,5 +1,6 @@
 #include "Champions/Curffe/CurffeGA_LivingFlame.h"
 
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
@@ -118,3 +119,38 @@ void UCurffeGA_LivingFlame::EndAbility(const FGameplayAbilitySpecHandle Handle, 
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
+
+#define LOCTEXT_NAMESPACE "CurffeGA_LivingFlame"
+
+void UCurffeGA_LivingFlame::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Super::GetTooltipArgs(Args);
+	Args.Add(TEXT("Duration"), GenAbilityTooltip::Seconds(FormDuration));
+	Args.Add(TEXT("Radius"), GenAbilityTooltip::Meters(BurstRadius));
+	Args.Add(TEXT("Damage"), GenAbilityTooltip::Number(BurstDamage));
+	Args.Add(TEXT("Knockback"), GenAbilityTooltip::Meters(BurstKnockback));
+	Args.Add(TEXT("Haste"), GenAbilityTooltip::Percent(HasteMultiplier - 1.f));
+	Args.Add(TEXT("HasteDuration"), GenAbilityTooltip::Seconds(HasteDuration));
+}
+
+void UCurffeGA_LivingFlame::GetTooltipEffectLines(TArray<FText>& OutLines) const
+{
+	OutLines.Add(FText::Format(LOCTEXT("Form", "Forme de feu {0} : intouchable, sans sort"), GenAbilityTooltip::Seconds(FormDuration)));
+	TArray<FText> Burst;
+	Burst.Add(FText::Format(LOCTEXT("Burst", "Fin de la forme : anneau {0}, {1} dégâts"), GenAbilityTooltip::Meters(BurstRadius), GenAbilityTooltip::Number(BurstDamage)));
+	if (BurstKnockback > 0.f)
+	{
+		Burst.Add(FText::Format(LOCTEXT("BurstKnockback", "recul {0}"), GenAbilityTooltip::Meters(BurstKnockback)));
+	}
+	OutLines.Add(GenAbilityTooltip::Join(Burst, LOCTEXT("Comma", ", ")));
+	if (RefillEffect)
+	{
+		OutLines.Add(LOCTEXT("Refill", "Foyer rempli"));
+	}
+	if (HasteMultiplier > 1.f && HasteDuration > 0.f)
+	{
+		OutLines.Add(FText::Format(LOCTEXT("Haste", "Vitesse +{0} pendant {1}"), GenAbilityTooltip::Percent(HasteMultiplier - 1.f), GenAbilityTooltip::Seconds(HasteDuration)));
+	}
+}
+
+#undef LOCTEXT_NAMESPACE

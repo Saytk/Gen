@@ -178,7 +178,7 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> GroundMarkerMesh;
 
-	/** Plan du marqueur, créé en BeginPlay sur les clients seulement. */
+	/** Plan du marqueur, créé en BeginPlay sur les clients seulement (son MID : une fois, au premier affichage). */
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> GroundMarker;
 
@@ -226,4 +226,5 @@ protected:
 
 private:
 	bool bImpactEffectsPlayed = false;
+
 };

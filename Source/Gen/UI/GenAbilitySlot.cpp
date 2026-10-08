@@ -2,11 +2,14 @@
 
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenEnergy.h"
 #include "AbilitySystemComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "GameplayEffect.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
@@ -26,6 +29,7 @@
 #include "Player/GenPlayerController.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "UI/GenAbilityTooltip.h"
 #include "UI/GenTextBlock.h"
 #include "UI/GenUIDataAssets.h"
 #include "UI/GenUILog.h"
@@ -194,6 +198,12 @@ void UGenAbilitySlot::Bind(UAbilitySystemComponent* InASC)
 
 	ResolveAbility();
 	RefreshKeyLabel();
+
+	// Survol du disque pour l'infobulle : sondé (la souris reste capturée par le jeu), seulement avec une infobulle
+	if (TooltipClass && GetWorld() && !IsRunningDedicatedServer())
+	{
+		GetWorld()->GetTimerManager().SetTimer(HoverPollTimer, this, &ThisClass::PollHover, GetUIMetrics()->TooltipPollInterval, true);
+	}
 }
 
 void UGenAbilitySlot::Unbind()
@@ -201,7 +211,9 @@ void UGenAbilitySlot::Unbind()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(RefreshTimer);
+		World->GetTimerManager().ClearTimer(HoverPollTimer);
 	}
+	SetTooltipHovered(false);
 
 	ClearResolvedAbility();
 
@@ -334,7 +346,11 @@ void UGenAbilitySlot::ResolveAbility(FGameplayAbilitySpecHandle Excluded)
 		UTexture2D* Icon = AbilityCDO->Icon.LoadSynchronous();
 		IconMID->SetTextureParameterValue(TEXT("Icon"), Icon ? Icon : DefaultIconTexture.Get());
 	}
-	IconImage->SetToolTipText(AbilityCDO->DisplayName);
+	// Infobulle déjà ouverte (sort accordé ou remplacé pendant le survol) : contenu relu
+	if (HoverTooltip && HoverTooltip->IsShownOrShowing())
+	{
+		FillTooltip(*HoverTooltip);
+	}
 
 	RefreshCooldown();
 }
@@ -362,6 +378,7 @@ void UGenAbilitySlot::RefreshKeyLabel()
 	FText Label;
 	UTexture2D* Glyph = nullptr;
 	UI->ResolveKeyLabel(Action, Label, Glyph);
+	KeyLabelText = Label;
 
 	if (KeyGlyphImage && Glyph)
 	{
@@ -706,6 +723,141 @@ bool UGenAbilitySlot::MeasureCooldownClass(FIntPoint FormatClass, GenUIRules::FC
 
 	CooldownBoxLayouts.Add(FormatClass, OutLayout);
 	return true;
+}
+
+bool UGenAbilitySlot::BuildTooltipData(FGenAbilityTooltipData& Out) const
+{
+	if (!AbilityCDO.IsValid())
+	{
+		return false;
+	}
+	GenAbilityTooltip::Build(*AbilityCDO, Out);
+	return true;
+}
+
+bool UGenAbilitySlot::FillTooltip(UGenAbilityTooltip& Tooltip) const
+{
+	FGenAbilityTooltipData Data;
+	if (!BuildTooltipData(Data))
+	{
+		return false;
+	}
+	Tooltip.SetContent(Data, KeyLabelText);
+	return true;
+}
+
+UGenAbilityTooltip* UGenAbilitySlot::CreateFilledTooltip() const
+{
+	if (!TooltipClass || !AbilityCDO.IsValid() || !GetOwningPlayer())
+	{
+		return nullptr;
+	}
+	UGenAbilityTooltip* Tooltip = CreateWidget<UGenAbilityTooltip>(GetOwningPlayer(), TooltipClass);
+	if (Tooltip && !FillTooltip(*Tooltip))
+	{
+		return nullptr;
+	}
+	return Tooltip;
+}
+
+UGenAbilityTooltip* UGenAbilitySlot::EnsureHoverTooltip()
+{
+	if (HoverTooltip || !TooltipClass || !GetOwningPlayer())
+	{
+		return HoverTooltip;
+	}
+
+	HoverTooltip = CreateWidget<UGenAbilityTooltip>(GetOwningPlayer(), TooltipClass);
+	if (!HoverTooltip)
+	{
+		return nullptr;
+	}
+
+	// Au-dessus du disque, centrée, à TooltipGap ; taille propre (la toile de taille nulle ne change pas la barre)
+	if (TooltipCanvas)
+	{
+		if (UCanvasPanelSlot* CanvasSlot = TooltipCanvas->AddChildToCanvas(HoverTooltip))
+		{
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetAnchors(FAnchors(0.5f, 0.f));
+			CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+			CanvasSlot->SetPosition(FVector2D(0.f, -GetUIMetrics()->TooltipGap));
+		}
+	}
+	else
+	{
+		UE_LOG(LogGenUI, Warning, TEXT("%s : pas de TooltipCanvas dans le WBP, infobulle créée mais pas affichée."), *GetPathName());
+	}
+	return HoverTooltip;
+}
+
+void UGenAbilitySlot::ShowHoverTooltip(float Delay)
+{
+	UGenAbilityTooltip* Tooltip = EnsureHoverTooltip();
+	if (Tooltip && FillTooltip(*Tooltip))
+	{
+		Tooltip->Show(Delay);
+	}
+}
+
+void UGenAbilitySlot::SetTooltipHovered(bool bInHovered)
+{
+	bHovered = bInHovered;
+	if (bDetailsShown)
+	{
+		// Touche des détails maintenue : elle décide seule
+		return;
+	}
+	if (bHovered)
+	{
+		ShowHoverTooltip(GetUIMetrics()->TooltipHoverDelay);
+	}
+	else if (HoverTooltip)
+	{
+		HoverTooltip->Hide();
+	}
+}
+
+void UGenAbilitySlot::SetDetailsShown(bool bShown, bool bInPlace)
+{
+	bDetailsShown = bShown;
+	bDetailsInPlace = bInPlace;
+	if (bShown)
+	{
+		if (bInPlace)
+		{
+			ShowHoverTooltip(0.f);
+		}
+		else if (HoverTooltip)
+		{
+			HoverTooltip->Hide();
+		}
+		return;
+	}
+
+	// Touche relâchée : retour au survol
+	if (bHovered)
+	{
+		ShowHoverTooltip(0.f);
+	}
+	else if (HoverTooltip)
+	{
+		HoverTooltip->Hide();
+	}
+}
+
+void UGenAbilitySlot::PollHover()
+{
+	bool bOver = false;
+	if (FSlateApplication::IsInitialized() && AbilityCDO.IsValid() && IsVisible())
+	{
+		const FGeometry& Disc = (IconSizeBox ? static_cast<UWidget*>(IconSizeBox) : static_cast<UWidget*>(IconImage))->GetCachedGeometry();
+		bOver = Disc.GetLocalSize().X > 0.f && Disc.IsUnderLocation(FSlateApplication::Get().GetCursorPos());
+	}
+	if (bOver != bHovered)
+	{
+		SetTooltipHovered(bOver);
+	}
 }
 
 const UGenUIMetrics* UGenAbilitySlot::GetUIMetrics() const

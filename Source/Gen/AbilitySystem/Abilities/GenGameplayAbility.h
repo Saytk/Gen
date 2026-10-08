@@ -62,6 +62,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|UI")
 	FText DisplayName;
 
+	/**
+	 * Description courte de l'infobulle de la barre de sorts (en français, comme DisplayName), une ou deux phrases.
+	 * Arguments nommés remplis depuis les valeurs de jeu du sort (GetTooltipArgs) : {EnergyCost}, {Cooldown}, {CastTime},
+	 * {FeedInterval}, {MaxFeed}, {Damage}, {Range}, {Radius}... (liste par classe : GetTooltipArgs). Distances et durées
+	 * arrivent avec leur unité (« 3,5 m », « 0,4 s ») ; dégâts et énergie en nombres. Vide = pas de description.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|UI", meta = (MultiLine = true))
+	FText Description;
+
 	/** Icône de l'emplacement dans la barre de sorts (UI_Guidelines §2.11 : 256 px, affichée à 64 / 72 px). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|UI")
 	TSoftObjectPtr<UTexture2D> Icon;
@@ -124,6 +133,35 @@ public:
 	 * Faux = aucun indicateur. Appelé chaque image tant que la visée est ouverte (UGenSpellIndicatorComponent).
 	 */
 	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const { return false; }
+
+	// --- Infobulle de la barre de sorts (GenAbilityTooltip::Build) : tout vient des valeurs de jeu du sort (CDO) ---
+
+	/**
+	 * Arguments nommés de Description. Base : {EnergyCost}, {Cooldown}. Chaque classe ajoute les siens en appelant Super.
+	 * Valeurs au niveau 1 (le CDO n'a pas de niveau).
+	 */
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const;
+
+	/** Durée d'incantation affichée (s), négative = pas d'incantation (sort instantané sans barre). */
+	virtual float GetTooltipCastTime() const { return -1.f; }
+
+	/** Portée affichée (cm), 0 = aucune (sort centré sur le lanceur). */
+	virtual float GetTooltipRange() const { return 0.f; }
+
+	/** Seuils de nourrissage décrits par l'infobulle (0 = sort non nourri : une seule ligne, GetFeedTooltipLines(0)). */
+	virtual int32 GetTooltipMaxFeed() const { return 0; }
+
+	/** Intervalle de nourrissage normal (s), pour le temps de maintien de chaque seuil. */
+	virtual float GetTooltipFeedInterval() const { return 0.f; }
+
+	/**
+	 * Effet du sort avec Fed unités nourries (« 34 dégâts + explosion 1,5 m »), calculé par le même code que le jeu.
+	 * Vide = rien à dire pour ce seuil. Sort non nourri : appelé avec 0.
+	 */
+	virtual FText GetFeedTooltipLines(int32 Fed) const { return FText::GetEmpty(); }
+
+	/** Lignes d'effet hors nourrissage (fenêtres, durées, états : contre, flamme vivante, combustion...). */
+	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const {}
 
 	/**
 	 * Télégraphe centré sur le lanceur, vu par tous pendant l'incantation (bChannel faux) ou la canalisation (vrai).

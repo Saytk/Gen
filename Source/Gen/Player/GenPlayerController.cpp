@@ -80,6 +80,13 @@ void AGenPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(InputConfig->CancelAction, ETriggerEvent::Started, this, &ThisClass::CancelCast);
 	}
 
+	if (InputConfig->ShowTooltipsAction)
+	{
+		EnhancedInput->BindAction(InputConfig->ShowTooltipsAction, ETriggerEvent::Started, this, &ThisClass::ShowAbilityDetailsPressed);
+		EnhancedInput->BindAction(InputConfig->ShowTooltipsAction, ETriggerEvent::Completed, this, &ThisClass::ShowAbilityDetailsReleased);
+		EnhancedInput->BindAction(InputConfig->ShowTooltipsAction, ETriggerEvent::Canceled, this, &ThisClass::ShowAbilityDetailsReleased);
+	}
+
 	for (const FGenAbilityInputAction& Binding : InputConfig->AbilityInputActions)
 	{
 		if (Binding.InputAction && Binding.InputTag.IsValid())
@@ -134,6 +141,25 @@ void AGenPlayerController::CancelCast()
 	if (UGenAbilitySystemComponent* ASC = GetGenAbilitySystemComponent())
 	{
 		ASC->CancelPendingCasts();
+	}
+}
+
+void AGenPlayerController::ShowAbilityDetailsPressed()
+{
+	SetShowAbilityDetails(true);
+}
+
+void AGenPlayerController::ShowAbilityDetailsReleased()
+{
+	SetShowAbilityDetails(false);
+}
+
+void AGenPlayerController::SetShowAbilityDetails(bool bShown)
+{
+	if (bShowingAbilityDetails != bShown)
+	{
+		bShowingAbilityDetails = bShown;
+		OnShowAbilityDetailsChanged.Broadcast(bShown);
 	}
 }
 

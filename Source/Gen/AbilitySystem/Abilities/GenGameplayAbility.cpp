@@ -3,6 +3,7 @@
 #include "AbilitySystem/Effects/GenGE_Cooldown.h"
 #include "AbilitySystem/Effects/GenGE_Gain.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenEnergy.h"
 #include "AbilitySystem/GenFeeding.h"
@@ -207,6 +208,12 @@ void UGenGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handle,
 		SpecHandle.Data->SetSetByCallerMagnitude(GenGameplayTags::SetByCaller_Cooldown, Duration);
 		ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
 	}
+}
+
+void UGenGameplayAbility::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Args.Add(TEXT("EnergyCost"), GenAbilityTooltip::Number(EnergyCost));
+	Args.Add(TEXT("Cooldown"), GenAbilityTooltip::Seconds(CooldownDuration.GetValueAtLevel(1)));
 }
 
 AGenCharacterBase* UGenGameplayAbility::GetGenCharacterFromActorInfo() const

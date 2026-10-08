@@ -34,6 +34,10 @@ public:
 	float GetFormDuration() const { return FormDuration; }
 	float GetBurstRadius() const { return BurstRadius; }
 
+	//~ UGenGameplayAbility (infobulle) : {Duration}, {Radius}, {Damage}, {Knockback}, {Haste}, {HasteDuration}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;

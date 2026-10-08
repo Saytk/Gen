@@ -1,5 +1,6 @@
 #include "AbilitySystem/Abilities/GenGA_Counter.h"
 
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystem/GenHitRules.h"
@@ -185,3 +186,39 @@ void UGenGA_Counter::EndAbility(const FGameplayAbilitySpecHandle Handle, const F
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
+
+#define LOCTEXT_NAMESPACE "GenGA_Counter"
+
+void UGenGA_Counter::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Super::GetTooltipArgs(Args);
+	Args.Add(TEXT("Window"), GenAbilityTooltip::Seconds(CounterWindow));
+	Args.Add(TEXT("ResourcePerBlock"), GenAbilityTooltip::Number(ResourcePerBlock));
+	Args.Add(TEXT("EnergyOnFirstBlock"), GenAbilityTooltip::Number(EnergyOnFirstBlock));
+	Args.Add(TEXT("WindowSpeed"), GenAbilityTooltip::Percent(WindowMoveSpeedMultiplier));
+	Args.Add(TEXT("Knockback"), GenAbilityTooltip::Meters(MeleeKnockbackDistance));
+}
+
+void UGenGA_Counter::GetTooltipEffectLines(TArray<FText>& OutLines) const
+{
+	OutLines.Add(FText::Format(LOCTEXT("Window", "Posture {0} : bloque les projectiles et la mêlée (pas les zones au sol)"), GenAbilityTooltip::Seconds(CounterWindow)));
+	if (WindowMoveSpeedMultiplier < 1.f)
+	{
+		OutLines.Add(FText::Format(LOCTEXT("Speed", "Vitesse {0} pendant la posture"), GenAbilityTooltip::Percent(WindowMoveSpeedMultiplier)));
+	}
+	if (ResourcePerBlock > 0.f)
+	{
+		OutLines.Add(FText::Format(LOCTEXT("Resource", "+{0} {0}|plural(one=flamme,other=flammes) par coup bloqué"), ResourcePerBlock));
+	}
+	if (EnergyOnFirstBlock > 0.f)
+	{
+		OutLines.Add(FText::Format(LOCTEXT("Energy", "+{0} énergie au premier coup bloqué"), GenAbilityTooltip::Number(EnergyOnFirstBlock)));
+	}
+	if (MeleeKnockbackDistance > 0.f)
+	{
+		OutLines.Add(FText::Format(LOCTEXT("Knockback", "Repousse un attaquant au corps à corps de {0}"), GenAbilityTooltip::Meters(MeleeKnockbackDistance)));
+	}
+	OutLines.Add(LOCTEXT("Ends", "Finit à la fin de la posture, sur un contrôle dur ou quand on appuie sur la touche d'un autre sort"));
+}
+
+#undef LOCTEXT_NAMESPACE

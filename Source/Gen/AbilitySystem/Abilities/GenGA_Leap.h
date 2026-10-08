@@ -48,6 +48,13 @@ public:
 	 */
 	void GetFlightGeometry(const FGenLeapTarget& Target, FGenAimGeometry& Out) const;
 
+	//~ UGenGameplayAbility (infobulle) : {Range}, {Radius} (atterrissage), {Damage}, {FlightTime}, {Knockback}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipRange() const override { return MaxDistance; }
+	/** Décollage (nourrissage + incantation) avec Fed unités. */
+	virtual FText GetFeedTooltipLines(int32 Fed) const override;
+	virtual void GetTooltipEffectLines(TArray<FText>& OutLines) const override;
+
 protected:
 	virtual void OnCastLaunched(const FGenCastRelease& Release) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;

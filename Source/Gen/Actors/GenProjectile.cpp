@@ -179,13 +179,7 @@ void AGenProjectile::SetupGroundMarker()
 	const float Scale = FMath::Max(GetGroundMarkerRadius(), 1.f) / MarkerPlaneHalfSize;
 	GroundMarker->SetWorldScale3D(FVector(Scale, Scale, 1.f));
 
-	GroundMarkerMID = GroundMarker->CreateDynamicMaterialInstance(0, GroundMarkerMaterial);
-	if (GroundMarkerMID)
-	{
-		// Disque plein (pas de minuteur)
-		GroundMarkerMID->SetScalarParameterValue(MarkerParamFill, 1.f);
-	}
-
+	// Le MID est créé au premier affichage (UpdateGroundMarkerRelation), une seule fois par projectile
 	UpdateGroundMarkerRelation();
 }
 
@@ -212,9 +206,20 @@ void AGenProjectile::UpdateGroundMarkerRelation()
 		: GroundMarkerFallbackHeight;
 	GroundMarker->SetRelativeLocation(FVector(0.f, 0.f, -(HalfHeight - MarkerFloorOffset) / FMath::Max(ShotScale, 0.1f)));
 
+	// Revue V6-V8, M-9 : MID créé une seule fois par projectile, et seulement quand le marqueur est visible
 	if (!GroundMarkerMID)
 	{
-		return;
+		if (!GroundMarker->IsVisible() || bExploded)
+		{
+			return;
+		}
+		GroundMarkerMID = GroundMarker->CreateDynamicMaterialInstance(0, GroundMarkerMaterial);
+		if (!GroundMarkerMID)
+		{
+			return;
+		}
+		// Disque plein (pas de minuteur)
+		GroundMarkerMID->SetScalarParameterValue(MarkerParamFill, 1.f);
 	}
 
 	// Point de vue du joueur local, comparé par PlayerState (comme AGenGroundArea)

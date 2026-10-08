@@ -1,5 +1,6 @@
 #include "AbilitySystem/Abilities/GenGA_Leap.h"
 
+#include "AbilitySystem/GenAbilityTooltipData.h"
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionJumpForce.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
@@ -378,3 +379,35 @@ void UGenGA_Leap::ClearLeapTarget()
 		Character->ClearLeapTarget(GetClass()); // sans effet si ce n'est plus notre bond
 	}
 }
+
+#define LOCTEXT_NAMESPACE "GenGA_Leap"
+
+void UGenGA_Leap::GetTooltipArgs(FFormatNamedArguments& Args) const
+{
+	Super::GetTooltipArgs(Args);
+	Args.Add(TEXT("Range"), GenAbilityTooltip::Meters(MaxDistance));
+	Args.Add(TEXT("Radius"), GenAbilityTooltip::Meters(LandingRadius));
+	Args.Add(TEXT("Damage"), GenAbilityTooltip::Number(LandingDamage));
+	Args.Add(TEXT("FlightTime"), GenAbilityTooltip::Seconds(LeapDuration));
+	Args.Add(TEXT("Knockback"), GenAbilityTooltip::Meters(LandingKnockback));
+}
+
+FText UGenGA_Leap::GetFeedTooltipLines(int32 Fed) const
+{
+	// Le décollage dure le nourrissage (Fed intervalles) puis l'incantation
+	return FText::Format(LOCTEXT("TakeOff", "décollage {0}"), GenAbilityTooltip::Seconds(Fed * FeedInterval + CastTime));
+}
+
+void UGenGA_Leap::GetTooltipEffectLines(TArray<FText>& OutLines) const
+{
+	OutLines.Add(FText::Format(LOCTEXT("Flight", "Vol {0}, sans sort ; un contrôle dur n'arrête pas le bond"), GenAbilityTooltip::Seconds(LeapDuration)));
+	TArray<FText> Landing;
+	Landing.Add(FText::Format(LOCTEXT("LandingDamage", "Atterrissage : zone {0}, {1} dégâts"), GenAbilityTooltip::Meters(LandingRadius), GenAbilityTooltip::Number(LandingDamage)));
+	if (LandingKnockback > 0.f)
+	{
+		Landing.Add(FText::Format(LOCTEXT("LandingKnockback", "recul {0}"), GenAbilityTooltip::Meters(LandingKnockback)));
+	}
+	OutLines.Add(GenAbilityTooltip::Join(Landing, LOCTEXT("Comma", ", ")));
+}
+
+#undef LOCTEXT_NAMESPACE

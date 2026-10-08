@@ -85,6 +85,15 @@ public:
 	 */
 	virtual void FillAimData(FGenTargetData_Aim& Data) const {}
 
+	/** Durée d'incantation (après le nourrissage). */
+	float GetCastTime() const { return CastTime; }
+
+	//~ UGenGameplayAbility (infobulle) : {CastTime}, {FeedInterval}, {MaxFeed}
+	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
+	virtual float GetTooltipCastTime() const override { return CastTime; }
+	virtual int32 GetTooltipMaxFeed() const override { return bFeedable ? MaxFeed : 0; }
+	virtual float GetTooltipFeedInterval() const override { return FeedInterval; }
+
 	//~ UGameplayAbility
 	/** Faux sur le serveur entre la visée du client et le départ du sort : le client a déjà lancé. */
 	virtual bool CanBeCanceled() const override;
@@ -247,6 +256,15 @@ protected:
 	bool bStopCastMontageWithAbility = false;
 
 	/**
+	 * Clic gauche maintenu : le geste de lancer (CastMontage) du sort précédent est protégé pendant cette durée ; la
+	 * charge de l'incantation suivante attend, puis joue plus vite pour finir à CastTime (GenMontageTiming::
+	 * GetChargeStartDelay). Cosmétique seulement, le minuteur du sort ne change pas. 0 = aucune protection.
+	 * Python : cast_montage_release_hold.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (ClampMin = "0.0", Units = "s"))
+	float CastMontageReleaseHold = 0.15f;
+
+	/**
 	 * Durée de jeu de la phase lancée, à laquelle CastMontage est calé (0 = vitesse 1 : geste au lancer puis suivi).
 	 * Surcharges prévues : bond -> durée du vol ; contre -> fenêtre ; Living Flame -> forme.
 	 */
@@ -287,6 +305,10 @@ private:
 	void ScheduleFeedTick();
 	/** V3 : joue FeedMontage (rate calée sur l'intervalle actif, Feed_1 trouvée par son nom). */
 	void PlayFeedMontage();
+	/** Joue ChargeMontage, retardé de Delay (geste de lancer précédent protégé) et calé pour finir à CastTime. */
+	void PlayChargeMontage(float Delay);
+	UFUNCTION()
+	void OnChargeDelayFinished();
 	/** Revue V2-V4, I2 : serveur pour un client distant, geste de nourrissage lancé avec le retard de l'estimation. */
 	UFUNCTION()
 	void OnFeedMontageDelayFinished();
@@ -377,6 +399,11 @@ private:
 #if !UE_BUILD_SHIPPING
 	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
 	bool bWarnedPhaseSlotGroups = false;
+
+	/** Départ (temps du monde) du dernier CastMontage de cette instance ; gardé d'une activation à l'autre (auto-répétition). */
+	double LastCastMontageTime = -1.0;
+	/** Retard de la charge en cours d'attente (OnChargeDelayFinished). */
+	float PendingChargeDelay = 0.f;
 #endif
 	/** Tâche de visée en cours (serveur pour un client distant : attend la visée). */
 	UPROPERTY(Transient)
