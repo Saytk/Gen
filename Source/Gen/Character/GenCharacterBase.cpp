@@ -50,18 +50,47 @@ void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedResource, COND_SkipOwner);
 }
 
-void AGenCharacterBase::StartCast(UClass* Ability, float Duration, UNiagaraSystem* FX, FName FXSocket)
+float AGenCharacterBase::GetCastClockSeconds() const
 {
 	const AGameStateBase* GameState = GetWorld()->GetGameState();
+	return GameState ? GameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+}
 
+void AGenCharacterBase::StartCast(UClass* Ability, float Duration, UNiagaraSystem* FX, FName FXSocket)
+{
+	// Repart de zéro : aucun reste d'un nourrissage précédent
+	CastInfo = FGenCastInfo();
 	CastInfo.Ability = Ability;
 	CastInfo.Duration = Duration;
-	CastInfo.StartTime = GameState ? GameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+	CastInfo.StartTime = GetCastClockSeconds();
 	CastInfo.FX = FX;
 	CastInfo.FXSocket = FXSocket;
 
 	SetFaceAim(true);
 	UpdateCastFX();
+}
+
+void AGenCharacterBase::StartFeedCast(UClass* Ability, int32 FeedSlots, float FeedInterval, float CastTime, UNiagaraSystem* FX, FName FXSocket)
+{
+	const int32 Slots = FMath::Clamp(FeedSlots, 0, 255);
+	StartCast(Ability, Slots * FMath::Max(FeedInterval, 0.f) + FMath::Max(CastTime, 0.f), FX, FXSocket);
+	CastInfo.FeedSlots = static_cast<uint8>(Slots);
+	CastInfo.FeedInterval = FeedInterval;
+}
+
+void AGenCharacterBase::MarkFeedEnded(UClass* Ability, int32 FedCount)
+{
+	if (CastInfo.Ability != Ability)
+	{
+		return;
+	}
+
+	// Seconde annonce (compte corrigé par le serveur) : le repli garde son heure de départ
+	if (CastInfo.FeedEndTime <= 0.f)
+	{
+		CastInfo.FeedEndTime = FMath::Max(GetCastClockSeconds(), KINDA_SMALL_NUMBER); // 0 = nourrissage en cours
+	}
+	CastInfo.FedCount = static_cast<uint8>(FMath::Clamp(FedCount, 0, static_cast<int32>(CastInfo.FeedSlots)));
 }
 
 void AGenCharacterBase::StopCast(UClass* Ability)
@@ -141,14 +170,35 @@ void AGenCharacterBase::SetFaceAim(bool bFaceAim)
 
 float AGenCharacterBase::GetCastProgress() const
 {
+	GenCastBar::FLayout Layout;
+	return GetCastBarLayout(Layout) ? Layout.Fill : -1.f;
+}
+
+bool AGenCharacterBase::GetCastBarLayout(GenCastBar::FLayout& OutLayout) const
+{
 	if (!CastInfo.IsCasting())
 	{
-		return -1.f;
+		return false;
 	}
 
-	const AGameStateBase* GameState = GetWorld()->GetGameState();
-	const float Now = GameState ? GameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
-	return FMath::Clamp((Now - CastInfo.StartTime) / CastInfo.Duration, 0.f, 1.f);
+	GenCastBar::FParams Params;
+	Params.StartTime = CastInfo.StartTime;
+	if (CastInfo.FeedSlots > 0)
+	{
+		// Sort nourri : Duration est la longueur du nourrissage, l'incantation en est le reste
+		Params.FeedSlots = CastInfo.FeedSlots;
+		Params.FeedInterval = CastInfo.FeedInterval;
+		Params.CastTime = FMath::Max(CastInfo.Duration - CastInfo.FeedSlots * CastInfo.FeedInterval, 0.f);
+		Params.FeedEndTime = CastInfo.FeedEndTime;
+		Params.FedCount = CastInfo.FedCount;
+	}
+	else
+	{
+		Params.CastTime = CastInfo.Duration;
+	}
+
+	OutLayout = GenCastBar::ComputeLayout(Params, GetCastClockSeconds());
+	return true;
 }
 
 UAbilitySystemComponent* AGenCharacterBase::GetAbilitySystemComponent() const

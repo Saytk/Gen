@@ -21,6 +21,7 @@ struct FGameplayAbilityTargetData;
  *     (flammes de Curffe) passe dans le sort toutes les FeedInterval s, jusqu'à MaxFeed.
  *     Relâcher, atteindre le max ou épuiser la ressource enchaîne sur l'incantation.
  *     Le client décide du nombre ; le serveur le borne à sa ressource et au temps mesuré.
+ *     Une seule barre de cast de l'appui au lancer : un cran par flamme, repliée à la fin du nourrissage.
  *  1. Si CastTime > 0 : incantation (barre de cast, ralenti), annulée si le lanceur est étourdi ou meurt
  *     (ou par un autre sort via CancelAbilitiesWithTag)
  *  2. Le client récupère le point visé sous la souris et l'envoie au serveur (target data,
@@ -184,6 +185,8 @@ private:
 	void StopFeedingLocal();
 	void EndFeedTasks();
 	void SetFedVisual(int32 Count);
+	/** Barre de cast : fin du nourrissage avec Count flammes (rappelable pour corriger le compte). */
+	void MarkFeedEnded(int32 Count);
 	int32 GetAvailableFeed() const;
 
 	void StartCasting();

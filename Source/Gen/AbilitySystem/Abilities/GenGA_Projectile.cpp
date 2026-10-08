@@ -110,6 +110,13 @@ void UGenGA_Projectile::ApplyReportedFedCount(int32 Reported)
 	// On garde l'annonce brute : si l'estimation avance encore, elle est rebornée au tick suivant
 	ReportedFedCount = Reported;
 	SetFedVisual(Accepted);
+
+	// L'annonce (RPC du personnage) et le signal de fin (RPC de l'ASC) n'ont pas d'ordre garanti :
+	// arrivée après la fin du nourrissage, elle corrige la barre vue par les autres joueurs
+	if (!bIsFeeding)
+	{
+		MarkFeedEnded(Accepted);
+	}
 }
 
 int32 UGenGA_Projectile::GetAvailableFeed() const
@@ -129,8 +136,9 @@ void UGenGA_Projectile::StartFeeding()
 
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		// Barre de cast : durée maximale possible, remplacée par la vraie incantation à la fin du nourrissage
-		Character->StartCast(GetClass(), GetAvailableFeed() * FeedInterval + CastTime, CastFX, CastFXSocket);
+		// Une seule barre de l'appui au lancer : un cran par flamme disponible, repliée à la fin du
+		// nourrissage (OnFeedSynced) puis prolongée par l'incantation sans redémarrer
+		Character->StartFeedCast(GetClass(), GetAvailableFeed(), FeedInterval, CastTime, CastFX, CastFXSocket);
 	}
 
 	if (IsLocallyControlled())
@@ -260,6 +268,11 @@ void UGenGA_Projectile::OnFeedSynced()
 	GEN_ABILITY_LOG(Verbose, "Nourrissage terminé%s : %d (%.2fs)", IsServerForRemoteClient() ? TEXT(" (estimation du serveur)") : TEXT(""),
 		FedCount, GetWorld()->GetTimeSeconds() - FeedStartTime);
 
+	// Barre : les segments inutilisés se replient. Compte affiché = flammes qui quittent l'orbite
+	// (serveur pour un client distant : son estimation, ou l'annonce du client si elle est déjà arrivée).
+	// Le compte validé arrive avec la visée (ReleaseShot).
+	MarkFeedEnded(FedVisualCount);
+
 	if (CastTime > 0.f)
 	{
 		StartCasting();
@@ -284,6 +297,14 @@ void UGenGA_Projectile::EndFeedTasks()
 	}
 }
 
+void UGenGA_Projectile::MarkFeedEnded(int32 Count)
+{
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+	{
+		Character->MarkFeedEnded(GetClass(), Count); // sans effet si la barre n'est plus la nôtre
+	}
+}
+
 void UGenGA_Projectile::SetFedVisual(int32 Count)
 {
 	FedVisualCount = Count;
@@ -295,9 +316,13 @@ void UGenGA_Projectile::SetFedVisual(int32 Count)
 
 void UGenGA_Projectile::StartCasting()
 {
-	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+	// Sort nourri : la barre du nourrissage continue (StartFeedCast), jamais de seconde barre
+	if (!bFeedable)
 	{
-		Character->StartCast(GetClass(), CastTime, CastFX, CastFXSocket);
+		if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+		{
+			Character->StartCast(GetClass(), CastTime, CastFX, CastFXSocket);
+		}
 	}
 
 	ApplyCastSlow(); // sans effet s'il est déjà actif depuis le nourrissage
@@ -535,6 +560,12 @@ bool UGenGA_Projectile::ReleaseShot(const FGameplayAbilityTargetDataHandle& Data
 	}
 
 	const int32 Fed = ResolveFedCount(Data);
+	if (bFeedable && Fed != FedVisualCount)
+	{
+		// Compte validé différent de celui affiché : on corrige la barre. Aujourd'hui sans effet visible,
+		// la barre est déjà arrêtée à la réception de la visée (OnCastFinished, OnServerAimReceived).
+		MarkFeedEnded(Fed);
+	}
 
 	// Le sort part : on applique cooldown, coût et dépense des flammes maintenant, pour qu'une
 	// incantation interrompue (annulée, étourdi, mort) ne coûte rien. Le client est dans la fenêtre
