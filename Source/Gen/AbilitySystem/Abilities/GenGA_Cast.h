@@ -6,6 +6,7 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "GenGA_Cast.generated.h"
 
+class AGenGroundArea;
 class AGenProjectile;
 class UAbilityTask_WaitDelay;
 class UAbilityTask_WaitInputRelease;
@@ -13,6 +14,7 @@ class UAnimMontage;
 class UGameplayEffect;
 class UNiagaraSystem;
 struct FGameplayAbilityTargetData;
+struct FGenAreaParams;
 struct FGenProjectileSalvo;
 struct FGenProjectileShotParams;
 
@@ -105,6 +107,10 @@ protected:
 	/** Serveur : projectile tiré depuis Origin vers Direction, porteur des dégâts et des gains. */
 	AGenProjectile* SpawnProjectileShot(TSubclassOf<AGenProjectile> ShotClass, const FVector& Origin, const FVector& Direction, const FGenProjectileShotParams& ShotParams,
 		TSubclassOf<UGameplayEffect> DamageClass, float DamageAmount, float EnergyGain, float ResourceGain, const TSharedPtr<FGenProjectileSalvo>& Salvo = nullptr);
+
+	/** Serveur : zone au sol posée au sol sous Center, porteuse des dégâts et des gains (énergie si elle touche). */
+	AGenGroundArea* SpawnGroundArea(TSubclassOf<AGenGroundArea> AreaClass, const FVector& Center, const FGenAreaParams& Params,
+		TSubclassOf<UGameplayEffect> DamageClass, float DamageAmount, float EnergyGain);
 
 	/** Fin de l'incantation (ou tout de suite si CastTime = 0) : on récupère la visée. */
 	UFUNCTION()

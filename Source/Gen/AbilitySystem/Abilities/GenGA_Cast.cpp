@@ -11,8 +11,10 @@
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenTargetData.h"
+#include "AbilitySystem/GenWorldQueries.h"
 #include "AbilitySystem/Tasks/GenAbilityTask_TargetDataUnderCursor.h"
 #include "AbilitySystemComponent.h"
+#include "Actors/GenGroundArea.h"
 #include "Actors/GenProjectile.h"
 #include "Animation/AnimMontage.h"
 #include "Character/GenCharacterBase.h"
@@ -915,4 +917,35 @@ AGenProjectile* UGenGA_Cast::SpawnProjectileShot(TSubclassOf<AGenProjectile> Sho
 
 	Projectile->FinishSpawning(SpawnTransform);
 	return Projectile;
+}
+
+AGenGroundArea* UGenGA_Cast::SpawnGroundArea(TSubclassOf<AGenGroundArea> AreaClass, const FVector& Center, const FGenAreaParams& Params,
+	TSubclassOf<UGameplayEffect> DamageClass, float DamageAmount, float EnergyGain)
+{
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (!Avatar || !Avatar->HasAuthority() || !AreaClass)
+	{
+		return nullptr;
+	}
+
+	const FTransform SpawnTransform(FRotator::ZeroRotator, GenWorldQueries::FindFloor(GetWorld(), Center, { Avatar }));
+	AGenGroundArea* Area = GetWorld()->SpawnActorDeferred<AGenGroundArea>(
+		AreaClass, SpawnTransform, Avatar, Cast<APawn>(Avatar), ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Area)
+	{
+		GEN_CAST_LOG(Warning, "Échec du spawn de %s", *GetNameSafe(AreaClass));
+		return nullptr;
+	}
+
+	// Équipe retenue à l'apparition : la zone reste juste si le lanceur meurt ou réapparaît avant l'impact
+	const AGenCharacterBase* Character = GetGenCharacterFromActorInfo();
+	Area->InitializeArea(Params, Character ? Character->GetTeamId() : GenNoTeam);
+	Area->DamageEffectSpecHandle = MakeDamageSpec(DamageClass, DamageAmount, Area);
+	Area->InstigatorOnHitSpecHandle = MakeGainSpec(EnergyGain, 0.f);
+
+	GEN_CAST_LOG(Verbose, "Zone %s en %s (rayon %.0f, délai %.2fs, dégâts %.0f, étourdit %.2fs, repousse %.0f)",
+		*Area->GetName(), *SpawnTransform.GetLocation().ToCompactString(), Params.Radius, Params.Delay, DamageAmount, Params.StunDuration, Params.KnockbackDistance);
+
+	Area->FinishSpawning(SpawnTransform);
+	return Area;
 }
