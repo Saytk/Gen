@@ -61,7 +61,8 @@ Everything is verified in PIE with a dedicated server and 3 clients.
   - Before modifying an existing `.uasset`, run `git fetch origin` and check `git diff --stat HEAD...origin/main -- Content`. Then run `git lfs locks --verify` and `git lfs lock <path>`, skipping the locks you already own. Never use `--force`.
   - **Hot shared files** (Art Bible §3.9): this plan creates one more master, `Content/Gen/Rendering/Masters/M_VFX_GhostDither`. Tell the user before creating it (Task 11 Step 1) so the other person doesn't create it in parallel.
 - **PIE verification** uses a dedicated server and **3 clients**. Clients 1 and 3 are team 0 and client 2 is team 1. Restore Standalone with 1 client afterwards.
-- **Starting values (spec §3, copied verbatim):**
+- **Starting values (spec §3, copied verbatim; feeding updated by the 2026-10-08 decision, spec commit `8096d2c`):**
+  - **Feeding (spec §2).** 0.3 s per flame, at most **3 flames (3 thresholds) per spell**; the Hearth keeps 5 flames (Living Flame still refills it to 5). Holding 3 flames takes about 0.9 s, or 0.45 s with fast feeding. The values live in `CurffeTuning` (`MaxFeedPerSpell`, `FeedInterval`, `FastFeedInterval`), from the parallel `ui-ability-bar` change; code and tests reference those constants, never the literals.
   - **R: Living Flame (25 energy).**
     - Cast **0.1 s**, cooldown **16 s**.
     - The mage becomes living fire: **untouchable for 0.5 s**, can't cast (guidelines §3.5 allows ≤ 0.5 s on R).
@@ -72,7 +73,7 @@ Everything is verified in PIE with a dedicated server and 3 clients.
     - Then **ablaze for 5 s**:
       1. **Pyroblasts:** LMB becomes a bigger projectile (P), cast 0.35 s, **13** damage, explodes in a **1.2 m** area. Works with every other spell on cooldown.
       2. **Unlimited flames:** the Hearth refills after every spell.
-      3. **Fast feeding:** 0.1 s per flame instead of 0.2 s; telegraphs never drop below 0.5 s.
+      3. **Fast feeding:** 0.15 s per flame instead of 0.3 s; telegraphs never drop below 0.5 s.
     - Not immune to CC.
   - **Resilience (guidelines §3.3):** after 2.5 s of hard CC within 5 s, the target is immune to hard CC for 1.5 s, with a visible effect.
   - **Invulnerability (guidelines §3.5):** 0.5 s or less. Untouchable means projectiles pass through and damage is ignored.
@@ -88,7 +89,7 @@ Everything is verified in PIE with a dedicated server and 3 clients.
 
 1. **Ablaze starts or ends while a spell is feeding.**
    - Expected: each machine keeps the interval it had when its feeding started, and the server validates against its own interval.
-   - An honest client never sees `Nourrissage corrigé`. At worst, a feed that began in the last ~0.1 s of ablaze is clamped by one flame.
+   - An honest client never sees `Nourrissage corrigé`. At worst, a feed that began in the last ~0.15 s of ablaze is clamped by one flame.
    - Pinned by Task 1 (`Gen.Feeding.FastInterval`) and Task 12 W9.
 2. **Energy exactly at the cost.** For example, 25 energy for Living Flame, 100 for Combustion, or 99.99 after rounding. Expected: 25.0 and 100.0 pass, and anything under fails, with no float drift. Pinned by Task 1 (`Gen.Energy.CanAfford`) and Task 12 W1 and W5.
 3. **A hard CC lands while the target is untouchable, while immune, or from two overlapping sources.** Expected: untouchable and immune targets ignore it. Overlapping stuns count once (the union of the intervals) toward the 2.5 s. Pinned by Task 1 (`Gen.Combat.ResilienceHistory`), Task 4 (`Gen.Combat.Untouchable`), Task 5 (`Gen.Combat.Resilience`) and Task 12 W11.
@@ -159,7 +160,7 @@ Select-String -Path "$Root\Saved\Logs\GenTests.log" -Pattern "Test Completed. Re
 
 **Interfaces:**
 - Produces:
-  - `GenFeeding::FastFeedMultiplier` (0.5)
+  - `GenFeeding::FastFeedMultiplier` (0.5: Curffe's 0.3 s becomes `CurffeTuning::FastFeedInterval`, 0.15 s; the test pins the two together)
   - `GenFeeding::GetFeedInterval(float BaseInterval, bool bFastFeeding) -> float`
   - `GenEnergy::CanAfford(float Energy, float Cost) -> bool`
   - `GenResilience::{Window = 5, Threshold = 2.5, ImmunityDuration = 1.5}`
@@ -167,7 +168,8 @@ Select-String -Path "$Root\Saved\Logs\GenTests.log" -Pattern "Test Completed. Re
   - `EGenHitResponse::Ignored`
   - `GenHitRules::Resolve(bool bCountering, bool bUntouchable, EGenHitKind) -> EGenHitResponse`. This replaces the two-argument version.
 
-- [ ] **Step 0: Create the branch.** `git switch -c curffe-plan3` (from the tip of `curffe-plan2`).
+- [ ] **Step 0: Create the branch.** `git switch -c curffe-plan3` (from the tip of `curffe-plan2`). (Done on 2026-10-08 directly on `curffe-plan2`, ahead of Plan 2's Task 5: this task has no `UGenGA_Cast` dependency. Skip it if `Gen.Feeding.FastInterval` already exists.)
+  - Needs `CurffeTuning::{FeedInterval, FastFeedInterval, MaxFeedPerSpell}` (the `ui-ability-bar` 3-flame change; `curffe-plan2` carries an identical copy of `CurffeTuning.h` until that change is merged).
 
 - [ ] **Step 1: Write the failing tests** in `Source/Gen/Tests/GenPowerRulesTests.cpp`
 
@@ -180,26 +182,27 @@ Select-String -Path "$Root\Saved\Logs\GenTests.log" -Pattern "Test Completed. Re
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenHitRules.h"
 #include "AbilitySystem/GenResilience.h"
+#include "Champions/Curffe/CurffeTuning.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFastFeedingTest, "Gen.Feeding.FastInterval",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FGenFastFeedingTest::RunTest(const FString& Parameters)
 {
-	// GetFeedInterval(BaseInterval, bFastFeeding)
-	TestEqual(TEXT("intervalle normal"), GenFeeding::GetFeedInterval(0.2f, false), 0.2f, KINDA_SMALL_NUMBER);
-	TestEqual(TEXT("Combustion : 0.1 s par flamme"), GenFeeding::GetFeedInterval(0.2f, true), 0.1f, KINDA_SMALL_NUMBER);
+	// GetFeedInterval(BaseInterval, bFastFeeding), avec les valeurs de Curffe (3 seuils, 0.3 s par flamme)
+	TestEqual(TEXT("intervalle normal"), GenFeeding::GetFeedInterval(CurffeTuning::FeedInterval, false), CurffeTuning::FeedInterval, KINDA_SMALL_NUMBER);
+	TestEqual(TEXT("Combustion : 0.15 s par flamme (CurffeTuning::FastFeedInterval)"), GenFeeding::GetFeedInterval(CurffeTuning::FeedInterval, true), CurffeTuning::FastFeedInterval, KINDA_SMALL_NUMBER);
 	TestTrue(TEXT("jamais nul"), GenFeeding::GetFeedInterval(0.f, true) > 0.f);
 
 	// Avec l'intervalle rapide, les ticks calés sur le début du nourrissage (GetNextFeedTickDelay,
-	// correctif de la dérive du plan 1) tombent à 0.1, 0.2... : la 5e flamme à 0.5 s
-	const float Fast = GenFeeding::GetFeedInterval(0.2f, true);
-	TestEqual(TEXT("5e flamme à 0.5 s"), GenFeeding::GetNextFeedTickDelay(0.f, 4, Fast, 0.4f), 0.1f, 0.0001f);
-	TestEqual(TEXT("tick en retard d'une image : pas de dérive"), GenFeeding::GetNextFeedTickDelay(0.f, 2, Fast, 0.217f), 0.083f, 0.0001f);
+	// correctif de la dérive du plan 1) tombent à 0.15, 0.30, 0.45 : le 3e seuil (le dernier) à 0.45 s au lieu de 0.9 s
+	const float Fast = GenFeeding::GetFeedInterval(CurffeTuning::FeedInterval, true);
+	TestEqual(TEXT("3e flamme à 0.45 s"), GenFeeding::GetNextFeedTickDelay(0.f, 2, Fast, 0.3f), 0.15f, 0.0001f);
+	TestEqual(TEXT("tick en retard d'une image : pas de dérive"), GenFeeding::GetNextFeedTickDelay(0.f, 1, Fast, 0.167f), 0.133f, 0.0001f);
 
-	// Validation serveur avec l'intervalle rapide : 5 flammes en 0.5 s acceptées
-	TestEqual(TEXT("5 en 0.5 s validées"), GenFeeding::ValidateFedCount(5, 5, 5.f, 0.5f, Fast), 5);
-	TestEqual(TEXT("avec l'intervalle normal, ce serait 3"), GenFeeding::ValidateFedCount(5, 5, 5.f, 0.5f, 0.2f), 3);
+	// Validation serveur avec l'intervalle rapide : 3 flammes en 0.47 s acceptées
+	TestEqual(TEXT("3 en 0.47 s validées"), GenFeeding::ValidateFedCount(3, CurffeTuning::MaxFeedPerSpell, 5.f, 0.47f, Fast), 3);
+	TestEqual(TEXT("avec l'intervalle normal, ce serait 2"), GenFeeding::ValidateFedCount(3, CurffeTuning::MaxFeedPerSpell, 5.f, 0.47f, CurffeTuning::FeedInterval), 2);
 	return true;
 }
 
@@ -285,10 +288,13 @@ bool FGenUntouchableRuleTest::RunTest(const FString& Parameters)
 - [ ] **Step 3: Add the feeding rules** to `GenFeeding.h`, at the end of the namespace:
 
 ```cpp
-	/** Combustion : nourrissage deux fois plus rapide (spec : 0.1 s au lieu de 0.2 s). */
+	/**
+	 * Nourrissage rapide (State.FastFeeding, ex : Combustion) : intervalle divisé par deux.
+	 * Curffe : 0.15 s au lieu de 0.3 s (CurffeTuning::FastFeedInterval, vérifié par Gen.Feeding.FastInterval).
+	 */
 	inline constexpr float FastFeedMultiplier = 0.5f;
 
-	/** Intervalle de nourrissage, retenu au début du nourrissage (State.FastFeeding). */
+	/** Intervalle de nourrissage, retenu au début du nourrissage (State.FastFeeding). Jamais nul. */
 	inline float GetFeedInterval(float BaseInterval, bool bFastFeeding)
 	{
 		return FMath::Max(BaseInterval * (bFastFeeding ? FastFeedMultiplier : 1.f), 0.01f);
@@ -344,6 +350,7 @@ namespace GenResilience
 			TArray<FEntry> Sorted = Entries;
 			Sorted.Sort([](const FEntry& A, const FEntry& B) { return A.Start < B.Start; });
 
+			// Union des intervalles, chacun rogné au début de la fenêtre
 			float Total = 0.f;
 			float SpanStart = 0.f;
 			float SpanEnd = -1.f;
@@ -419,14 +426,14 @@ namespace GenResilience
 
   - Update the callers:
     - In `GenCombatRulesTests.cpp`, `Gen.Combat.CounterTrigger`, the three calls become `GenHitRules::Resolve(true, false, EGenHitKind::Projectile)`, `GenHitRules::Resolve(true, false, EGenHitKind::Area)` and `GenHitRules::Resolve(false, false, EGenHitKind::Projectile)`.
-    - In `GenCharacterBase.cpp`, `ResolveIncomingHit`, change it temporarily to `GenHitRules::Resolve(bCountering, false, Kind)`. Task 4 replaces `false`.
+    - In `GenCharacterBase.cpp`, `ResolveIncomingHit`, change it temporarily to `GenHitRules::Resolve(bCountering, /*bUntouchable*/ false, Kind)`. Task 4 replaces `false`.
 
 - [ ] **Step 7: Build, then run the unit tests.** Expected: `Gen.Feeding.FastInterval`, `Gen.Energy.CanAfford`, `Gen.Combat.ResilienceHistory` and `Gen.Combat.UntouchableRule` pass, and every Plan 1 and Plan 2 test still passes.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add Source/Gen/AbilitySystem/GenFeeding.h Source/Gen/AbilitySystem/GenEnergy.h Source/Gen/AbilitySystem/GenResilience.h Source/Gen/AbilitySystem/GenHitRules.h Source/Gen/Tests Source/Gen/Character/GenCharacterBase.cpp
+git add Source/Gen/AbilitySystem/GenFeeding.h Source/Gen/AbilitySystem/GenEnergy.h Source/Gen/AbilitySystem/GenResilience.h Source/Gen/AbilitySystem/GenHitRules.h Source/Gen/Tests/GenPowerRulesTests.cpp Source/Gen/Tests/GenCombatRulesTests.cpp Source/Gen/Character/GenCharacterBase.cpp
 git commit -m "Pure rules: fast feeding interval, energy affordability, resilience history, untouchable response"
 ```
 
@@ -434,7 +441,7 @@ git commit -m "Pure rules: fast feeding interval, energy affordability, resilien
 
 ### Task 2: Fast feeding and free resource in `UGenGA_Cast`
 
-The Plan 1 feed drift (about one frame per flame from chained timers) is already fixed upstream (commit `8c378e7`): ticks are scheduled from the feed start with `GenFeeding::GetNextFeedTickDelay`. This task makes that schedule, the cast bar and the server validation use the interval **snapshotted at feed start**, so Combustion's 0.1 s feeding stays exact. It also adds the two generic tags Combustion grants.
+The Plan 1 feed drift (about one frame per flame from chained timers) is already fixed upstream (commit `8c378e7`): ticks are scheduled from the feed start with `GenFeeding::GetNextFeedTickDelay`. This task makes that schedule, the cast bar and the server validation use the interval **snapshotted at feed start**, so Combustion's 0.15 s feeding stays exact. It also adds the two generic tags Combustion grants.
 
 **Files:**
 - Modify: `Source/Gen/GenGameplayTags.h/.cpp`
@@ -465,8 +472,8 @@ The Plan 1 feed drift (about one frame per flame from chained timers) is already
 - [ ] **Step 2: Add the snapshot member.** In `GenGA_Cast.h`, `private:`, after `float FeedStartTime = 0.f;`:
 
 ```cpp
-	/** Intervalle retenu au début du nourrissage (rapide sous State.FastFeeding), sur chaque machine. */
-	float ActiveFeedInterval = 0.2f;
+	/** Intervalle retenu au début du nourrissage (rapide sous State.FastFeeding), sur chaque machine. Posé par StartFeeding. */
+	float ActiveFeedInterval = 0.f;
 ```
 
 - [ ] **Step 3: Snapshot the interval when feeding starts.** In `GenGA_Cast.cpp`, `StartFeeding`:
@@ -2188,7 +2195,7 @@ for name, ability in [("T_UI_Ability_Curffe_3", "GA_LivingFlame"), ("T_UI_Abilit
 - [ ] **Step 9: Smoke test** (Standalone, 1 player).
   - With 25 energy at the start, R works: the body turns to the ghost dither for 0.5 s (the outline stays), then the ring, and speed 715 for 2 s. Energy goes to 0, and the R slot shows "Not enough energy" (Task 10).
   - Set energy to 100 with `gain(1, energy=75)` from the PIE helpers (or the HUD). F: nova, then 5 s of Pyroblasts on LMB, with the ablaze cone on the body and nothing on the ground.
-  - Hold RMB: 5 flames in about 0.5 s, and the Hearth stays at 5.
+  - Hold RMB: 3 flames (the cap) in about 0.45 s instead of 0.9 s, and the Hearth stays at 5.
   - X during a long RMB feed cancels it.
 
 - [ ] **Step 10: Commit** (no push, no unlock until merge). Tell the user that `M_VFX_GhostDither` now exists on `curffe-plan3` and is not pushed yet.
@@ -2264,13 +2271,13 @@ def slot_states(client_index):
 | W5 | **Combustion cost and interrupt** | (a) `set_energy(1, 99)`, then tap `IA_Ability_Ultimate`. (b) `set_energy(1, 100)`; c2's pillar stuns c1 during the 0.5 s cast. (c) `set_energy(1, 100)` with no interruption | (a) No activation. (b) The cast is cancelled and energy stays 100. (c) Energy goes 100→0 **when the cast completes** (not at the press), then the nova fires |
 | W6 | **Nova** | Enemy dummies at +150, +330 and +360. Ally c3 at +100. c2 countering at -200 | The +150 and +330 dummies take −20 and are knocked back 300 cm. The +360 dummy is untouched: a capsule is hit when its centre is within 300 + 42 cm. c3 is untouched. **c2 is hit through the counter** |
 | W7 | **Pyroblast swap** | After W5 (c): hold LMB 2 s aimed at two enemy dummies 80 cm apart | `GA_Pyroblast` `Activé`, never `GA_Fireball`. Each shot: the direct target −13, the other dummy −13 (1.2 m splash). About 5 s after F, the log shows `GA_Fireball Activé` again and no more Pyroblast |
-| W8 | **Unlimited flames** | During ablaze: hold RMB 1 s (5 flames) at a dummy, then E fed 5, then Space fed 5 | Each spell gets its full fed effect (Great Fireball −44 with knockback, pillar radius 350, a 5-Fireball ring). The Hearth reads **5 after each spell**, on the server and on client 2 |
-| W9 | **Fast feeding and validation** | (a) During ablaze, hold RMB for 0.55 s. (b) Start an RMB feed 4.8 s after F (ablaze ends mid-feed) | (a) `[CLIENT] Nourrissage terminé : 5 (0.50s)` (±1 frame), `Nourrissage validé : 5`, no `corrigé`. (b) The interval stays 0.1 s for that feed, and there is no `corrigé` |
-| W10 | **Normal cadence (regression of the Plan 1 drift fix)** | Outside ablaze, hold RMB 1.2 s, with `watch_start()` running | `fed` reaches 1, 2, 3, 4 and 5 at 0.2, 0.4, 0.6, 0.8 and 1.0 s (±1 frame each, **no cumulative drift**). The 5th arrives at 1.00–1.02 s |
+| W8 | **Unlimited flames** | During ablaze: hold RMB 0.6 s (3 flames, the cap) at a dummy, then E fed 3, then Space fed 3 | Each spell gets its full fed effect (Great Fireball −44 with knockback, pillar radius 350, a 3-Fireball ring: a triangle). The Hearth reads **5 after each spell**, on the server and on client 2 |
+| W9 | **Fast feeding and validation** | (a) During ablaze, hold RMB for 0.55 s. (b) Start an RMB feed 4.8 s after F (ablaze ends mid-feed) | (a) `[CLIENT] Nourrissage terminé : 3 (0.45s)` (±1 frame), `Nourrissage validé : 3`, no `corrigé`. (b) The interval stays 0.15 s for that feed, and there is no `corrigé` |
+| W10 | **Normal cadence (regression of the Plan 1 drift fix)** | Outside ablaze, hold RMB 1.2 s, with `watch_start()` running | `fed` reaches 1, 2 and 3 at 0.3, 0.6 and 0.9 s (±1 frame each, **no cumulative drift**). The 3rd arrives at 0.90–0.92 s and the count stays at 3 (the cap) for the rest of the hold |
 | W11 | **Resilience** | No spell active on c2. Using `time_dilation(0.25)`, call `hard_cc(2, 1.0)` at t=0, 1.2 and 2.4 (game time); then `hard_cc(2, 1.0)` at t=3.0; then wait | After the third call: `State.CCImmune` is present and the white halo is visible on clients 1 and 3 (`status_shown(1, 2, "State.CCImmune")`), and `status_flashing(1, 2, "State.CCImmune")` is true for the first 0.15 s only (the ring flash). The call at 3.0 returns an invalid handle and no new stun. `State.CCImmune` ends around t=4.9. A pillar on c2 at t=5.2 stuns again |
 | W12 | **Cancel key** | (a) c1 feeds RMB (3 flames), then taps `IA_Cancel`. (b) X with nothing in progress. (c) X during the Backfire window. (d) X during a leap in flight. (e) X during the Combustion cast | (a) `Fin (annulé=1)`, flames 5, no cooldown, preview or fed display cleared everywhere. (b) Nothing in the log. (c) and (d): the spell continues (`State.Countering` stays; the leap lands with its ring). (e) Cancelled, and energy stays 100 |
 | W13 | **Untouchable versus counter** | c2 counters and c1 casts R; c3's Fireball at c1 during the form | The Fireball passes through c1. c1 gains nothing (no counter reward): untouchable comes first |
-| W14 | **Death in a power state** | c1 ablaze (or immune after W11-type stuns) at 10 hp; c2 kills c1 with a pillar | After respawn: no `State.Curffe.Ablaze`, `State.CCImmune` or `State.FastFeeding` (`inspect_tags`). LMB fires a Fireball (not a Pyroblast). The feed rate is 0.2 s per flame. A fresh 1 s stun does not trigger immunity |
+| W14 | **Death in a power state** | c1 ablaze (or immune after W11-type stuns) at 10 hp; c2 kills c1 with a pillar | After respawn: no `State.Curffe.Ablaze`, `State.CCImmune` or `State.FastFeeding` (`inspect_tags`). LMB fires a Fireball (not a Pyroblast). The feed rate is 0.3 s per flame. A fresh 1 s stun does not trigger immunity |
 
 - [ ] **Step 3a: Ability bar row** (Task 10, client 1's HUD).
 

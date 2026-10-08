@@ -60,18 +60,21 @@
   - **Collision risk:** `ui-ability-bar` is already merged into this branch, so its edits to `GA_Fireball`, `GA_GreatFireball`, `GA_FlameLeap` (icons) and `IMC_Arena` are already here. Work on `ui-ability-bar` continues in the main project folder, though. Before Task 10, run `git log --oneline HEAD..ui-ability-bar -- Content` and `git log --oneline HEAD..origin/main -- Content`; if either lists one of the assets this plan modifies, stop and ask the user about the merge order.
   - **Hot shared files** (Art Bible §3.9): `MPC_TeamColours`, `M_VFX_Telegraph` and every master under `Content/Gen/Rendering/Masters/`. Two people work on the project and these can't be merged. **Tell the user before creating them** (Task 10 Step 1) and wait for the go-ahead, so the other person doesn't create them in parallel.
 - **PIE verification** uses a dedicated server and **3 clients**. Clients 1 and 3 are team 0 and client 2 is team 1. Restore the user's PIE settings afterwards (Standalone, 1 client).
-- **Starting values (spec §3, copied verbatim):**
+- **Starting values (spec §3, copied verbatim; feeding updated by the 2026-10-08 decision, spec commit `8096d2c`):**
+  - **Feeding (spec §2).** Every **0.3 s** held, one more flame moves into the spell, up to **3 thresholds** (max 3 flames per spell, or fewer if the mage has fewer). The Hearth keeps 5 flames, so a full Hearth pays for one 3-flame spell plus a 2-flame one. Holding 3 flames takes about **0.9 s**.
+    - A parallel change on `ui-ability-bar` makes these data-driven: `CurffeTuning::MaxFeedPerSpell` (3), `CurffeTuning::FeedInterval` (0.3), `CurffeTuning::FastFeedInterval` (0.15, Combustion, Plan 3), `GreatFireballSplashMinFeed` (2) and `GreatFireballKnockbackMinFeed` (3), in `Source/Gen/Champions/Curffe/CurffeTuning.h`. Plan code references these constants, never the literals. Merge that change into `curffe-plan2` before Task 5.
+    - **Great Fireball** (Plan 1 asset, `GA_GreatFireball`): cast 0.5 s + 0.3 s per flame (max 1.4 s), damage **14 + 10 per flame** (max 44), splash at **2+** flames, knockback at **3**, speed 25 → 16 m/s at 3 flames, energy **+6, +2 per flame**.
   - **Q: Backfire.**
     - Cast **0.1 s**, window **1.2 s**, cooldown **10 s**. The mage is slowed 50 % during the window.
     - Triggered by projectiles and melee hits (P), not ground areas (A). The blocked hit deals nothing.
     - On a block: **+2 flames per blocked hit**, **+10 energy** (once per cast), melee attackers are **knocked back 3 m**.
   - **E: Flame Pillar.**
-    - Ground-targeted delayed area (A). Cast **0.4 s** (+0.2 s per fed flame), then **0.8 s** telegraph before impact. Range **9 m**, cooldown **12 s**.
-    - Radius **2 m + 0.3 m per flame**. **12** damage and a **1 s stun**. Energy **+8** on hit.
+    - Ground-targeted delayed area (A). Cast **0.4 s** (+0.3 s per fed flame), then **0.8 s** telegraph before impact. Range **9 m**, cooldown **12 s**.
+    - Radius **2 m + 0.5 m per flame** (max 3.5 m). **12** damage and a **1 s stun**. Energy **+8** on hit.
   - **Space: Meteor Leap.**
-    - Leap with a visible arc, **7 m**, cooldown **10 s**. Take-off **0.1 s + 0.2 s per fed flame**.
+    - Leap with a visible arc, **7 m**, cooldown **10 s**. Take-off **0.1 s + 0.3 s per fed flame**.
     - **8** damage in a small area on landing (A). Energy **+2** on landing hit.
-    - Each fed flame bursts out as a Fireball (P, 8 damage) in an even ring around the landing point. Ring Fireballs follow the Fireball rules (range, walls, counters). An enemy can be hit by **one ring projectile at most**.
+    - Each fed flame bursts out as a Fireball (P, 8 damage) in an even ring around the landing point (up to 3: 3 flames = a triangle). Ring Fireballs follow the Fireball rules (range, walls, counters). An enemy can be hit by **one ring projectile at most**.
 - **Key slots.** The project uses AZERTY. The spec's Q is `InputTag.Ability.1` (key A), E is `InputTag.Ability.2`, and Space is `InputTag.Ability.Mobility`.
 - **Every new or changed ability sets** `InputTag`, `DisplayName` (French, like the existing ones), `CooldownTags`, `CooldownDuration` and `Icon` (the property exists since the `ui-ability-bar` merge). The ability bar reads these.
 - **Costs are paid on release.** A cancelled or interrupted cast spends no cooldown and no flames.
@@ -278,19 +281,24 @@ bool FGenRingDirectionsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("1 flamme : une direction"), One.Num(), 1);
 	TestEqual(TEXT("1 flamme : droit devant"), One[0], FVector(0.f, 1.f, 0.f), 0.001f);
 
-	const TArray<FVector> Star = GenAreaRules::GetRingDirections(5, FVector(1.f, 0.f, 0.5f));
-	TestEqual(TEXT("5 flammes : étoile à 5 branches"), Star.Num(), 5);
-	TestEqual(TEXT("première branche selon l'avant aplati"), Star[0], FVector(1.f, 0.f, 0.f), 0.001f);
-	FVector Sum = FVector::ZeroVector;
-	for (int32 Index = 0; Index < Star.Num(); ++Index)
+	// Anneaux réguliers de 2 à 5 branches : le plafond de nourrissage (MaxFeed du sort) n'est pas une règle de l'anneau
+	for (int32 Count = 2; Count <= 5; ++Count)
 	{
-		TestEqual(TEXT("direction unitaire"), static_cast<float>(Star[Index].Size()), 1.f, 0.001f);
-		TestEqual(TEXT("horizontale"), static_cast<float>(Star[Index].Z), 0.f, 0.001f);
-		const FVector& Next = Star[(Index + 1) % Star.Num()];
-		TestEqual(TEXT("72° entre deux branches"), static_cast<float>(FVector::DotProduct(Star[Index], Next)), FMath::Cos(FMath::DegreesToRadians(72.f)), 0.001f);
-		Sum += Star[Index];
+		const TArray<FVector> Ring = GenAreaRules::GetRingDirections(Count, FVector(1.f, 0.f, 0.5f));
+		TestEqual(FString::Printf(TEXT("%d branches"), Count), Ring.Num(), Count);
+		TestEqual(TEXT("première branche selon l'avant aplati"), Ring[0], FVector(1.f, 0.f, 0.f), 0.001f);
+		const float ExpectedCos = FMath::Cos(FMath::DegreesToRadians(360.f / Count));
+		FVector Sum = FVector::ZeroVector;
+		for (int32 Index = 0; Index < Ring.Num(); ++Index)
+		{
+			TestEqual(TEXT("direction unitaire"), static_cast<float>(Ring[Index].Size()), 1.f, 0.001f);
+			TestEqual(TEXT("horizontale"), static_cast<float>(Ring[Index].Z), 0.f, 0.001f);
+			const FVector& Next = Ring[(Index + 1) % Ring.Num()];
+			TestEqual(TEXT("360° / Count entre deux branches"), static_cast<float>(FVector::DotProduct(Ring[Index], Next)), ExpectedCos, 0.001f);
+			Sum += Ring[Index];
+		}
+		TestEqual(TEXT("anneau régulier (somme nulle)"), Sum, FVector::ZeroVector, 0.001f);
 	}
-	TestEqual(TEXT("anneau régulier (somme nulle)"), Sum, FVector::ZeroVector, 0.001f);
 
 	TestEqual(TEXT("avant nul : axe X"), GenAreaRules::GetRingDirections(1, FVector::ZeroVector)[0], FVector(1.f, 0.f, 0.f), 0.001f);
 	return true;
@@ -2021,7 +2029,8 @@ A UPROPERTY that moves to a parent class keeps its saved value in the Blueprints
   - `AGenCharacterBase::SetFedResource(const UObject*, uint8)` (Task 3);
   - `FGenProjectileSalvo` and `AGenProjectile::Salvo` (Tasks 1 and 4);
   - `State_CastLocked` (Task 2);
-  - `GenFeeding::{GetFeedLimit, ValidateFedCount, ClampReportedFed, GetServerCastWait, CastTimeTolerance, ScaleByFeed, ReachesThreshold}`.
+  - `GenFeeding::{GetFeedLimit, ValidateFedCount, ClampReportedFed, GetServerCastWait, CastTimeTolerance, ScaleByFeed, ReachesThreshold}`;
+  - `CurffeTuning::{FeedInterval, MaxFeedPerSpell}` (the `ui-ability-bar` 3-flame change, see Step 1) as the defaults of `FeedInterval` and `MaxFeed`.
 - Produces:
   - `struct FGenCastRelease { FVector AimLocation; FVector AimDirection; int32 Fed; }`
   - `UGenGA_Cast` (Abstract), with:
@@ -2041,6 +2050,7 @@ A UPROPERTY that moves to a parent class keeps its saved value in the Blueprints
   - The log category becomes `LogGenCast`. PIE steps now use `log LogGenCast Verbose`.
 
 - [ ] **Step 1: Check for upstream changes.** Run `git log --oneline 7799691..HEAD -- Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.cpp Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.h`. If it lists commits, read their diff and port each change into the matching function below before you continue.
+  - **3-flame change (2026-10-08).** `ui-ability-bar` makes the feeding defaults data-driven: `UGenGA_Projectile`'s constructor sets `FeedInterval = CurffeTuning::FeedInterval` and `MaxFeed = CurffeTuning::MaxFeedPerSpell`, and the two properties lose their in-class initializers. Make sure that change is merged into `curffe-plan2` first (`grep MaxFeedPerSpell Source/Gen/Champions/Curffe/CurffeTuning.h`; if it is missing, stop and ask). In this extraction those two lines move to `UGenGA_Cast`'s constructor (Step 3), with the properties (Step 2); `UGenGA_Projectile`'s constructor below no longer sets them.
 
 - [ ] **Step 2: Create `Source/Gen/AbilitySystem/Abilities/GenGA_Cast.h`**
 
@@ -2217,12 +2227,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Feeding")
 	bool bFeedable = false;
 
-	/** Une unité absorbée toutes les FeedInterval secondes. */
+	/** Une unité absorbée toutes les FeedInterval secondes. Par défaut : CurffeTuning::FeedInterval (0.3 s). */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Feeding", meta = (EditCondition = "bFeedable", ClampMin = "0.05", Units = "s"))
-	float FeedInterval = 0.2f;
+	float FeedInterval;
 
+	/**
+	 * Seuils de nourrissage du sort (crans de la barre), même si le champion a plus de ressource.
+	 * Par défaut : CurffeTuning::MaxFeedPerSpell (3).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Feeding", meta = (EditCondition = "bFeedable", ClampMin = "1"))
-	int32 MaxFeed = 5;
+	int32 MaxFeed;
 
 private:
 	void StartFeeding();
@@ -2325,6 +2339,7 @@ private:
 #include "Actors/GenProjectile.h"
 #include "Animation/AnimMontage.h"
 #include "Character/GenCharacterBase.h"
+#include "Champions/Curffe/CurffeTuning.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GenGameplayTags.h"
@@ -2335,6 +2350,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogGenCast, Log, All);
 
 UGenGA_Cast::UGenGA_Cast()
 {
+	// Curffe est le seul champion qui nourrit ses sorts pour l'instant : ses règles servent de défaut
+	FeedInterval = CurffeTuning::FeedInterval;
+	MaxFeed = CurffeTuning::MaxFeedPerSpell;
+
 	ActivationOwnedTags.AddTag(GenGameplayTags::State_Casting);
 }
 
@@ -3296,8 +3315,8 @@ void AGenCharacterBase::ClientStopCastMontage_Implementation(UAnimMontage* Monta
 
 - [ ] **Step 8: Blueprint smoke check** (editor open, new binaries, Standalone 1 player).
   - Compile `GA_Fireball` and `GA_GreatFireball` **without saving them** (`BEL.compile_blueprint` only; no `save_asset`). Compiling only marks them dirty. Save them only if `git lfs locks --verify` shows them locked by you; otherwise leave them dirty and don't save them when the editor asks. Task 10 doesn't modify them.
-  - Read back `cast_time`, `feedable`, `max_feed`, `explosion_min_feed` and `cast_montage_root_motion_scale` on both CDOs. Expected: the Plan 1 values (0.35/False and 0.5/True/5/3) and `1.0`.
-  - Fire both in PIE. LMB fires repeatedly; holding RMB for 1 s spends 5 flames.
+  - Read back `cast_time`, `feedable`, `feed_interval`, `max_feed`, `explosion_min_feed`, `knockback_min_feed` and `cast_montage_root_motion_scale` on both CDOs. Expected: the 3-flame values (Fireball 0.35/False; Great Fireball 0.5/True/0.3/3/2/3) and `1.0`. If the Great Fireball still reads `max_feed` 5 or `explosion_min_feed` 3, the `ui-ability-bar` asset update hasn't reached this branch: stop and ask the user (the asset is edited there, see the LFS collision risk).
+  - Fire both in PIE. LMB fires repeatedly; holding RMB for 1 s spends 3 flames (the cap: 3 × 0.3 s = 0.9 s), and the Hearth keeps 2.
   - The full regression runs in Task 11.
 
 - [ ] **Step 9: Commit**
@@ -3925,7 +3944,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (ClampMin = "1.0", Units = "cm"))
 	float Radius = 200.f;
 
-	/** Rayon à MaxFeed (linéaire entre les deux). */
+	/** Rayon à MaxFeed (linéaire entre les deux). Pilier : 200 + 3 × 50 = 350 (spec : 2 m + 0.5 m par flamme, max 3.5 m). */
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (EditCondition = "bFeedable", ClampMin = "1.0", Units = "cm"))
 	float RadiusAtMaxFeed = 350.f;
 
@@ -4330,6 +4349,7 @@ git commit -m "Counter stance ability (Backfire) and Curffe's native tags"
     - virtual `OnLeapLanded(const FGenCastRelease&, const FVector& LandingLocation)`;
     - not interrupted by a hard CC while airborne;
     - `State.CastLocked` in flight, set with `SetCastLock(true, LeapDuration)` so the server enforces it only during its first `LeapDuration − CastTimeTolerance` (Task 3);
+    - **the leap MUST call `UGenAbilitySystemComponent::NoteCastLock(LeapDuration)` whenever it sets `State.CastLocked`.** `SetCastLock` does it for you (Task 5); never add the tag with a bare `AddLooseGameplayTag`. `CastLockEnforcedUntil` defaults to −1, so without `NoteCastLock` the server never refuses anything during the flight and only the client's own lock remains (pinned by `Gen.Net.CastLock`, which calls `NoteCastLock` by hand);
     - `LandMontage` plays with `CastMontageRootMotionScale`, like the cast montages (0 on `GA_FlameLeap`: the jump force moves the character, not the clip).
   - `UCurffeGA_MeteorLeap : UGenGA_Leap`:
     - properties `RingProjectileClass`, `RingDamage`, `RingEnergyOnHit` and `RingSpawnOffset`;
@@ -4535,7 +4555,7 @@ class AGenProjectile;
 
 /**
  * Bond météore (Espace) de Curffe : chaque flamme nourrie jaillit en boule de feu à l'atterrissage,
- * en anneau régulier autour du point d'impact (5 flammes = étoile à 5 branches). Une salve : un ennemi
+ * en anneau régulier autour du point d'impact (au plus MaxFeed boules : 3 flammes = triangle). Une salve : un ennemi
  * n'est touché que par une boule de feu de l'anneau. Les boules suivent les règles de la boule de feu
  * (portée, murs, contres).
  */
@@ -4627,7 +4647,7 @@ The Art Bible §7.6 gives each state one **unique shape** motif, the same for ev
 **Files:**
 - Create: `Source/Gen/Character/GenStatusVisualsComponent.h`, `Source/Gen/Character/GenStatusVisualsComponent.cpp`
 - Modify: `Source/Gen/Character/GenCharacterBase.h/.cpp`
-- Test: `Source/Gen/Tests/GenCombatWorldTests.cpp`
+- Test: `Source/Gen/Tests/GenCombatWorldTests.cpp`, `Source/GenTests/Private/Net/GenNetStatusVisualsTests.cpp` (`Gen.Net.StatusVisuals`: the shape follows the replicated tag on the owner and on the other client, nothing on the dedicated server)
 
 **Interfaces:**
 - Consumes: `UGenAbilitySystemComponent::ApplyHardCC` (Task 2, test only).
@@ -5076,21 +5096,30 @@ void UGenStatusVisualsComponent::RefreshOwnerMesh()
   - At the end of `OnAbilitySystemInitialized` (all machines; `Bind` ignores the dedicated server):
 
 ```cpp
-	StatusVisuals->Bind(AbilitySystemComponent, StatusVisualConfig);
+	// Formes d'état sur toutes les machines (Bind ignore le serveur dédié)
+	if (StatusVisuals)
+	{
+		StatusVisuals->Bind(AbilitySystemComponent, StatusVisualConfig);
+	}
 ```
 
   - In `UninitializeAbilitySystem`, right after the `IsValid(AbilitySystemComponent)` early return:
 
 ```cpp
-	StatusVisuals->Unbind();
+	if (StatusVisuals)
+	{
+		StatusVisuals->Unbind();
+	}
 ```
+
+  - Network test `Gen.Net.StatusVisuals` (dedicated server + 2 clients, `Docs/Dev/CQTestNetworkTests.md`): each client binds the component of client 0's pawn by hand with a `State.Stunned` entry (BP_Champion's config only arrives in Task 10 Step 9), the server applies `ApplyHardCC(State.Stunned, 1 s)`, and both clients must show the shape, then hide it after the stun. On the server, `Bind` must draw nothing.
 
 - [ ] **Step 6: Build, then run the unit tests.** Expected: `Gen.Status.VisualFollowsTag` passes, and all earlier tests still pass.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add Source/Gen/Character Source/Gen/Tests/GenCombatWorldTests.cpp
+git add Source/Gen/Character Source/Gen/Tests/GenCombatWorldTests.cpp Source/GenTests/Private/Net/GenNetStatusVisualsTests.cpp
 git commit -m "Tag-driven status visuals component on every character (appear flash, body material override)"
 ```
 
@@ -5385,10 +5414,12 @@ fp = make_bp(AB + "GA_FlamePillar", unreal.GenGA_GroundArea.static_class())
 setall(cdo(fp), {
     "input_tag": GTS.request_tag("InputTag.Ability.2"), "display_name": unreal.Text("Pilier de flammes"),
     "activation_policy": unreal.GenAbilityActivationPolicy.ON_INPUT_TRIGGERED,
-    "feedable": True, "feed_interval": 0.2, "max_feed": 5,
+    # CurffeTuning::FeedInterval et MaxFeedPerSpell (décision du 2026-10-08 : 3 seuils, 0.3 s par flamme)
+    "feedable": True, "feed_interval": 0.3, "max_feed": 3,
     "cast_time": 0.4, "cast_move_speed_multiplier": 0.5,
     "cast_fx": unreal.load_asset("/Game/Gen/VFX/Stylized/NS_ST_GreatFireball_Cast"),
     "area_class": BEL.generated_class(unreal.load_asset("/Game/Gen/Champions/Curffe/Areas/BP_Area_FlamePillar")),
+    # 2 m + 0.5 m par flamme, 3 flammes au plus : 3.5 m
     "range": 900.0, "radius": 200.0, "radius_at_max_feed": 350.0,
     "impact_delay": 0.8, "min_telegraph": 0.6,
     "damage": unreal.ScalableFloat(value=12.0), "stun_duration": 1.0, "energy_on_hit": 8.0,
@@ -5486,7 +5517,8 @@ d = unreal.get_default_object(BEL.generated_class(bp))
 for k, v in {
     "input_tag": GTS.request_tag("InputTag.Ability.Mobility"), "display_name": unreal.Text("Bond météore"),
     "activation_policy": unreal.GenAbilityActivationPolicy.ON_INPUT_TRIGGERED,
-    "feedable": True, "feed_interval": 0.2, "max_feed": 5, "cast_time": 0.1, "cast_move_speed_multiplier": 0.5,
+    # Décollage 0.1 s + 0.3 s par flamme, 3 flammes au plus (anneau de 3 boules au plus : triangle)
+    "feedable": True, "feed_interval": 0.3, "max_feed": 3, "cast_time": 0.1, "cast_move_speed_multiplier": 0.5,
     "cast_montage": unreal.load_asset("/Game/Gen/Champions/Curffe/Animations/AM_FlameLeap"),
     "land_montage": unreal.load_asset("/Game/Gen/Champions/Curffe/Animations/AM_FlameLeap_Land"),
     # Le bond est déplacé par ApplyRootMotionJumpForce : les clips ne déplacent rien (Art Bible §8.4)
@@ -5518,7 +5550,7 @@ for k in ["max_feed", "ring_damage", "cast_montage_root_motion_scale", "activati
     print("relu", k, ":", d.get_editor_property(k))
 ```
 
-  - Expected: `True True`, then `max_feed` 5, `ring_damage` 8.0, `cast_montage_root_motion_scale` 0.0, both owned tags, empty block and cancel containers, `State.Dead` and `State.Stunned` blocked, no required tag, `INSTANCED_PER_ACTOR` and `LOCAL_PREDICTED`.
+  - Expected: `True True`, then `max_feed` 3, `ring_damage` 8.0, `cast_montage_root_motion_scale` 0.0, both owned tags, empty block and cancel containers, `State.Dead` and `State.Stunned` blocked, no required tag, `INSTANCED_PER_ACTOR` and `LOCAL_PREDICTED`.
   - **`icon` must survive the reparent:** it reads `T_UI_Ability_Curffe_Mobility`, the value printed before. If it is empty, set it back with `d.set_editor_property("icon", unreal.load_asset("/Game/Gen/UI/Textures/Icons/Abilities/T_UI_Ability_Curffe_Mobility"))`, compile, save and read it again.
   - If an enum name is refused, read the valid names with `discover_python_class` on `GameplayAbilityInstancingPolicy` or `GameplayAbilityNetExecutionPolicy`.
 
@@ -5629,7 +5661,7 @@ for name, ability in [("T_UI_Ability_Curffe_1", "GA_Backfire"), ("T_UI_Ability_C
 - [ ] **Step 13: Smoke test** (Standalone, 1 player, `log LogGenCast Verbose`).
   - **A key:** a pale band around the body for 1.2 s, the speed drops to 275, and `Cooldown.Ability.Backfire` is applied.
   - **Hold E:** the aim circle follows the cursor and grows; on release the telegraph lasts 0.8 s, then the impact. Capture it with `capture_image source=game`.
-  - **Space:** the leap goes about 7 m. Fed 5 times, it lands with a 5-pointed star of Fireballs.
+  - **Space:** the leap goes about 7 m. Fed 3 times (hold about 1 s), it lands with a triangle of 3 Fireballs.
 
 - [ ] **Step 14: Commit** (no push, no unlock; the locks stay held until the branch merges, as the Plan 1 ledger rules). Tell the user that the hot shared files under `Content/Gen/Rendering` now exist on `curffe-plan2` and are not pushed yet.
 
@@ -5750,21 +5782,21 @@ def client_walls(viewer_index):
 
 | # | Scenario | Setup (relative to c1) | Expected |
 |---|---|---|---|
-| V1 | **Regression after the refactor** | Plan 1 V3, V4 and V5, unchanged | Same results as Plan 1: fed 3 gives −32 and +9 energy; a cancel restores the flames with no cooldown; held LMB plus RMB is not cancelled. `[CLIENT]` and `[SERVEUR]` logs now come from `LogGenCast` |
+| V1 | **Regression after the refactor** | Plan 1 V3, V4 and V5, unchanged | Same results as Plan 1, with the 3-flame values (spec `8096d2c`; the Plan 1 report predates them): fed 3 (the cap, about 0.9 s of hold) gives −44, a 1.5 m splash and a 4 m knockback, and +12 energy; fed 1 gives −24 and +8, no splash; a cancel restores the flames with no cooldown; held LMB plus RMB is not cancelled. `[CLIENT]` and `[SERVEUR]` logs now come from `LogGenCast` |
 | V2 | **Backfire blocks a Fireball** | c2 (enemy) at +600. In the same call: c2's flames set to exactly 1 (`gain(2, flames=1 - state(2)["flames"])`) and client 2 taps `IA_Ability_1`; 0.2 s later c1 fires a Fireball at c2 | c2's hp is unchanged and the log says `coup direct bloqué par un contre`. c2 flames 1→3 (4 if a passive regen tick falls in the row) and energy +10. c1 gains **nothing**. `status_shown(1, 2, "State.Countering")` and `status_shown(3, 2, …)` are true during the window. c2's speed is 275, then 550 after 1.2 s. `Cooldown.Ability.Backfire` lasts 10 s |
-| V3 | **Countered Great Fireball with splash** | c2 countering at +600. Enemy dummy (team 1) at (+600,+120). c1 holds RMB 1.2 s (5 flames) at c2 | c2 takes **no damage and no knockback**. The dummy takes −44 and is knocked back. c1 energy +11. Repeat without the dummy: c1's energy is unchanged |
+| V3 | **Countered Great Fireball with splash** | c2 countering at +600. Enemy dummy (team 1) at (+600,+120). c1 holds RMB 1.0 s (3 flames, the cap: 3 × 0.3 s = 0.9 s) at c2 | c2 takes **no damage and no knockback**. The dummy takes −44 (14 + 3 × 10) and is knocked back. c1 energy +12 (6 + 3 × 2). Repeat without the dummy: c1's energy is unchanged |
 | V4 | **Two blocks, energy once** | In the same call: c2's flames set to 0 (`gain(2, flames=-state(2)["flames"])`) and client 2 taps Backfire. c1 and c3 each fire a Fireball inside the window | c2 flames 0→4 (5 if a passive regen tick falls in the row), energy **+10 only once** |
 | V5 | **Areas go through the counter** | c1 casts Flame Pillar (tap E) at c2 at +600. Client 2 taps Backfire when the telegraph appears | At impact: c2 −12 and stunned 1 s. `State.Countering` is removed as the stun lands (log: Backfire `Fin (annulé=1)`). c2 gains no flames. c1 energy +8 |
 | V6 | **Backfire window and other spells** | (a) c2 counters, then taps LMB 0.3 s later. (b) c2 holds LMB (`hold(IA_Ability_Primary, 3)`), then taps Backfire | (a) `State.Countering` disappears at the LMB press (`posture terminée par GA_Fireball`) and the cooldown stays. (b) The window lasts the full 1.2 s (auto-repeat does not end it); LMB fire resumes afterwards |
 | V7 | **Flame Pillar basics** | c1 taps E aimed at c2 (+600) | During the 0.8 s telegraph, `areas(2)` shows 1 area of radius 200, not yet triggered. Capture: the border matches the radius (collision debug `show Collision`), the enemy hatching is visible, and the impact flash matches the radius (calibrate `impact_fx_reference_radius` if not). After impact: c2 −12, `State.Stunned` 1 s, speed 0. Client 2 taps LMB during the stun and **no `Activé` log** follows. c1 energy +8 and `Cooldown.Ability.FlamePillar` 12 s |
-| V8 | **Feeding, allies, edge of the radius** | c1 holds E 1.2 s (5 flames) aimed at (+600,0). Ally c3 at (+600,+200). Enemy dummies at (+600,+330) and (+600,+420) | Radius 350 (`areas(0)`). **Ally c3 untouched.** The dummy at +330 is hit (−12, stunned) and the dummy at +420 is not (350 + 42 < 420). While feeding, client 1's preview radius grows (capture). Flames 5→0 |
+| V8 | **Feeding, allies, edge of the radius** | c1 holds E 1.0 s (3 flames, the cap) aimed at (+600,0). Ally c3 at (+600,+200). Enemy dummies at (+600,+330) and (+600,+420) | Radius 350 (200 + 3 × 50, `areas(0)`). **Ally c3 untouched.** The dummy at +330 is hit (−12, stunned) and the dummy at +420 is not (350 + 42 < 420). While feeding, client 1's preview radius grows in 3 steps (capture). Flames 5→2 |
 | V9 | **The caster dies before impact** | c1 at 5 hp casts a pillar on an enemy dummy, with c3 (ally) also in the radius. c2 kills c1 with a Fireball during the telegraph | The pillar still lands: the dummy is hit and **c3 is not**. No error in the log |
 | V10 | **Walls and partial cover** | Pillar at (+600,0), radius 200. Wall `spawn_wall(+600,+100, (2,0.2,2))` between the centre and dummy A at (+600,+170). Dummy B at (+700,+150), partly past the end of the wall. Check `client_walls(1)` | A is untouched (the wall protects it). B is hit (part of its capsule is visible). Repeat with a pillar fed 3 at the same spot. If `client_walls(1)` is empty, the client captures show no wall: judge from the server |
 | V11 | **Range clamp** | c1 aims at +1500 and taps E | The log `Zone … en` shows a centre at about +900 from c1. The preview stopped at 9 m |
 | V12 | **A pillar cast interrupted by a stun** | c1 holds E (feeding). c2's pillar lands on c1 during the feed | c1's pillar: `Fin (annulé=1)`, flames back to 5 (not spent), no `Cooldown.Ability.FlamePillar`, the preview is gone (`areas(1)` empty) |
-| V13 | **Meteor Leap, unfed and fed** | (a) Tap Space aimed at +1500, with a dummy at the expected landing point (+700). (b) Hold Space 1.2 s aimed at +600, with dummies 300 cm from the landing point along the 5 star directions and one dummy 60 cm from it | (a) c1 moves 650–720 cm along an arc. The dummy takes −8 and c1 gets +2 energy. Flight takes about 0.45 s. The trail and impact cues are visible. `Cooldown.Ability.FlameLeap` lasts 10 s. (b) The log says `anneau de 5 boule(s)`. Each star dummy takes −8. The dummy at 60 cm takes 8 (landing) + **at most 8** (one ring Fireball). Flames 5→0 |
+| V13 | **Meteor Leap, unfed and fed** | (a) Tap Space aimed at +1500, with a dummy at the expected landing point (+700). (b) Hold Space 1.0 s (3 flames, the cap) aimed at +600, with dummies 300 cm from the landing point along the 3 ring directions (a triangle: the leap direction, then ±120°) and one dummy 60 cm from it | (a) c1 moves 650–720 cm along an arc. The dummy takes −8 and c1 gets +2 energy. Flight takes about 0.45 s. The trail and impact cues are visible. `Cooldown.Ability.FlameLeap` lasts 10 s. (b) Take-off lasts about 1.0 s (0.1 + 3 × 0.3). The log says `anneau de 3 boule(s)`. Each ring dummy takes −8. The dummy at 60 cm takes 8 (landing) + **at most 8** (one ring Fireball). Flames 5→2 |
 | V14 | **Stun at take-off or in flight** | (a) c2's pillar lands on c1 while c1 is feeding the leap. (b) It lands while c1 is airborne | (a) The leap is cancelled with no cooldown and no flames spent. (b) The log says `phase non interruptible : ignoré`; c1 lands normally, then stays stunned for the rest of the second |
-| V15 | **Two feedable spells in a row** | c1 holds RMB 0.45 s (2 fed), then holds Space without releasing RMB | The Great Fireball ends with `Fin (annulé=1)` and its 2 flames are not spent. The leap feeds from 0. On client 2, `client_pawn(2, 1).get_fed_resource()` follows the leap (never stuck at 2) |
+| V15 | **Two feedable spells in a row** | c1 holds RMB 0.75 s (2 fed: ticks at 0.3 and 0.6 s), then holds Space without releasing RMB | The Great Fireball ends with `Fin (annulé=1)` and its 2 flames are not spent. The leap feeds from 0. On client 2, `client_pawn(2, 1).get_fed_resource()` follows the leap (never stuck at 2) |
 | V16 | **Ring versus counter** | c2 counters 250 cm from the landing point, fed 3 | The ring Fireball that reaches c2 is blocked: c2 +2 flames and +10 energy |
 | V17 | **Ring at a wall** | Wall 40 cm in front of the landing point (along the leap direction); dummy behind it; fed 1 | The single Fireball explodes on the wall at spawn and the dummy behind it is untouched (judge from the server if `client_walls(1)` is empty) |
 | V18 | **Death during the window** | c2 counters at 10 hp; c1 kills c2 with a pillar | After respawn: no `State.Countering` or `State.Stunned` (`inspect_tags`), speed 550, no countering band (`status_shown`) |
