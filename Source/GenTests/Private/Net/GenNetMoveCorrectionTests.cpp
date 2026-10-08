@@ -19,7 +19,8 @@ using namespace GenNetTest;
  * Gen.Net.MoveCorrection (revue V6-V8, I-2) : les ralentis propres à chaque machine (incantation, fenêtre de contre)
  * ne provoquent aucune correction du serveur, même en bougeant sans arrêt à travers leurs bornes : le client envoie ses
  * mouvements en attente avant les RPC de sort (FlushMovesToServer), et le serveur accepte un petit écart juste après
- * un changement de ralenti (UGenCharacterMovementComponent, grâce de correction).
+ * un changement de ralenti (UGenCharacterMovementComponent, grâce de correction). Revue finale, I-1 : cette grâce est un
+ * budget par changement de ralenti ; un client qui triche pendant la grâce est corrigé une fois le budget épuisé.
  */
 NETWORK_TEST_CLASS(MoveCorrection, "Gen.Net")
 {

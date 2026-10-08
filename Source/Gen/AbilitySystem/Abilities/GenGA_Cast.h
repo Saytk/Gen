@@ -4,6 +4,7 @@
 #include "ActiveGameplayEffectHandle.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
+#include "AbilitySystem/GenMontageTiming.h"
 #include "GenGA_Cast.generated.h"
 
 class AGenGroundArea;
@@ -262,7 +263,7 @@ protected:
 	 * Python : cast_montage_release_hold.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (ClampMin = "0.0", Units = "s"))
-	float CastMontageReleaseHold = 0.15f;
+	float CastMontageReleaseHold = GenMontageTiming::DefaultCastReleaseHold;
 
 	/**
 	 * Durée de jeu de la phase lancée, à laquelle CastMontage est calé (0 = vitesse 1 : geste au lancer puis suivi).
@@ -382,7 +383,9 @@ private:
 
 	/**
 	 * Ralenti de l'incantation posé (multiplicateur local de AGenCharacterBase). Revue Plan 2 Tasks 7-8, I-4 : plus de GE
-	 * prédit, chaque machine le pose à SON début et le retire à SA fin, comme ses propres mouvements (aucune correction).
+	 * prédit, chaque machine le pose à SON début et le retire à SA fin, comme ses propres mouvements. Aux bornes, les
+	 * mouvements en attente partent avant les RPC de sort et le serveur absorbe un petit écart (grâce bornée,
+	 * UGenCharacterMovementComponent) : pas de correction pour un client honnête.
 	 */
 	bool bCastSlowApplied = false;
 
