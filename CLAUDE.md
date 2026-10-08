@@ -114,7 +114,7 @@ tout le reste avance sans cérémonie.
 
 **Tests**
 - **Dans l'éditeur ouvert** : `AutomationTestToolset` → `DiscoverTests` (une fois par session), puis
-  `RunTestsByFilter` avec `filterExpression: "StartsWith:Gen."`, puis `GetTestResults`.
+  `RunTestsByFilter` avec `filterExpression: "StartsWith:Gen."` (il renvoie déjà les résultats).
 - **Multijoueur** : les vérifications déterministes (réplication, GAS, autorité serveur) s'écrivent en CQTest
   `NETWORK_TEST_CLASS` dans le module éditeur `GenTests`, qui fait tourner un serveur dédié et des clients
   dans un seul process (guide : `Docs/Dev/CQTestNetworkTests.md`). Le PIE manuel (2 clients + serveur dédié)
@@ -124,6 +124,29 @@ tout le reste avance sans cérémonie.
 - **Test headless, seulement comme barrière avant un commit** :
   `UnrealEditor-Cmd.exe "<projet>\Gen.uproject" -ExecCmds="Automation RunTests Gen.;Quit" -unattended -nullrhi -nosplash -nosound -stdout -ReportExportPath="<projet>\Saved\TestReport" -ModelContextProtocolPort=8011`.
   Lire ensuite `index.json` dans le dossier du rapport, pas le log. `Tools/RunGenTests.ps1` fait les deux.
+
+**Moins d'allers-retours MCP** (détails et sources : `.superpowers/sdd/research-mcp-speed.md`)
+- `RunTestsByFilter` renvoie déjà le JSON complet par test : ne pas appeler `GetTestResults` ensuite.
+- Enchaîner plusieurs outils asynchrones en un seul appel avec `ProgrammaticToolset.execute_tool_script`
+  (ex. `CompileLiveCoding` → `RunTestsByFilter` → verdict compact) : l'éditeur continue de tourner entre les
+  étapes, ce que `execute_python_code` ne permet pas.
+- Un script Python fait plusieurs étapes et renvoie un JSON compact ; les fonctions réutilisables vont dans
+  un module du projet (`Content/Python/gen_*.py`), importé une fois puis `importlib.reload` après édition,
+  au lieu de renvoyer le même code à chaque appel.
+- Garder les sorties petites : `capture_image` avec `max_width: 800`, pas de `describe_toolset` complet.
+- PIE piloté par script : couper le ralentissement en arrière-plan
+  (`unreal.PerformanceService.set_background_throttling(False)`), sinon l'éditeur sans focus tourne à ~3 FPS.
+  Le remettre à la fin.
+- Passage PIE court : VibeUE `WorkflowService.run_scenario` (un appel, PIE toujours arrêté à la fin,
+  assertions avec valeurs attendues et obtenues).
+- Après un relancement, attendre l'éditeur via les fichiers `Saved/VibeUE/Signals/editor-<pid>-*.json`
+  (prêt, carte courante, game thread bloqué) plutôt qu'en relançant des appels MCP.
+- Un appel Python qui a expiré : lire `vibeue.last_python_result()` au lieu de le relancer.
+- Nouveau réglage en cours d'itération : d'abord une CVar déclarée dans un `.cpp` (Live Coding, sans
+  redémarrage), promue en UPROPERTY dans l'unique changement de `.h` du lot.
+- Assets : régler les paramètres d'une instance de matériau plutôt que le matériau maître (pas de
+  recompilation de shaders), lire l'Asset Registry sans charger les assets, compiler chaque Blueprint une
+  seule fois par lot.
 
 **Sécurité de l'éditeur**
 - **Ne jamais piloter l'UI de l'éditeur** (clics, saisie, glisser). `SlateInspectorToolset` est désactivé
