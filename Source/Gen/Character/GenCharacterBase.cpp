@@ -112,7 +112,9 @@ void AGenCharacterBase::MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFin
 
 void AGenCharacterBase::StartChannel(UClass* Ability, float Duration)
 {
-	// Comme StartCast, sans effet ni SetFaceAim : la fenêtre ne fige pas l'orientation du personnage
+	// Comme StartCast, sans effet : la fenêtre ne fige pas l'orientation du personnage. Remis à faux même si
+	// l'appelant n'a pas retiré l'incantation avant (revue V2-V4, M9)
+	SetFaceAim(false);
 	CastInfo = FGenCastInfo();
 	CastInfo.Ability = Ability;
 	CastInfo.Duration = Duration;
@@ -162,6 +164,7 @@ void AGenCharacterBase::ServerReportFedResource_Implementation(UClass* Ability, 
 void AGenCharacterBase::OnRep_CastInfo()
 {
 	// Autres clients : la rotation arrive déjà par le mouvement répliqué, seul l'effet est à gérer
+	CastInfoRepFrame = GFrameCounter;
 	UpdateCastFX();
 }
 
@@ -173,25 +176,42 @@ void AGenCharacterBase::UpdateCastFX()
 	}
 
 	UNiagaraSystem* WantedFX = CastInfo.IsCasting() ? CastInfo.FX.Get() : nullptr;
-	if (CastFXComponent && CastFXComponent->GetAsset() == WantedFX && CastFXComponent->IsActive())
-	{
-		return;
-	}
+	const bool bKeepFX = CastFXComponent && CastFXComponent->GetAsset() == WantedFX && CastFXComponent->IsActive();
 
 	// Fin (ou changement) d'incantation : on laisse les particules s'éteindre d'elles-mêmes
-	if (CastFXComponent)
+	if (!bKeepFX && CastFXComponent)
 	{
 		CastFXComponent->Deactivate();
 		CastFXComponent = nullptr;
 	}
 
-	if (WantedFX)
+	if (!bKeepFX && WantedFX)
 	{
 		CastFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(WantedFX, GetMesh(), CastInfo.FXSocket,
 			FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, /*bAutoDestroy*/ true);
-		// Proxy arrivé en cours de nourrissage : l'effet prend tout de suite la taille du compte nourri (V2)
-		ApplyCastFXScale(FedResource);
 	}
+
+	// Taille du compte nourri de l'incantation EN COURS (V2) : un proxy arrivé en plein nourrissage la prend tout de suite,
+	// et un sort qui reprend le même effet ne garde pas la taille du précédent (revue V2-V4, M1)
+	ApplyCastFXScale(GetFedCountForCurrentCast());
+}
+
+uint8 AGenCharacterBase::GetFedCountForCurrentCast() const
+{
+	if (!CastInfo.IsCasting())
+	{
+		return 0;
+	}
+
+	// Serveur et client propriétaire : l'affichage connaît le sort qui le possède
+	if (FedDisplay.Source != FObjectKey())
+	{
+		const UObject* DisplayOwner = FedDisplay.Source.ResolveObjectPtr();
+		return DisplayOwner && DisplayOwner->GetClass() == CastInfo.Ability ? FedDisplay.Count : 0;
+	}
+
+	// Autres clients : le compte répliqué appartient à l'incantation vue à sa dernière réception
+	return CastInfo.StartTime == FedRepCastStartTime ? FedResource : 0;
 }
 
 void AGenCharacterBase::SetFaceAim(bool bFaceAim)
@@ -298,11 +318,14 @@ float AGenCharacterBase::GetMaxResource() const
 void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)
 {
 	const uint8 Old = FedResource;
+	// Revue V2-V4, M1 : un autre sort prend l'affichage (ex : B nourrit pendant le départ différé de A, qui garde ses
+	// flammes affichées) => son compte part de 0, son premier seuil fait son pop au lieu d'un "2 -> 1" muet
+	const bool bNewSource = Count > 0 && FedDisplay.Source != FObjectKey(Source);
 	FedDisplay.Set(FObjectKey(Source), Count);
 	FedResource = FedDisplay.Count;
-	if (FedResource != Old)
+	if (FedResource != Old || bNewSource)
 	{
-		NotifyFedResourceChanged(Old, FedResource);
+		NotifyFedResourceChanged(bNewSource ? 0 : Old, FedResource);
 	}
 }
 
@@ -327,13 +350,24 @@ void AGenCharacterBase::ResetFedResource()
 
 void AGenCharacterBase::OnRep_FedResource(uint8 OldValue)
 {
-	if (FedResource != OldValue)
+	// Revue V2-V4, M1 : compte d'une autre incantation que la dernière fois (un sort a pris l'affichage d'un sort encore
+	// affiché) => il repart de 0, le premier seuil du nouveau sort fait son pop
+	const bool bCasting = CastInfo.IsCasting();
+	const bool bNewCast = bCasting && CastInfo.StartTime != FedRepCastStartTime;
+	const int32 Old = bNewCast ? 0 : OldValue;
+	FedRepCastStartTime = bCasting ? CastInfo.StartTime : -1.f;
+
+	// Revue V2-V4, M2 : pop seulement pour une hausse vue APRÈS l'incantation (reçue dans une image précédente). Reçus
+	// ensemble (personnage devenu pertinent en plein nourrissage), le compte s'affiche sans pop.
+	const bool bAllowPop = bCasting && CastInfoRepFrame != GFrameCounter;
+
+	if (FedResource != Old)
 	{
-		NotifyFedResourceChanged(OldValue, FedResource);
+		NotifyFedResourceChanged(Old, FedResource, bAllowPop);
 	}
 }
 
-void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New)
+void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New, bool bAllowPop)
 {
 	// Purement cosmétique : jamais sur le serveur dédié (GetNetMode, valable aussi en PIE, Art Bible §8.5)
 	if (GetNetMode() == NM_DedicatedServer)
@@ -346,8 +380,10 @@ void AGenCharacterBase::NotifyFedResourceChanged(int32 Old, int32 New)
 
 	// Pop du seuil : exécuté localement sur chaque client (pas de RPC ni de réplication du cue), seulement quand le
 	// compte augmente. Le client propriétaire le joue sur sa prédiction, les autres sur le compte répliqué.
-	if (GenIndicatorRules::IsThresholdPop(Old, New))
+	if (bAllowPop && GenIndicatorRules::IsThresholdPop(Old, New))
 	{
+		// Contrat du cue (revue V2-V4, M3) : RawMagnitude = compte ABSOLU atteint. Une réplication regroupée (0 -> 2) ne
+		// donne qu'un pop : GCN_Curffe_FeedThreshold se dimensionne sur ce compte, jamais sur "+1"
 		FGameplayCueParameters Params;
 		Params.RawMagnitude = New;
 		Params.Location = CastFXComponent ? CastFXComponent->GetComponentLocation() : GetActorLocation();

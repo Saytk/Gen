@@ -166,7 +166,11 @@ public:
 	/** Seuils de nourrissage pour les cosmétiques (Foyer, charge de la main, indicateurs). Rien sur un serveur dédié. */
 	FGenFedResourceChanged OnFedResourceChanged;
 
-	/** Pop d'un seuil (compte en hausse seulement). Rien sur un serveur dédié. */
+	/**
+	 * Pop d'un seuil (compte en hausse seulement), avec le compte ABSOLU atteint : une réplication regroupée (0 -> 2)
+	 * ne donne qu'un pop, qui doit donc se dimensionner sur ce compte, jamais sur "+1". Même contrat pour le GameplayCue
+	 * GameplayCue.Feed.Threshold (RawMagnitude = compte absolu). Rien sur un serveur dédié.
+	 */
 	FGenFedThresholdReached OnFedThresholdReached;
 
 	/**
@@ -229,12 +233,17 @@ public:
 	/**
 	 * Part écoulée de l'incantation ou de la canalisation en cours, 0..1 (0 sans incantation), en temps serveur.
 	 * Grandit même quand la barre se vide : horloge des télégraphes centrés (UGenSpellIndicatorComponent).
+	 * TODO (revue V2-V4, M8) : faux pour un sort nourri après le repli (Duration = nourrissage complet + incantation) ;
+	 * aucun télégraphe centré n'est nourri aujourd'hui. Passer par GetCastBarLayout le jour où il y en aura un.
 	 */
 	float GetCastElapsedFraction() const;
 
 	const FGenCastInfo& GetCastInfo() const { return CastInfo; }
 
-	/** 0..1, ou -1 si aucune incantation. */
+	/**
+	 * Remplissage de la barre de cast, 0..1, ou -1 si aucune incantation. Pour une canalisation (bChannel), c'est la
+	 * part RESTANTE (la barre se vide, UI §4.5) ; la part écoulée est GetCastElapsedFraction.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Gen|Cast")
 	float GetCastProgress() const;
 
@@ -308,13 +317,28 @@ protected:
 	 * Toutes les écritures de FedResource y passent (serveur, client propriétaire, OnRep des autres clients).
 	 * Diffuse le changement, met l'effet d'incantation à l'échelle et joue le pop local du seuil. Rien sur un serveur dédié.
 	 */
-	void NotifyFedResourceChanged(int32 Old, int32 New);
+	void NotifyFedResourceChanged(int32 Old, int32 New, bool bAllowPop = true);
 
 	/** Échelle de CastFXComponent pour Count unités nourries (1 + CastFXScalePerFed × Count). */
 	void ApplyCastFXScale(int32 Count);
 
 	/** Propriétaire de l'affichage des unités nourries (serveur et client propriétaire, non répliqué). */
 	GenFeeding::FFedDisplay FedDisplay;
+
+	/**
+	 * Autres clients (revue V2-V4, M1) : début (StartTime) de l'incantation vue à la dernière réception de FedResource,
+	 * -1 = jamais. Un compte reçu pour une autre incantation repart de 0 : le premier seuil du nouveau sort fait son pop.
+	 */
+	float FedRepCastStartTime = -1.f;
+
+	/**
+	 * Autres clients (revue V2-V4, M2) : image de la dernière réception de CastInfo. Un compte reçu dans la même image
+	 * (personnage devenu pertinent en plein nourrissage, arrivée en cours de partie) ne fait pas de pop.
+	 */
+	uint64 CastInfoRepFrame = 0;
+
+	/** Unités nourries par l'incantation EN COURS (0 si l'affichage appartient à un autre sort) : taille de l'effet. */
+	uint8 GetFedCountForCurrentCast() const;
 
 	UFUNCTION(Client, Reliable)
 	void ClientApplyKnockback(FVector_NetQuantize10 LaunchVelocity);

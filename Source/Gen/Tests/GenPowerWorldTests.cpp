@@ -186,4 +186,44 @@ bool FGenResilienceTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenFedDisplaySourceSwitchTest, "Gen.Visuals.FedDisplaySourceSwitch",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenFedDisplaySourceSwitchTest::RunTest(const FString& Parameters)
+{
+	// Revue V2-V4, M1 : A garde 2 flammes affichées (départ différé), B prend l'affichage à 1 => pop "0 -> 1" pour B
+	FScopedTestWorld TestWorld;
+	AGenTrainingDummy* Caster = TestWorld.SpawnDummy();
+	if (!TestNotNull(TEXT("lanceur"), Caster))
+	{
+		return false;
+	}
+	const UObject* SpellA = UGenGE_Damage::StaticClass()->GetDefaultObject();
+	const UObject* SpellB = UGenGE_Gain::StaticClass()->GetDefaultObject();
+
+	TArray<int32> Pops;
+	TArray<FIntPoint> Changes;
+	Caster->OnFedThresholdReached.AddLambda([&Pops](AGenCharacterBase*, int32 New) { Pops.Add(New); });
+	Caster->OnFedResourceChanged.AddLambda([&Changes](AGenCharacterBase*, int32 Old, int32 New) { Changes.Add(FIntPoint(Old, New)); });
+
+	Caster->SetFedResource(SpellA, 1);
+	Caster->SetFedResource(SpellA, 2);
+	TestEqual(TEXT("A : deux pops"), Pops.Num(), 2);
+
+	Caster->SetFedResource(SpellB, 1);
+	TestEqual(TEXT("B prend l'affichage : son premier seuil fait un pop"), Pops.Num(), 3);
+	TestEqual(TEXT("B : pop à 1"), Pops.Last(), 1);
+	TestTrue(TEXT("B : changement vu comme 0 -> 1"), Changes.Num() > 0 && Changes.Last() == FIntPoint(0, 1));
+	TestEqual(TEXT("compte affiché"), Caster->GetFedResource(), 1);
+
+	Caster->SetFedResource(SpellA, 0);
+	TestEqual(TEXT("A (lancé) n'efface pas l'affichage de B"), Caster->GetFedResource(), 1);
+	Caster->SetFedResource(SpellB, 2);
+	TestEqual(TEXT("B : second seuil"), Pops.Num(), 4);
+	Caster->SetFedResource(SpellB, 0);
+	TestEqual(TEXT("B lancé : retour à 0 sans pop"), Pops.Num(), 4);
+	TestEqual(TEXT("affichage vide"), Caster->GetFedResource(), 0);
+	return true;
+}
+
 #endif

@@ -28,6 +28,9 @@ using namespace GenNetTest;
  * - Visée en avance : le serveur garde l'incantation (barre vue par les autres) jusqu'à sa propre fin, un seul tir
  *   même si la visée arrive deux fois, et un étourdissement pendant l'attente annule le tir sans coût.
  * - Répétition automatique : M1 maintenu ne relance pas la boule de feu pendant l'incantation d'un autre sort.
+ * - Fenêtre de grâce du serveur (revue V2-V4, I1) : State.FastFeeding / State.FreeResource qui changent sur le serveur
+ *   juste avant (ou juste après) l'appui ou le lancer du client ne lui coûtent ni une flamme ni une dépense ; changés
+ *   longtemps avant, les règles du serveur s'appliquent (rien à gagner pour un client qui garderait le tag).
  * Les appuis passent par l'ASC du client (AbilityInputTagPressed / Released + ProcessAbilityInput), comme le
  * PlayerController, sans injection d'input.
  */
@@ -517,6 +520,135 @@ NETWORK_TEST_CLASS(CastRules, "Gen.Net")
 		{
 			ServerCasterASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned")), 1, EGameplayTagReplicationState::TagOnly);
 		});
+	}
+
+
+	// --- Fenêtre de grâce du serveur (revue V2-V4, I1) -----------------------------------------------------
+
+	/** Tag lâche (non répliqué) sur une seule machine : le serveur (bServer) ou le client 0. bAdd faux = retrait. */
+	void QueueLooseTagOnOne(const TCHAR* TagName, bool bServer, bool bAdd)
+	{
+		const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(TagName));
+		if (bServer)
+		{
+			Network.ThenServer(bAdd ? TEXT("Serveur seul : pose le tag") : TEXT("Serveur seul : retire le tag"), [this, Tag, bAdd](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsTrue(Tag.IsValid(), TEXT("Tag inconnu")));
+				if (bAdd)
+				{
+					ServerCasterASC->AddLooseGameplayTag(Tag);
+				}
+				else
+				{
+					ServerCasterASC->RemoveLooseGameplayTag(Tag);
+				}
+			});
+		}
+		else
+		{
+			Network.ThenClient(bAdd ? TEXT("Client 0 seul : pose le tag") : TEXT("Client 0 seul : retire le tag"), 0, [Tag, bAdd](FBasePIENetworkComponentState& Client)
+			{
+				if (bAdd)
+				{
+					GetLocalGenASC(Client)->AddLooseGameplayTag(Tag);
+				}
+				else
+				{
+					GetLocalGenASC(Client)->RemoveLooseGameplayTag(Tag);
+				}
+			});
+		}
+	}
+
+	/** Fin de l'embrasement sur le serveur juste avant l'appui (le client a encore le tag) : 3 flammes validées. */
+	TEST_METHOD(GreatFireball_FastFeedingEndsOnServerJustBeforePress_ThreeValidated)
+	{
+		QueueSetup();
+		QueueLooseTagOnCaster(TEXT("State.FastFeeding"));
+		QueueLooseTagOnOne(TEXT("State.FastFeeding"), /*bServer*/ true, /*bAdd*/ false);
+		Network.ThenClient(TEXT("Client 0 : appuie aussitôt (tag encore là chez lui)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, true); });
+		QueueClientWait(TEXT("Client 0 : touche tenue 0.6 s (3 flammes au rythme rapide)"), 0.6f);
+		Network
+			.ThenClient(TEXT("Client 0 : relâche"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
+			.UntilServer(TEXT("Serveur : projectile apparu"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : 3 flammes validées dans la fenêtre de grâce"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				ASSERT_THAT(IsNear(MaxFlames - 3.f, FlamesAtSpawn, 0.01f, TEXT("3 flammes, sans correction 3 -> 2")));
+			});
+	}
+
+	/** Cas symétrique (début de l'embrasement) : le tag est posé sur le serveur juste APRÈS son activation. */
+	TEST_METHOD(GreatFireball_FastFeedingStartsOnServerJustAfterPress_ThreeValidated)
+	{
+		QueueSetup();
+		QueueLooseTagOnOne(TEXT("State.FastFeeding"), /*bServer*/ false, /*bAdd*/ true);
+		Network
+			.ThenClient(TEXT("Client 0 : appuie (tag prédit chez lui seulement)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, true); })
+			.UntilServer(TEXT("Serveur : sort activé"), [this](FBasePIENetworkComponentState&) { return IsAbilityActive(ServerCasterASC.Get(), GreatFireballClass); }, DefaultWait());
+		QueueLooseTagOnOne(TEXT("State.FastFeeding"), /*bServer*/ true, /*bAdd*/ true);
+		QueueClientWait(TEXT("Client 0 : touche tenue 0.6 s"), 0.6f);
+		Network
+			.ThenClient(TEXT("Client 0 : relâche"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
+			.UntilServer(TEXT("Serveur : projectile apparu"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : 3 flammes validées"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				ASSERT_THAT(IsNear(MaxFlames - 3.f, FlamesAtSpawn, 0.01f, TEXT("Tag posé juste après l'activation : intervalle rapide")));
+			});
+	}
+
+	/**
+	 * Fin des flammes illimitées sur le serveur juste avant le LANCER du client (fin de son incantation de 0.5 s) : le
+	 * client lance avec le tag et ne dépense rien ; le serveur non plus (grâce), le Foyer ne remonte ni ne redescend.
+	 */
+	TEST_METHOD(GreatFireball_FreeResourceEndsOnServerJustBeforeRelease_NoSpend)
+	{
+		QueueSetup();
+		QueueLooseTagOnCaster(TEXT("State.FreeResource"));
+		Network.ThenClient(TEXT("Client 0 : appuie"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, true); });
+		QueueClientWait(TEXT("Client 0 : touche tenue 0.7 s (2 flammes)"), 0.7f);
+		Network.ThenClient(TEXT("Client 0 : relâche (incantation de 0.5 s)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); });
+		QueueClientWait(TEXT("Client 0 : fin d'incantation imminente"), 0.45f);
+		QueueLooseTagOnOne(TEXT("State.FreeResource"), /*bServer*/ true, /*bAdd*/ false);
+		Network
+			.UntilServer(TEXT("Serveur : projectile apparu"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : aucune flamme dépensée dans la fenêtre de grâce"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				ASSERT_THAT(IsTrue(bCooldownAtSpawn, TEXT("Le sort est bien lancé")));
+				ASSERT_THAT(IsNear(MaxFlames, FlamesAtSpawn, 0.01f, TEXT("Gratuit comme chez le client")));
+			})
+			.UntilClient(TEXT("Client 0 : Foyer plein"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				return FMath::IsNearlyEqual(GetAttribute(GetLocalGenASC(Client), UGenAttributeSet::GetResourceAttribute()), MaxFlames, 0.01f);
+			}, DefaultWait());
+	}
+
+	/**
+	 * Contrôle (rien à gagner hors de la fenêtre) : les deux tags retirés sur le serveur 1 s avant l'appui, gardés par
+	 * le client. Le client nourrit 3 flammes au rythme rapide sans rien dépenser ; le serveur corrige 3 -> 2 (rythme
+	 * normal) et dépense les 2.
+	 */
+	TEST_METHOD(GreatFireball_TagsEndedOnServerLongBefore_ServerRulesApply)
+	{
+		TestRunner->AddExpectedMessage(TEXT("Nourrissage corrigé par le serveur"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, -1);
+		QueueSetup();
+		QueueLooseTagOnCaster(TEXT("State.FastFeeding"));
+		QueueLooseTagOnCaster(TEXT("State.FreeResource"));
+		QueueLooseTagOnOne(TEXT("State.FastFeeding"), /*bServer*/ true, /*bAdd*/ false);
+		QueueLooseTagOnOne(TEXT("State.FreeResource"), /*bServer*/ true, /*bAdd*/ false);
+		QueueServerWait(TEXT("Serveur : 1 s après la fin des tags"), 1.f);
+		Network.ThenClient(TEXT("Client 0 : appuie (tags encore chez lui)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, true); });
+		QueueClientWait(TEXT("Client 0 : touche tenue 0.6 s"), 0.6f);
+		Network
+			.ThenClient(TEXT("Client 0 : relâche"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
+			.UntilServer(TEXT("Serveur : projectile apparu"), [this](FBasePIENetworkComponentState&) { return ProjectileCount > 0; }, DefaultWait())
+			.ThenServer(TEXT("Serveur : ses règles s'appliquent"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(1, ProjectileCount));
+				ASSERT_THAT(IsNear(MaxFlames - 2.f, FlamesAtSpawn, 0.01f, TEXT("Corrigé à 2 (rythme normal) et dépensé")));
+			});
 	}
 
 	// --- Répétition automatique ------------------------------------------------------------------------

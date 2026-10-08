@@ -23,7 +23,9 @@ using namespace GenNetTest;
  * - Le seuil (OnFedThresholdReached, joué avec le GameplayCue local GameplayCue.Feed.Threshold) part sur le client
  *   du lanceur (compte prédit) et chez l'observateur (compte répliqué, OnRep_FedResource), seulement quand le compte
  *   augmente ; jamais au lancer (retour à 0) et jamais sur le serveur dédié.
- * - V3 : le montage de nourrissage part dès l'appui et l'observateur le voit pendant le nourrissage.
+ * - Annuler (touche d'annulation) puis rappuyer : pas de pop au retour à 0, un pop pour le premier seuil du nouveau sort
+ *   (revue V2-V4, M1/M2), chez le lanceur comme chez l'observateur.
+ * - V3 : le montage de nourrissage part dès l'appui et l'observateur le voit pendant le nourrissage, puis la charge.
  * - V4 : une canalisation (fenêtre minutée) se réplique, la barre de l'observateur se vide pendant que la part écoulée
  *   grandit.
  */
@@ -121,6 +123,18 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 		});
 	}
 
+	/** Nombre de retours à 0 vus par la machine Key (annulation, lancer). */
+	int32 CountReturnsToZero(int32 Key) const
+	{
+		const TArray<FFedRecord>* List = Records.Find(Key);
+		int32 Count = 0;
+		for (const FFedRecord& Record : List ? *List : TArray<FFedRecord>())
+		{
+			Count += Record.New == 0 ? 1 : 0;
+		}
+		return Count;
+	}
+
 	/** Le client a vu le nourrissage monter puis revenir à 0 (lancer). */
 	bool HasSeenFeedAndRelease(int32 Key) const
 	{
@@ -195,6 +209,71 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 			});
 	}
 
+
+	/**
+	 * Revue V2-V4 (test manquant) : 1 flamme, annulation par la touche d'annulation, nouvel appui aussitôt, 1 flamme, lancer.
+	 * Pas de pop au retour à 0 ; un pop pour le premier seuil de chaque sort, chez le lanceur ET l'observateur.
+	 * Tenue de 0.55 s : au-delà de l'estimation du serveur (0.1 + 0.3 s), avant le 2e seuil (0.6 s).
+	 */
+	TEST_METHOD(Threshold_CancelThenPressAgain_PopsForTheNewSpell)
+	{
+		Network
+			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
+			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
+			.ThenServer(TEXT("Serveur : écarte l'autre joueur, écoute le lanceur"), [this](FBasePIENetworkComponentState& Server)
+			{
+				ASSERT_THAT(IsNotNull(GreatFireballClass.Get(), TEXT("GA_GreatFireball introuvable")));
+				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
+				AGenPlayerCharacter* Other = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
+				ASSERT_THAT(IsNotNull(Caster));
+				ASSERT_THAT(IsNotNull(Other));
+				CasterPlayerId = Caster->GetPlayerState()->GetPlayerId();
+				Other->TeleportTo(Caster->GetActorLocation() + FVector(0.f, 5000.f, 0.f), Other->GetActorRotation(), false, true);
+				Listen(Caster, ServerKey);
+			})
+			.UntilClients(TEXT("Clients : le pion du lanceur est connu"), [this](FBasePIENetworkComponentState& Client) { return FindCaster(Client.World) != nullptr; }, DefaultWait())
+			.ThenClients(TEXT("Clients : écoutent le lanceur"), [this](FBasePIENetworkComponentState& Client)
+			{
+				Listen(FindCaster(Client.World), Client.ClientIndex);
+			})
+			.ThenClient(TEXT("Client 0 : visée déterministe, appuie"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
+				ASSERT_THAT(IsNotNull(PC));
+				PC->bDebugAimOverride = true;
+				PC->DebugAimLocation = PC->GetPawn()->GetActorLocation() + FVector(1000.f, 0.f, 0.f);
+				SendInput(Client, GreatFireballClass, true);
+				ClientMark = Client.World->GetTimeSeconds();
+			})
+			.UntilClient(TEXT("Client 0 : touche tenue 0.55 s (1 flamme)"), 0, [this](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + 0.55f; }, DefaultWait())
+			.ThenClient(TEXT("Client 0 : annule, relâche et rappuie"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				ASSERT_THAT(AreEqual(1, GetLocalGenASC(Client)->CancelPendingCasts(), TEXT("Le sort en nourrissage est annulé")));
+				SendInput(Client, GreatFireballClass, false);
+				SendInput(Client, GreatFireballClass, true);
+				ClientMark = Client.World->GetTimeSeconds();
+			})
+			.UntilClient(TEXT("Client 0 : touche tenue 0.55 s (1 flamme)"), 0, [this](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + 0.55f; }, DefaultWait())
+			.ThenClient(TEXT("Client 0 : relâche (lancer)"), 0, [this](FBasePIENetworkComponentState& Client) { SendInput(Client, GreatFireballClass, false); })
+			.UntilClients(TEXT("Clients : annulation puis lancer vus"), [this](FBasePIENetworkComponentState& Client) { return CountReturnsToZero(Client.ClientIndex) >= 2; }, DefaultWait())
+			.ThenServer(TEXT("Serveur dédié : aucun événement cosmétique"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(0, Records.FindOrAdd(ServerKey).Num(), TEXT("Rien sur le serveur dédié")));
+				ASSERT_THAT(AreEqual(0, OrphanPops, TEXT("Chaque pop suit un changement du compte")));
+			})
+			.ThenClients(TEXT("Clients : un pop par sort, aucun au retour à 0"), [this](FBasePIENetworkComponentState& Client)
+			{
+				const TArray<FFedRecord>& List = Records.FindOrAdd(Client.ClientIndex);
+				int32 Pops = 0;
+				for (const FFedRecord& Record : List)
+				{
+					ASSERT_THAT(AreEqual(Record.New > Record.Old, Record.bPop, *FString::Printf(TEXT("%d -> %d"), Record.Old, Record.New)));
+					Pops += Record.bPop ? 1 : 0;
+				}
+				ASSERT_THAT(AreEqual(2, Pops, TEXT("Le premier seuil du nouveau sort fait son pop")));
+			});
+	}
+
 	// --- Montage de nourrissage (V3) ------------------------------------------------------------------------
 
 	/** Pose FeedMontage sur l'instance du sort (pas le CDO) : les assets des phases arrivent avec la Task E5. */
@@ -209,6 +288,14 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 		}
 		Property->SetObjectPropertyValue_InContainer(Instance, Montage);
 		return true;
+	}
+
+	/** ChargeMontage de la grande boule de feu (propriété protégée, lue par réflexion sur le CDO). */
+	UAnimMontage* GetGreatFireballChargeMontage() const
+	{
+		FObjectProperty* Property = FindFProperty<FObjectProperty>(UGenGA_Cast::StaticClass(), TEXT("ChargeMontage"));
+		const UObject* CDO = GreatFireballClass ? GreatFireballClass->GetDefaultObject() : nullptr;
+		return Property && CDO ? Cast<UAnimMontage>(Property->GetObjectPropertyValue_InContainer(CDO)) : nullptr;
 	}
 
 	/** Montage en cours du lanceur vu par la machine (ASC du PlayerState). */
@@ -267,9 +354,14 @@ NETWORK_TEST_CLASS(FeedVisuals, "Gen.Net")
 				ASSERT_THAT(IsTrue(Caster->GetCastInfo().FeedEndTime <= 0.f, TEXT("Le geste a été vu pendant le nourrissage")));
 				SendInput(Client, GreatFireballClass, false);
 			})
-			.UntilClient(TEXT("Client 1 : le geste de nourrissage est remplacé (charge, lancer)"), 1, [this, FeedPose](FBasePIENetworkComponentState& Client)
+			.ThenClient(TEXT("Client 1 : la grande boule de feu a un montage de charge"), 1, [this](FBasePIENetworkComponentState&)
 			{
-				return GetCasterMontage(Client.World) != FeedPose;
+				ASSERT_THAT(IsNotNull(GetGreatFireballChargeMontage(), TEXT("ChargeMontage de GA_GreatFireball")));
+			})
+			// Revue V2-V4 : remplacé PAR LA CHARGE (pas seulement arrêté)
+			.UntilClient(TEXT("Client 1 : le geste de nourrissage est remplacé par la charge"), 1, [this](FBasePIENetworkComponentState& Client)
+			{
+				return GetCasterMontage(Client.World) == GetGreatFireballChargeMontage();
 			}, DefaultWait());
 	}
 

@@ -119,4 +119,23 @@ bool FGenShotExplosionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenServerTagGraceTest, "Gen.Feeding.ServerTagGrace",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenServerTagGraceTest::RunTest(const FString& Parameters)
+{
+	// Revue V2-V4, I1 : IsTagChangeInGrace(ChangeTime, ReferenceTime), fenêtre de 0.25 s des deux côtés
+	TestEqual(TEXT("grâce de 0.25 s"), GenFeeding::ServerTagGrace, 0.25f);
+	TestTrue(TEXT("retiré 50 ms avant l'activation"), GenFeeding::IsTagChangeInGrace(9.95, 10.0));
+	TestTrue(TEXT("retiré pile 0.25 s avant"), GenFeeding::IsTagChangeInGrace(9.75, 10.0));
+	TestFalse(TEXT("retiré 1 s avant : plus de grâce"), GenFeeding::IsTagChangeInGrace(9.0, 10.0));
+	TestTrue(TEXT("posé 0.1 s après l'activation (début de l'embrasement)"), GenFeeding::IsTagChangeInGrace(10.1, 10.0));
+	TestFalse(TEXT("posé 0.5 s après"), GenFeeding::IsTagChangeInGrace(10.5, 10.0));
+	TestFalse(TEXT("jamais changé"), GenFeeding::IsTagChangeInGrace(-1.e9, 10.0));
+	// Serveur allumé depuis des jours : temps en double, la fenêtre reste exacte
+	TestTrue(TEXT("temps longs"), GenFeeding::IsTagChangeInGrace(864000.8, 864001.0));
+	TestFalse(TEXT("temps longs, hors fenêtre"), GenFeeding::IsTagChangeInGrace(864000.7, 864001.0));
+	return true;
+}
+
 #endif

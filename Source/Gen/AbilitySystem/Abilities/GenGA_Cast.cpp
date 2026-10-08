@@ -15,6 +15,7 @@
 #include "AbilitySystem/Tasks/GenAbilityTask_TargetDataUnderCursor.h"
 #include "AbilitySystemComponent.h"
 #include "Actors/GenProjectile.h"
+#include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Character/GenCharacterBase.h"
 #include "Champions/Curffe/CurffeTuning.h"
@@ -200,9 +201,15 @@ void UGenGA_Cast::StartFeeding()
 	FeedStartTime = GetWorld()->GetTimeSeconds();
 
 	// Intervalle figé pour tout ce nourrissage (Combustion qui commence ou finit pendant l'appui n'y change rien).
-	// Chaque machine prend le sien à son activation ; la tolérance de ValidateFedCount absorbe un écart dans la latence.
+	// Chaque machine prend le sien à son activation. Revue V2-V4, I1 : la tolérance de ValidateFedCount n'absorbe PAS
+	// un désaccord à la fin de l'embrasement (le client s'arrête seul au plafond, 0.45 s, et le serveur validerait au
+	// rythme normal : 3 -> 2). Le serveur d'un client distant prend donc aussi l'intervalle rapide si le tag a été
+	// retiré juste avant son activation (fenêtre de grâce, GenFeeding::ServerTagGrace). Cas symétrique au début de
+	// l'embrasement (tag prédit par le client, pas encore posé sur le serveur) : traité à la fin du nourrissage
+	// (OnFeedSynced), si le tag est posé juste après l'activation.
 	const UAbilitySystemComponent* FeedASC = GetAbilitySystemComponentFromActorInfo();
-	ActiveFeedInterval = GenFeeding::GetFeedInterval(FeedInterval, FeedASC && FeedASC->HasMatchingGameplayTag(GenGameplayTags::State_FastFeeding));
+	const bool bFastFeeding = (FeedASC && FeedASC->HasMatchingGameplayTag(GenGameplayTags::State_FastFeeding)) || IsFastFeedingInGrace(/*bAddedAfterActivation*/ false);
+	ActiveFeedInterval = GenFeeding::GetFeedInterval(FeedInterval, bFastFeeding);
 
 	// Unités disponibles à l'appui : autant de crans sur la barre, et jamais plus d'unités nourries
 	// (une flamme régénérée pendant l'appui ne s'ajoute pas)
@@ -222,9 +229,18 @@ void UGenGA_Cast::StartFeeding()
 	// autres joueurs, Art Bible §12 Q41). Une section par seuil : Feed_1 dure un intervalle de base, x2 si rapide.
 	if (FeedMontage && FeedSlotsAtPress > 0)
 	{
-		const float StepLength = FeedMontage->GetSectionLength(0);
-		const float Rate = GetPhaseRate(FeedMontage, StepLength, ActiveFeedInterval, GenMontageTiming::GetExpectedFeedRate(FeedInterval, ActiveFeedInterval));
-		PlayPhaseMontage(FeedMontage, Rate, /*bStopWhenAbilityEnds*/ true);
+		if (IsServerForRemoteClient())
+		{
+			// Revue V2-V4, I2 : les autres joueurs voient les seuils sur l'estimation du serveur, en retard de
+			// ServerEstimateLag (ScheduleFeedTick) : le geste part avec le même retard, pose et pop restent alignés
+			FeedMontageDelayTask = UAbilityTask_WaitDelay::WaitDelay(this, GenFeeding::ServerEstimateLag);
+			FeedMontageDelayTask->OnFinish.AddDynamic(this, &ThisClass::OnFeedMontageDelayFinished);
+			FeedMontageDelayTask->ReadyForActivation();
+		}
+		else
+		{
+			PlayFeedMontage();
+		}
 	}
 
 	if (IsLocallyControlled())
@@ -255,6 +271,65 @@ void UGenGA_Cast::StartFeeding()
 		// Estimation cosmétique pour les autres joueurs (les flammes quittent l'orbite)
 		ScheduleFeedTick();
 	}
+}
+
+void UGenGA_Cast::PlayFeedMontage()
+{
+	if (!FeedMontage)
+	{
+		return;
+	}
+
+	// Revue V2-V4, M6 : Feed_1 par son nom (l'ordre des sections dépend du script qui a créé le montage)
+	const int32 FirstSection = FeedMontage->GetSectionIndex(TEXT("Feed_1"));
+	const float StepLength = FeedMontage->GetSectionLength(FirstSection != INDEX_NONE ? FirstSection : 0);
+	const float Rate = GetPhaseRate(FeedMontage, StepLength, ActiveFeedInterval, GenMontageTiming::GetExpectedFeedRate(FeedInterval, ActiveFeedInterval));
+	PlayPhaseMontage(FeedMontage, Rate, /*bStopWhenAbilityEnds*/ true);
+}
+
+void UGenGA_Cast::OnFeedMontageDelayFinished()
+{
+	FeedMontageDelayTask = nullptr;
+	if (bIsFeeding)
+	{
+		PlayFeedMontage();
+	}
+}
+
+void UGenGA_Cast::StopFeedMontage()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!FeedMontage || !ASC)
+	{
+		return;
+	}
+
+	if (ASC->GetCurrentMontage() == FeedMontage)
+	{
+		ASC->CurrentMontageStop(0.1f); // répliqué aux autres joueurs
+		return;
+	}
+
+	// Plus le montage courant de l'ASC (un autre montage l'a remplacé dans un autre groupe de slots) : arrêt local,
+	// sur le serveur et le client du lanceur. Les autres clients ne reçoivent qu'un montage : d'où l'avertissement
+	// de PlayPhaseMontage et la vérification des assets (même groupe pour toutes les phases d'un sort).
+	const FGameplayAbilityActorInfo* Info = GetCurrentActorInfo();
+	UAnimInstance* AnimInstance = Info ? Info->GetAnimInstance() : nullptr;
+	if (AnimInstance && AnimInstance->Montage_IsPlaying(FeedMontage))
+	{
+		AnimInstance->Montage_Stop(0.1f, FeedMontage);
+	}
+}
+
+bool UGenGA_Cast::IsFastFeedingInGrace(bool bAddedAfterActivation) const
+{
+	// Hôte, client, IA : c'est le côté qui prédit, ses tags font foi
+	if (!IsServerForRemoteClient())
+	{
+		return false;
+	}
+	const UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo());
+	return GenASC && GenASC->WasGraceTagChangedNear(GenGameplayTags::State_FastFeeding, bAddedAfterActivation, FeedStartTime);
 }
 
 void UGenGA_Cast::ScheduleFeedTick()
@@ -361,6 +436,15 @@ void UGenGA_Cast::OnFeedSynced()
 	if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
 	{
 		ServerFeedElapsed = GetWorld()->GetTimeSeconds() - FeedStartTime;
+
+		// Revue V2-V4, I1, cas symétrique : State.FastFeeding posé sur le serveur juste APRÈS son activation (début de
+		// l'embrasement : le client l'avait déjà, prédit). La validation se fait sur l'intervalle rapide.
+		const float FastInterval = GenFeeding::GetFeedInterval(FeedInterval, true);
+		if (ActiveFeedInterval > FastInterval && IsFastFeedingInGrace(/*bAddedAfterActivation*/ true))
+		{
+			GEN_CAST_LOG(Verbose, "Nourrissage rapide posé juste après l'activation : validation à %.2fs par unité", FastInterval);
+			ActiveFeedInterval = FastInterval;
+		}
 	}
 
 	// Serveur pour un client distant : FedCount n'est que son estimation, le compte validé est
@@ -377,14 +461,15 @@ void UGenGA_Cast::OnFeedSynced()
 	}
 	MarkFeedEnded(FedVisualCount);
 
-	// V3 : rien ne remplace le geste de nourrissage (pas de ChargeMontage joué) => on l'arrête, sinon la boucle de
-	// sécurité de sa dernière section continuerait jusqu'au CastMontage ou à la fin du sort
-	if (FeedMontage && (CastTime <= 0.f || !ChargeMontage))
+	// V3 : la dernière section du geste de nourrissage boucle (sécurité). Seul un montage du MÊME groupe de slots le
+	// remplace en partant : sans ChargeMontage à suivre, ou avec une charge dans un autre groupe (revue V2-V4, I3),
+	// on l'arrête explicitement, sinon il continuerait jusqu'au lancer ou à la fin du sort
+	if (FeedMontage)
 	{
-		UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-		if (ASC && ASC->GetCurrentMontage() == FeedMontage)
+		const UAnimMontage* NextPhase = CastTime > 0.f ? ChargeMontage.Get() : nullptr;
+		if (!NextPhase || NextPhase->GetGroupName() != FeedMontage->GetGroupName())
 		{
-			ASC->CurrentMontageStop(0.1f);
+			StopFeedMontage();
 		}
 	}
 
@@ -409,6 +494,11 @@ void UGenGA_Cast::EndFeedTasks()
 	{
 		FeedReleaseTask->EndTask();
 		FeedReleaseTask = nullptr;
+	}
+	if (FeedMontageDelayTask)
+	{
+		FeedMontageDelayTask->EndTask();
+		FeedMontageDelayTask = nullptr;
 	}
 }
 
@@ -768,9 +858,15 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 		return false;
 	}
 
-	// Flammes illimitées (State.FreeResource, ex. Combustion) : les unités nourries reviennent au Foyer
-	const UAbilitySystemComponent* OwnerASC = GetAbilitySystemComponentFromActorInfo();
-	if (!OwnerASC || !OwnerASC->HasMatchingGameplayTag(GenGameplayTags::State_FreeResource))
+	// Flammes illimitées (State.FreeResource, ex. Combustion) : les unités nourries reviennent au Foyer.
+	// Revue V2-V4, I1 : serveur d'un client distant, tag retiré à moins de ServerTagGrace de CE lancer (fin de
+	// l'embrasement) => le client, qui ne le perd que ~½ RTT plus tard, a lancé avec et n'a rien dépensé : gratuit aussi.
+	// Référence = le lancer (moment où chaque machine décide), pas l'activation : après un long nourrissage, le client
+	// a perdu le tag bien avant de lancer et dépense lui aussi.
+	const UGenAbilitySystemComponent* OwnerASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo());
+	const bool bFreeResource = OwnerASC && (OwnerASC->HasMatchingGameplayTag(GenGameplayTags::State_FreeResource)
+		|| (IsServerForRemoteClient() && OwnerASC->WasGraceTagChangedNear(GenGameplayTags::State_FreeResource, /*bAdded*/ false, GetWorld()->GetTimeSeconds())));
+	if (!bFreeResource)
 	{
 		SpendResource(Fed);
 	}
@@ -823,6 +919,24 @@ UAbilityTask_PlayMontageAndWait* UGenGA_Cast::PlayPhaseMontage(UAnimMontage* Mon
 	{
 		return nullptr;
 	}
+
+#if !UE_BUILD_SHIPPING
+	// Revue V2-V4, I3 : une phase n'en remplace une autre (et n'arrête la boucle du nourrissage chez les autres joueurs)
+	// que dans le même groupe de slots. Les assets doivent le respecter (vérifié aussi par le script des montages).
+	if (!bWarnedPhaseSlotGroups)
+	{
+		for (const UAnimMontage* Other : { FeedMontage.Get(), ChargeMontage.Get(), CastMontage.Get() })
+		{
+			if (Other && Other != Montage && Other->GetGroupName() != Montage->GetGroupName())
+			{
+				GEN_CAST_LOG(Warning, "%s (groupe de slots %s) et %s (groupe %s) : les phases d'un sort doivent partager un groupe de slots",
+					*GetNameSafe(Montage), *Montage->GetGroupName().ToString(), *GetNameSafe(Other), *Other->GetGroupName().ToString());
+				bWarnedPhaseSlotGroups = true;
+				break;
+			}
+		}
+	}
+#endif
 
 	UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this, NAME_None, Montage, Rate, NAME_None, bStopWhenAbilityEnds, CastMontageRootMotionScale);

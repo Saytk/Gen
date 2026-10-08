@@ -79,6 +79,12 @@ public:
 	/** Serveur : fin (temps du monde) de la fenêtre où le verrou refuse les activations d'un client distant. */
 	double GetCastLockEnforcedUntil() const { return CastLockEnforcedUntil; }
 
+	/**
+	 * Revue V2-V4, I1 : le tag Tag (State.FastFeeding ou State.FreeResource seulement) a-t-il été retiré (bAdded faux) ou
+	 * posé (vrai) dans la fenêtre de grâce autour de ReferenceTime (temps du monde) ? Voir GenFeeding::ServerTagGrace.
+	 */
+	bool WasGraceTagChangedNear(const FGameplayTag& Tag, bool bAdded, double ReferenceTime) const;
+
 	/** Toutes les machines : retire State.CastLocked et ferme la fenêtre (mort : un verrou oublié bloquerait tout après le respawn). */
 	void ClearCastLock();
 
@@ -95,6 +101,9 @@ public:
 	FGenOnAbilitiesChanged OnAbilitiesChanged;
 
 protected:
+	/** Retient l'heure des changements de State.FastFeeding et State.FreeResource (WasGraceTagChangedNear). */
+	virtual void OnTagUpdated(const FGameplayTag& Tag, bool TagExists) override;
+
 	virtual void OnGiveAbility(FGameplayAbilitySpec& AbilitySpec) override;
 	/** Un sort retiré efface l'affichage des unités nourries qu'il possédait (AGenCharacterBase::ClearFedResourceFrom). */
 	virtual void OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec) override;
@@ -111,4 +120,12 @@ protected:
 
 	/** Serveur : contrôles durs reçus récemment (résilience, Plan 3 Task 5). */
 	GenResilience::FHardCCHistory HardCCHistory;
+
+	/** Revue V2-V4, I1 : derniers ajout et retrait (temps du monde) d'un tag à fenêtre de grâce. */
+	struct FGraceTagTimes
+	{
+		double Added = -1.e9;
+		double Removed = -1.e9;
+	};
+	TMap<FGameplayTag, FGraceTagTimes> GraceTagTimes;
 };

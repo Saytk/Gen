@@ -339,6 +339,24 @@ void UGenAbilitySystemComponent::RemoveTimedStates()
 	HardCCHistory.Reset();
 }
 
+void UGenAbilitySystemComponent::OnTagUpdated(const FGameplayTag& Tag, bool TagExists)
+{
+	Super::OnTagUpdated(Tag, TagExists);
+
+	// Revue V2-V4, I1 : seuls les tags qui changent la règle de nourrissage d'un sort déjà prédit par le client
+	if ((Tag == GenGameplayTags::State_FastFeeding || Tag == GenGameplayTags::State_FreeResource) && GetWorld())
+	{
+		FGraceTagTimes& Times = GraceTagTimes.FindOrAdd(Tag);
+		(TagExists ? Times.Added : Times.Removed) = GetWorld()->GetTimeSeconds();
+	}
+}
+
+bool UGenAbilitySystemComponent::WasGraceTagChangedNear(const FGameplayTag& Tag, bool bAdded, double ReferenceTime) const
+{
+	const FGraceTagTimes* Times = GraceTagTimes.Find(Tag);
+	return Times && GenFeeding::IsTagChangeInGrace(bAdded ? Times->Added : Times->Removed, ReferenceTime);
+}
+
 void UGenAbilitySystemComponent::NoteCastLock(float MinLockDuration)
 {
 	if (IsOwnerActorAuthoritative() && GetWorld())

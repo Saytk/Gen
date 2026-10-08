@@ -237,6 +237,18 @@ protected:
 private:
 	void StartFeeding();
 	void ScheduleFeedTick();
+	/** V3 : joue FeedMontage (rate calée sur l'intervalle actif, Feed_1 trouvée par son nom). */
+	void PlayFeedMontage();
+	/** Revue V2-V4, I2 : serveur pour un client distant, geste de nourrissage lancé avec le retard de l'estimation. */
+	UFUNCTION()
+	void OnFeedMontageDelayFinished();
+	/** Revue V2-V4, I3 : arrête FeedMontage s'il joue encore (courant : arrêt répliqué ; sinon arrêt local). */
+	void StopFeedMontage();
+	/**
+	 * Revue V2-V4, I1 : serveur pour un client distant, State.FastFeeding retiré juste avant l'activation (ou posé juste
+	 * après) => le client appuyait avec ; on prend l'intervalle rapide.
+	 */
+	bool IsFastFeedingInGrace(bool bAddedAfterActivation) const;
 	/** Client (ou hôte) : fin du nourrissage => prévient le serveur puis incante. */
 	void StopFeedingLocal();
 	void EndFeedTasks();
@@ -295,6 +307,15 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitInputRelease> FeedReleaseTask;
+
+	/** Revue V2-V4, I2 : attente avant le geste de nourrissage du serveur (ServerEstimateLag), arrêtée par EndFeedTasks. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitDelay> FeedMontageDelayTask;
+
+#if !UE_BUILD_SHIPPING
+	/** Revue V2-V4, I3 : avertissement "phases dans des groupes de slots différents" déjà donné pour cette instance. */
+	bool bWarnedPhaseSlotGroups = false;
+#endif
 
 	int32 FedCount = 0;
 	int32 FedVisualCount = 0;

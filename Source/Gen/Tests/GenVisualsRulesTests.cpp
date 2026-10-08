@@ -55,6 +55,27 @@ bool FGenMontagePhaseRatesTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestEqual(TEXT("seuils rapides = CurffeTuning::FastFeedInterval"), GenFeeding::GetFeedInterval(Base, true), CurffeTuning::FastFeedInterval, 0.0001f);
+
+	// Revue V2-V4 : Feed_1 mal calé (0.4 s au lieu de 0.3 s) : la vitesse rattrape (x1.33), mais il faut avertir
+	{
+		const float Rate = GenMontageTiming::GetPlayRate(0.4f, Base);
+		TestEqual(TEXT("mal calé : vitesse longueur / intervalle"), Rate, 0.4f / Base, 0.0001f);
+		TestTrue(TEXT("mal calé : avertissement"), GenMontageTiming::ShouldWarn(Rate, GenMontageTiming::GetExpectedFeedRate(Base, Base)));
+		TestEqual(TEXT("mal calé mais non borné : la 1re frontière tombe encore au seuil"), 0.4f / Rate, Base, 0.0001f);
+	}
+	// Feed_1 beaucoup trop long (1 s) : vitesse bornée à MaxPlayRate, les frontières dépassent les seuils, avertissement
+	{
+		const float Rate = GenMontageTiming::GetPlayRate(1.f, Base);
+		TestEqual(TEXT("borné : vitesse max"), Rate, GenMontageTiming::MaxPlayRate, 0.0001f);
+		TestTrue(TEXT("borné : avertissement"), GenMontageTiming::ShouldWarn(Rate, GenMontageTiming::GetExpectedFeedRate(Base, Base)));
+		TestTrue(TEXT("borné : la 1re frontière tombe après le seuil"), 1.f / Rate > Base + 0.01f);
+	}
+	// Feed_1 trop court en nourrissage rapide (0.1 s pour 0.15 s, attendu x2) : avertissement
+	{
+		const float Active = GenFeeding::GetFeedInterval(Base, true);
+		const float Rate = GenMontageTiming::GetPlayRate(0.1f, Active);
+		TestTrue(TEXT("trop court en rapide : avertissement"), GenMontageTiming::ShouldWarn(Rate, GenMontageTiming::GetExpectedFeedRate(Base, Active)));
+	}
 	TestEqual(TEXT("intervalle nul : vitesse attendue 1"), GenMontageTiming::GetExpectedFeedRate(Base, 0.f), 1.f, 0.0001f);
 
 	// Charge : calée sur CastTime seulement avec un CastMontage à part (sinon montage unique du Plan 1, vitesse 1)

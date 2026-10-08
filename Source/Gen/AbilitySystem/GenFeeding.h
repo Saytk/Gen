@@ -165,4 +165,19 @@ namespace GenFeeding
 	{
 		return FMath::Max(BaseInterval * (bFastFeeding ? FastFeedMultiplier : 1.f), 0.01f);
 	}
+
+	/**
+	 * Revue V2-V4, I1 : fenêtre de grâce (s) du serveur pour un client distant autour d'un changement de
+	 * State.FastFeeding / State.FreeResource. Le tag (posé par un GE du serveur, ex : fin de l'embrasement de Combustion)
+	 * change chez le client ~½ RTT après le serveur : un appui dans cet intervalle est pris avec l'ancien état côté
+	 * client. Le serveur lui accorde l'état "favorable" (rapide, gratuit) si le changement est à moins de Grace de
+	 * l'instant de référence. Un tricheur y gagne au plus Grace de nourrissage rapide ou un lancer gratuit en fin d'état.
+	 */
+	inline constexpr float ServerTagGrace = 0.25f;
+
+	/** Le changement de tag (ChangeTime) tombe-t-il dans la fenêtre de grâce autour de ReferenceTime ? Temps en double. */
+	inline bool IsTagChangeInGrace(double ChangeTime, double ReferenceTime, float Grace = ServerTagGrace)
+	{
+		return FMath::Abs(ChangeTime - ReferenceTime) <= Grace;
+	}
 }
