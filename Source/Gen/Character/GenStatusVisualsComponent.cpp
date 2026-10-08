@@ -224,10 +224,21 @@ void UGenStatusVisualsComponent::SetSystemActive(int32 Index, bool bActive)
 	SystemWanted[Index] = bActive && Visuals[Index].System != nullptr;
 	if (!bActive)
 	{
-		// Désactivé, pas détruit : les particules finissent leur vie, puis le composant retourne au pool (AutoRelease)
+		// Désactivé, pas détruit : les particules finissent leur vie, puis le composant retourne au pool. Revue V6-V8, I-5 :
+		// seulement un composant qu'on tient encore (un système fini a déjà vidé son emplacement, OnStatusSystemFinished)
 		if (UNiagaraComponent* System = Systems[Index])
 		{
-			System->Deactivate();
+			System->OnSystemFinished.RemoveDynamic(this, &ThisClass::OnStatusSystemFinished);
+			if (System->PoolingMethod == ENCPoolMethod::ManualRelease)
+			{
+				System->ReleaseToPool(); // désactive, puis rend au pool à la fin des particules
+			}
+			else
+			{
+				// Pool désactivé (FX.NiagaraComponentPool.Enable 0) : composant à nous, détruit à la fin des particules
+				System->SetAutoDestroy(true);
+				System->Deactivate();
+			}
 		}
 		Systems[Index] = nullptr;
 		return;
@@ -244,8 +255,38 @@ void UGenStatusVisualsComponent::SetSystemActive(int32 Index, bool bActive)
 	USceneComponent* AttachTo = Character && Character->GetMesh() ? static_cast<USceneComponent*>(Character->GetMesh()) : this;
 	// Pas de pré-élimination au lancement : un état qui commence hors de l'écran doit s'afficher quand le personnage y
 	// revient (l'Effect Type gère l'élimination en cours de vie)
-	Systems[Index] = UNiagaraFunctionLibrary::SpawnSystemAttached(Template, AttachTo, Visuals[Index].Socket, FVector::ZeroVector, FRotator::ZeroRotator,
-		FVector::OneVector, EAttachLocation::SnapToTarget, /*bAutoDestroy*/ false, ENCPoolMethod::AutoRelease, /*bAutoActivate*/ true, /*bPreCullCheck*/ false);
+	// Revue V6-V8, I-5 : ManualRelease, jamais AutoRelease (le pool reprendrait le composant à la fin du système, puis le
+	// prêterait à un autre effet que SetSystemActive(false) désactiverait). Contrat des assets : les Effect Types des
+	// systèmes d'état bouclés utilisent une réaction d'élimination « Resume » (pas Kill)
+	UNiagaraComponent* System = UNiagaraFunctionLibrary::SpawnSystemAttached(Template, AttachTo, Visuals[Index].Socket, FVector::ZeroVector, FRotator::ZeroRotator,
+		FVector::OneVector, EAttachLocation::SnapToTarget, /*bAutoDestroy*/ false, ENCPoolMethod::ManualRelease, /*bAutoActivate*/ true, /*bPreCullCheck*/ false);
+	Systems[Index] = System;
+	if (System)
+	{
+		System->OnSystemFinished.AddUniqueDynamic(this, &ThisClass::OnStatusSystemFinished);
+	}
+}
+
+void UGenStatusVisualsComponent::OnStatusSystemFinished(UNiagaraComponent* System)
+{
+	const int32 Index = System ? Systems.IndexOfByKey(System) : INDEX_NONE;
+	if (Index == INDEX_NONE)
+	{
+		return;
+	}
+
+	// Fini de lui-même : plus le nôtre. Rendu au pool par le moteur juste après cette diffusion (comme ReleaseToPool sur un
+	// système encore actif : ManualRelease_OnComplete), ou détruit si le pool est désactivé
+	System->OnSystemFinished.RemoveDynamic(this, &ThisClass::OnStatusSystemFinished);
+	Systems[Index] = nullptr;
+	if (System->PoolingMethod == ENCPoolMethod::ManualRelease)
+	{
+		System->PoolingMethod = ENCPoolMethod::ManualRelease_OnComplete;
+	}
+	else
+	{
+		System->SetAutoDestroy(true);
+	}
 }
 
 void UGenStatusVisualsComponent::SetFlash(int32 Index, bool bFlash)

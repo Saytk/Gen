@@ -120,6 +120,13 @@ private:
 	void SetFlash(int32 Index, bool bFlash);
 	/** Lance (bActive) ou désactive le système de l'état Index. */
 	void SetSystemActive(int32 Index, bool bActive);
+
+	/**
+	 * Revue V6-V8, I-5 : un système d'état fini de lui-même (non bouclé, tué par l'élimination) n'est plus le nôtre :
+	 * son emplacement est vidé (jamais désactivé ensuite) et il retourne au pool.
+	 */
+	UFUNCTION()
+	void OnStatusSystemFinished(UNiagaraComponent* System);
 	void RefreshOwnerMesh();
 
 	TArray<FGenStatusVisual> Visuals;
@@ -130,7 +137,10 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> ShapeMIDs;
 
-	/** Systèmes en cours, par état (nul quand il est désactivé : le composant retourne au pool). */
+	/**
+	 * Systèmes en cours, par état (nul quand il est désactivé ou fini). Pool en ManualRelease (revue V6-V8, I-5) : le pool
+	 * ne reprend jamais un composant tant qu'on le tient, on le rend nous-mêmes (ReleaseToPool).
+	 */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UNiagaraComponent>> Systems;
 
