@@ -11,8 +11,8 @@ class UAnimMontage;
  * Bond visible (guidelines §3.6) vers le curseur, ramené à MaxDistance. Nourrissable : le décollage
  * (CastTime + nourrissage) s'allonge, la sous-classe utilise les unités nourries à l'atterrissage.
  * Pendant le vol : aucun sort (State.CastLocked), un contrôle dur ne coupe pas le bond (il interrompt le décollage).
- * Atterrissage : zone de dégâts (A) autour du point d'impact, puis fin du sort (aucune phase interruptible
- * après le vol : la surveillance des contrôles durs, terminée par un contrôle ignoré en vol, n'a pas à être réarmée).
+ * Point d'atterrissage répliqué à tous pendant le vol (AGenCharacterBase::GetLeapTarget : cercle vu aussi par les ennemis).
+ * Atterrissage : zone de dégâts (A) autour du point d'impact, puis fin du sort.
  * Pas de CancelAbilitiesWithTag dans l'asset : un sort lancé ne doit pas couper le vol (le verrou les refuse de toute façon).
  */
 UCLASS()
@@ -82,6 +82,9 @@ protected:
 	TObjectPtr<UAnimMontage> LandMontage;
 
 private:
+	/** Efface le point d'atterrissage répliqué (AGenCharacterBase::LeapTarget). */
+	void ClearLeapTarget();
+
 	FGenCastRelease LeapRelease;
 	bool bAirborne = false;
 };

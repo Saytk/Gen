@@ -6,6 +6,7 @@
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/GenAreaRules.h"
 #include "Actors/GenGroundArea.h"
+#include "Character/GenCharacterBase.h"
 #include "GameFramework/RootMotionSource.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGenLeap, Log, All);
@@ -35,6 +36,18 @@ void UGenGA_Leap::OnCastLaunched(const FGenCastRelease& Release)
 	// SetCastLock appelle UGenAbilitySystemComponent::NoteCastLock (jamais de tag posé à la main)
 	const float MinimumLandedTime = LeapDuration * 0.5f;
 	SetCastLock(true, MinimumLandedTime);
+
+	// Point d'atterrissage vu par tous pendant le vol (cercle et amorces de l'anneau chez les autres joueurs)
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+	{
+		FGenLeapTarget LeapTarget;
+		LeapTarget.Ability = GetClass();
+		LeapTarget.Location = Target;
+		LeapTarget.Direction = Release.AimDirection;
+		LeapTarget.Radius = LandingRadius;
+		LeapTarget.Fed = static_cast<uint8>(FMath::Clamp(Release.Fed, 0, 255));
+		Character->SetLeapTarget(LeapTarget);
+	}
 
 	if (TrailCueTag.IsValid())
 	{
@@ -67,6 +80,7 @@ void UGenGA_Leap::OnLanded()
 	}
 	bAirborne = false;
 	SetCastLock(false);
+	ClearLeapTarget();
 
 	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
 	{
@@ -109,5 +123,14 @@ void UGenGA_Leap::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGam
 {
 	// Fin en plein vol (mort) : le mouvement racine s'arrête avec la tâche, le verrou est retiré par la base
 	bAirborne = false;
+	ClearLeapTarget();
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void UGenGA_Leap::ClearLeapTarget()
+{
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+	{
+		Character->ClearLeapTarget(GetClass()); // sans effet si ce n'est plus notre bond
+	}
 }

@@ -55,6 +55,7 @@ void AGenCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AGenCharacterBase, bIsDead);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, CastInfo, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(AGenCharacterBase, FedResource, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AGenCharacterBase, LeapTarget, COND_SkipOwner);
 }
 
 float AGenCharacterBase::GetCastClockSeconds() const
@@ -105,6 +106,20 @@ void AGenCharacterBase::MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFin
 	// Correction (annonce du client arrivée après coup) : le repli garde son heure de départ et le compteur
 	// ne recule pas ; seul le compte validé au lancer peut le faire descendre
 	CastInfo.FedCount = bFinal ? Count : FMath::Max(CastInfo.FedCount, Count);
+}
+
+void AGenCharacterBase::SetLeapTarget(const FGenLeapTarget& Target)
+{
+	LeapTarget = Target;
+	LeapTarget.StartTime = GetCastClockSeconds();
+}
+
+void AGenCharacterBase::ClearLeapTarget(UClass* Ability)
+{
+	if (LeapTarget.Ability == Ability)
+	{
+		LeapTarget = FGenLeapTarget();
+	}
 }
 
 void AGenCharacterBase::StopCast(UClass* Ability)
