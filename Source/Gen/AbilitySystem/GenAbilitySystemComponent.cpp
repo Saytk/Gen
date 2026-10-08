@@ -256,6 +256,12 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 		return FActiveGameplayEffectHandle();
 	}
 
+	// Plan 3 Task 4 : intouchable (forme de feu...), aucun contrôle dur ne prend
+	if (HasMatchingGameplayTag(GenGameplayTags::State_Untouchable))
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
 	// Seuls les contrôles durs passent ici (ex : State.Countering n'en est pas un)
 	if (!ensureMsgf(GenGameplayTags::GetHardCCTags().HasTagExact(StateTag), TEXT("ApplyHardCC : %s n'est pas un contrôle dur"), *StateTag.ToString()))
 	{

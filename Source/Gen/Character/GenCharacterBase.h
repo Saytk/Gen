@@ -119,7 +119,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Health")
 	bool IsDead() const { return bIsDead; }
 
-	/** Intouchable (State.Untouchable) : les coups le traversent (ResolveIncomingHit renvoie Ignored). */
+	/**
+	 * Intouchable (State.Untouchable) : les coups le traversent (ResolveIncomingHit renvoie Ignored), dégâts, contrôles
+	 * durs (ApplyHardCC) et repoussements (ApplyKnockback) ignorés. N'empêche pas de lancer : Living Flame pose en plus
+	 * State.CastLocked.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Gen|Health")
 	bool IsUntouchable() const;
 

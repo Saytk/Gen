@@ -407,7 +407,8 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 
 void AGenCharacterBase::ApplyKnockback(const FVector& Direction, float Distance)
 {
-	if (!HasAuthority() || bIsDead || Distance <= 0.f)
+	// Plan 3 Task 4 : intouchable (forme de feu...), le repoussement est ignoré comme le reste du coup
+	if (!HasAuthority() || bIsDead || Distance <= 0.f || IsUntouchable())
 	{
 		return;
 	}
