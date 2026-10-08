@@ -70,7 +70,7 @@ void UGenGA_GroundArea::OnCastLaunched(const FGenCastRelease& Release)
 		Params.Radius = GetAreaRadius(Release.Fed);
 		// Plancher relevé de la latence d'apparition chez les autres joueurs (revue Plan 2 Tasks 7-8, M-5) : ils voient le
 		// télégraphe au moins MinTelegraph, rempli sur l'heure serveur répliquée (fin pile à l'impact)
-		Params.Delay = GenAreaRules::GetImpactDelay(ImpactDelay, MinTelegraph + GenAreaRules::TelegraphLatencyMargin);
+		Params.Delay = GetEffectiveImpactDelay();
 		Params.StunDuration = StunDuration;
 		Params.KnockbackDistance = KnockbackDistance;
 
@@ -93,6 +93,11 @@ float UGenGA_GroundArea::GetAreaDamage(int32 Fed, int32 Level) const
 	return Damage.GetValueAtLevel(Level) + DamagePerFeed * Fed;
 }
 
+float UGenGA_GroundArea::GetEffectiveImpactDelay() const
+{
+	return GenAreaRules::GetImpactDelay(ImpactDelay, MinTelegraph + GenAreaRules::TelegraphLatencyMargin);
+}
+
 #define LOCTEXT_NAMESPACE "GenGA_GroundArea"
 
 void UGenGA_GroundArea::GetTooltipArgs(FFormatNamedArguments& Args) const
@@ -103,7 +108,7 @@ void UGenGA_GroundArea::GetTooltipArgs(FFormatNamedArguments& Args) const
 	Args.Add(TEXT("RadiusMax"), GenAbilityTooltip::Meters(GetAreaRadius(bFeedable ? MaxFeed : 0)));
 	Args.Add(TEXT("Range"), GenAbilityTooltip::Meters(Range));
 	Args.Add(TEXT("Stun"), GenAbilityTooltip::Seconds(StunDuration));
-	Args.Add(TEXT("Delay"), GenAbilityTooltip::Seconds(GenAreaRules::GetImpactDelay(ImpactDelay, MinTelegraph)));
+	Args.Add(TEXT("Delay"), GenAbilityTooltip::Seconds(GetEffectiveImpactDelay()));
 	Args.Add(TEXT("Knockback"), GenAbilityTooltip::Meters(KnockbackDistance));
 }
 
@@ -121,7 +126,7 @@ FText UGenGA_GroundArea::GetFeedTooltipLines(int32 Fed) const
 
 void UGenGA_GroundArea::GetTooltipEffectLines(TArray<FText>& OutLines) const
 {
-	OutLines.Add(FText::Format(LOCTEXT("Impact", "Impact {0} après le lancer"), GenAbilityTooltip::Seconds(GenAreaRules::GetImpactDelay(ImpactDelay, MinTelegraph))));
+	OutLines.Add(FText::Format(LOCTEXT("Impact", "Impact {0} après le lancer"), GenAbilityTooltip::Seconds(GetEffectiveImpactDelay())));
 	if (StunDuration > 0.f)
 	{
 		OutLines.Add(FText::Format(LOCTEXT("Stun", "Étourdit {0}"), GenAbilityTooltip::Seconds(StunDuration)));
