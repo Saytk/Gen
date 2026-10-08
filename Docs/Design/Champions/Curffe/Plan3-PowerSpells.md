@@ -426,7 +426,7 @@ namespace GenResilience
 
   - Update the callers:
     - In `GenCombatRulesTests.cpp`, `Gen.Combat.CounterTrigger`, the three calls become `GenHitRules::Resolve(true, false, EGenHitKind::Projectile)`, `GenHitRules::Resolve(true, false, EGenHitKind::Area)` and `GenHitRules::Resolve(false, false, EGenHitKind::Projectile)`.
-    - In `GenCharacterBase.cpp`, `ResolveIncomingHit`, change it temporarily to `GenHitRules::Resolve(bCountering, /*bUntouchable*/ false, Kind)`. Task 4 replaces `false`.
+    - In `GenCharacterBase.cpp`, `ResolveIncomingHit`, change it temporarily to `GenHitRules::Resolve(bCountering, /*bUntouchable*/ false, Kind)`. Task 4 replaces `false`. (On `curffe-plan2` the review of Plan 2 Tasks 3–4 already replaced it with `IsUntouchable()`, see Task 4.)
 
 - [ ] **Step 7: Build, then run the unit tests.** Expected: `Gen.Feeding.FastInterval`, `Gen.Energy.CanAfford`, `Gen.Combat.ResilienceHistory` and `Gen.Combat.UntouchableRule` pass, and every Plan 1 and Plan 2 test still passes.
 
@@ -739,7 +739,9 @@ bool FGenUntouchableTest::RunTest(const FString& Parameters)
 }
 ```
 
-- [ ] **Step 2: Build to verify it fails.** Expected: `'State_Untouchable': is not a member of 'GenGameplayTags'`.
+- [ ] **Step 2: Build to verify it fails.** Expected: `'State_Untouchable': is not a member of 'GenGameplayTags'`. (Since the review of Plan 2 Tasks 3–4 the tag already exists, so the test compiles and fails on the hard-CC, knockback and damage checks instead.)
+
+> **Already done on `curffe-plan2`** (review of Plan 2 Tasks 3–4, commit "projectiles pass through untouchable targets"): the `State_Untouchable` tag (Step 3), `AGenCharacterBase::IsUntouchable()` and the `ResolveIncomingHit` call with `IsUntouchable()` (Step 4, not the `ApplyKnockback` guard), and the projectile pass-through (Step 5, done differently: `OnSphereOverlap` resolves the direct hit before `Explode` and returns on `Ignored`, so the target is passed through with no explosion, no splash and no salvo claim; `Explode` receives the resolved response). `Gen.Net.ProjectileCounter.Untouchable_PassesThrough_NoExplosion` pins it. Check each step against the source and skip what is there; Steps 6 and 7 and the `ApplyKnockback` guard remain.
 
 - [ ] **Step 3: Add the tag.**
   - In `GenGameplayTags.h`, after `State_FreeResource`: `UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Untouchable);`

@@ -31,6 +31,7 @@ namespace GenGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Casting);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Countering);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_CastLocked);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Untouchable);
 
 	// Contrôles durs (guidelines §3.2) en plus de State_Stunned. Pas encore appliqués par un sort,
 	// mais les interruptions, les blocages de sorts et la barre de sorts les traitent déjà.

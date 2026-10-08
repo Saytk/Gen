@@ -56,6 +56,10 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
   (3 flames = a triangle). Ring Fireballs follow the Fireball rules (range, walls, counters).
 - An enemy can be hit by **one ring projectile at most** (ring geometry). Primary purpose: **escape**
   (landing away screens off pursuers); engage is the weaker secondary use (≤ 1 projectile per enemy).
+- **A ring Fireball blocked by a counter still counts as that enemy's one** (rule, review of Plan 2 Tasks 3–4):
+  the next ring Fireballs pass through him. One interaction per enemy per ring, so a Backfire on the landing
+  point earns one block (+2 flames), not one per overlapping Fireball, and a window that ends between two
+  ring Fireballs can't turn the block into a hit.
 - Energy **+2** on landing hit.
 - VisualWeight: Skillshot (4–6).
 
@@ -64,6 +68,8 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 - Triggered by projectiles and melee hits (P), not ground areas (A). The blocked hit deals nothing.
 - On a block: **+2 flames per blocked hit**, **+10 energy** (once per cast), melee attackers are
   **knocked back 3 m**.
+- A blocked Meteor Leap ring Fireball is that ring's one hit on the counterer: the other ring Fireballs pass
+  through him (one block per ring, see Space). Tooltip: "a blocked ring Fireball counts as his one".
 - VisualWeight: CC/burst (7) on trigger.
 
 ### E: Flame Pillar (feedable)

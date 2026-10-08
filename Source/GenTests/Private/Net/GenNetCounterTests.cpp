@@ -10,6 +10,7 @@
 #include "Actors/GenProjectile.h"
 #include "Character/GenPlayerCharacter.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayTagContainer.h"
 #include "Net/GenNetTestHelpers.h"
 #include "Player/GenPlayerState.h"
@@ -27,9 +28,12 @@ using namespace GenNetTest;
  * la posture est simulée par le tag State.Countering posé sur le serveur.
  *
  * Attendu :
- * - coup direct bloqué : le contreur ne prend rien (ni coup direct, ni éclaboussure) et son contre est prévenu ;
- * - l'éclaboussure touche quand même son allié ;
- * - l'attaquant ne gagne que si quelqu'un a vraiment été touché.
+ * - coup direct bloqué : le contreur ne prend rien (ni coup direct, ni éclaboussure, ni repoussement) et son
+ *   contre est prévenu ; le projectile est consommé (il explose sur lui, rien ne passe derrière) ;
+ * - l'éclaboussure touche (et repousse) quand même son allié ;
+ * - l'attaquant ne gagne que si quelqu'un a vraiment été touché ;
+ * - cible intouchable (tag State.Untouchable) : le projectile la traverse sans exploser, sans éclabousser
+ *   son allié et sans prévenir de contre (revue des tâches 3-4 du plan 2).
  */
 NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 {
@@ -38,6 +42,10 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 	static constexpr float Damage = 10.f;
 	static constexpr float EnergyOnHit = 10.f;
 	static constexpr float ExplosionRadius = 300.f;
+	static constexpr float KnockbackDistance = 300.f;
+
+	/** Défense de la cible directe (client 0). */
+	enum class EDefence : uint8 { None, Countering, Untouchable };
 
 	TWeakObjectPtr<UAbilitySystemComponent> ServerCountererASC;
 	FDelegateHandle BlockedHandle;
@@ -72,6 +80,22 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 		return FGameplayTag::RequestGameplayTag(TEXT("State.Countering"));
 	}
 
+	static FGameplayTag UntouchableTag()
+	{
+		return FGameplayTag::RequestGameplayTag(TEXT("State.Untouchable"));
+	}
+
+	static FGameplayTag DefenceTag(EDefence Defence)
+	{
+		return Defence == EDefence::Countering ? CounteringTag() : UntouchableTag();
+	}
+
+	/** Le serveur a lancé le personnage (repoussement) dans cette image. */
+	static bool IsBeingLaunched(const ACharacter* Character)
+	{
+		return !Character->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero();
+	}
+
 	void RemoveBlockedHandler()
 	{
 		if (ServerCountererASC.IsValid() && BlockedHandle.IsValid())
@@ -85,10 +109,10 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 	}
 
 	/**
-	 * bCountering : le client 0 est en posture de contre. bAllyInSplash : son allié (client 2) est à 2 m,
-	 * dans le rayon de l'éclaboussure, sinon à 30 m.
+	 * Defence : posture de contre ou intouchable du client 0 (ou rien). bAllyInSplash : son allié (client 2) est à 2 m,
+	 * dans le rayon de l'éclaboussure, sinon à 30 m. Le projectile repousse (KnockbackDistance).
 	 */
-	void QueueScenario(bool bCountering, bool bAllyInSplash)
+	void QueueScenario(EDefence Defence, bool bAllyInSplash)
 	{
 		Network
 			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server)
@@ -99,8 +123,10 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 			{
 				return IsPlayerReady(GetLocalController(Client));
 			}, DefaultWait())
-			.ThenServer(TEXT("Serveur : projectile de l'attaquant dans le contreur"), [this, bCountering, bAllyInSplash](FBasePIENetworkComponentState& Server)
+			.ThenServer(TEXT("Serveur : projectile de l'attaquant dans le contreur"), [this, Defence, bAllyInSplash](FBasePIENetworkComponentState& Server)
 			{
+				const bool bCountering = Defence == EDefence::Countering;
+				const bool bUntouchable = Defence == EDefence::Untouchable;
 				AGenPlayerCharacter* Counterer = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
 				AGenPlayerCharacter* Attacker = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
 				AGenPlayerCharacter* Ally = GetServerController(Server, 2)->GetPawn<AGenPlayerCharacter>();
@@ -130,9 +156,9 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 				Attacker->TeleportTo(Center + FVector(0.f, 5000.f, 0.f), Attacker->GetActorRotation(), false, true);
 				Ally->TeleportTo(Center + (bAllyInSplash ? FVector(0.f, 200.f, 0.f) : FVector(0.f, -3000.f, 0.f)), Ally->GetActorRotation(), false, true);
 
-				if (bCountering)
+				if (Defence != EDefence::None)
 				{
-					CountererASC->AddLooseGameplayTag(CounteringTag());
+					CountererASC->AddLooseGameplayTag(DefenceTag(Defence));
 				}
 				BlockedHandle = CountererASC->GenericGameplayEventCallbacks.FindOrAdd(FGameplayTag::RequestGameplayTag(TEXT("Event.Counter.Blocked")))
 					.AddLambda([this](const FGameplayEventData* Payload)
@@ -155,6 +181,7 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 
 				FGenProjectileShotParams ShotParams;
 				ShotParams.ExplosionRadius = ExplosionRadius;
+				ShotParams.KnockbackDistance = KnockbackDistance;
 				Projectile->InitializeShot(ShotParams);
 
 				FGameplayEffectContextHandle Context = AttackerASC->MakeEffectContext();
@@ -170,14 +197,25 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 				Projectile->FinishSpawning(SpawnTransform);
 
 				// L'impact a eu lieu pendant FinishSpawning (BeginPlay, overlaps initiaux)
-				ExpectedCountererHealth = CountererHealthBefore - (bCountering ? 0.f : Damage);
-				ExpectedAllyHealth = AllyHealthBefore - (bAllyInSplash ? Damage : 0.f);
-				const bool bAnyoneHit = !bCountering || bAllyInSplash;
+				const bool bDirectHit = Defence == EDefence::None;
+				const bool bAllySplashed = bAllyInSplash && !bUntouchable;
+				ExpectedCountererHealth = CountererHealthBefore - (bDirectHit ? Damage : 0.f);
+				ExpectedAllyHealth = AllyHealthBefore - (bAllySplashed ? Damage : 0.f);
+				const bool bAnyoneHit = bDirectHit || bAllySplashed;
 
+				ASSERT_THAT(IsTrue(Projectile->HasExploded() == !bUntouchable, bUntouchable
+					? TEXT("Une cible intouchable est traversée : le projectile n'explose pas")
+					: TEXT("Le projectile est consommé par l'impact (même bloqué par un contre : rien ne passe derrière)")));
 				ASSERT_THAT(IsNear(ExpectedCountererHealth, GetAttribute(CountererASC, UGenAttributeSet::GetHealthAttribute()), 0.01f,
-					bCountering ? TEXT("Le contreur ne doit rien prendre (ni coup direct, ni éclaboussure)") : TEXT("Sans contre, le coup direct touche (une seule fois)")));
+					bDirectHit ? TEXT("Sans défense, le coup direct touche (une seule fois)") : TEXT("Le contreur / l'intouchable ne doit rien prendre (ni coup direct, ni éclaboussure)")));
 				ASSERT_THAT(IsNear(ExpectedAllyHealth, GetAttribute(AllyASC, UGenAttributeSet::GetHealthAttribute()), 0.01f,
-					bAllyInSplash ? TEXT("L'allié dans le rayon prend l'éclaboussure") : TEXT("L'allié hors du rayon ne prend rien")));
+					bAllySplashed ? TEXT("L'allié dans le rayon prend l'éclaboussure") : TEXT("L'allié ne prend rien (hors du rayon, ou pas d'explosion)")));
+				ASSERT_THAT(IsTrue(IsBeingLaunched(Counterer) == bDirectHit, bDirectHit
+					? TEXT("Sans défense, le coup direct repousse")
+					: TEXT("Le contreur / l'intouchable n'est pas repoussé")));
+				ASSERT_THAT(IsTrue(IsBeingLaunched(Ally) == bAllySplashed, bAllySplashed
+					? TEXT("L'allié éclaboussé est repoussé")
+					: TEXT("L'allié non touché n'est pas repoussé")));
 				ASSERT_THAT(IsNear(AttackerEnergyBefore + (bAnyoneHit ? EnergyOnHit : 0.f), GetAttribute(AttackerASC, UGenAttributeSet::GetEnergyAttribute()), 0.01f,
 					bAnyoneHit ? TEXT("L'attaquant gagne une fois par explosion qui touche") : TEXT("Un coup bloqué qui ne touche personne ne rapporte rien")));
 
@@ -186,7 +224,10 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 				{
 					ASSERT_THAT(IsTrue(BlockedInstigator == Attacker, TEXT("Instigateur du blocage = attaquant")));
 					ASSERT_THAT(IsNear(0.f, BlockedKind, 0.01f, TEXT("Nature du coup bloqué = Projectile (0)")));
-					CountererASC->RemoveLooseGameplayTag(CounteringTag());
+				}
+				if (Defence != EDefence::None)
+				{
+					CountererASC->RemoveLooseGameplayTag(DefenceTag(Defence));
 				}
 				RemoveBlockedHandler();
 			})
@@ -203,19 +244,25 @@ NETWORK_TEST_CLASS(ProjectileCounter, "Gen.Net")
 	/** Review Focus #2 : bloqué pour le contreur, l'éclaboussure touche son allié, l'attaquant gagne (l'allié est touché). */
 	TEST_METHOD(Countered_SplashStillHitsCountererAlly)
 	{
-		QueueScenario(/*bCountering*/ true, /*bAllyInSplash*/ true);
+		QueueScenario(EDefence::Countering, /*bAllyInSplash*/ true);
 	}
 
 	/** Bloqué et personne d'autre dans le rayon : aucun dégât, aucun gain pour l'attaquant. */
 	TEST_METHOD(Countered_NobodyHit_NoGainForAttacker)
 	{
-		QueueScenario(/*bCountering*/ true, /*bAllyInSplash*/ false);
+		QueueScenario(EDefence::Countering, /*bAllyInSplash*/ false);
 	}
 
 	/** Témoin sans contre : coup direct et éclaboussure (sans double dégât sur la cible directe), un seul gain. */
 	TEST_METHOD(NotCountering_DirectHitAndSplash)
 	{
-		QueueScenario(/*bCountering*/ false, /*bAllyInSplash*/ true);
+		QueueScenario(EDefence::None, /*bAllyInSplash*/ true);
+	}
+
+	/** Intouchable : le projectile le traverse (pas d'explosion, l'allié à côté n'est pas éclaboussé), aucun contre prévenu, aucun gain. */
+	TEST_METHOD(Untouchable_PassesThrough_NoExplosion)
+	{
+		QueueScenario(EDefence::Untouchable, /*bAllyInSplash*/ true);
 	}
 };
 

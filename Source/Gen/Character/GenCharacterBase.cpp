@@ -270,6 +270,11 @@ void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)
 	FedResource = FedDisplay.Count;
 }
 
+bool AGenCharacterBase::IsUntouchable() const
+{
+	return AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Untouchable);
+}
+
 EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitKind Kind, const UObject* Source)
 {
 	if (!HasAuthority() || !AbilitySystemComponent)
@@ -278,7 +283,7 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 	}
 
 	const bool bCountering = AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Countering);
-	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, /*bUntouchable*/ false, Kind);
+	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, IsUntouchable(), Kind);
 
 	if (Response == EGenHitResponse::Countered)
 	{

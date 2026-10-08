@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystem/GenHitRules.h"
 #include "AbilitySystem/GenSalvo.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
@@ -55,6 +56,9 @@ public:
 
 	float GetSpeed() const { return Speed; }
 
+	/** A explosé (consommé par un impact) ; répliqué. */
+	bool HasExploded() const { return bExploded; }
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
@@ -63,8 +67,11 @@ protected:
 	UFUNCTION()
 	void OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
-	/** Serveur : applique les dégâts éventuels puis déclenche l'explosion. */
-	void Explode(AActor* HitActor, const FVector& Location);
+	/**
+	 * Serveur : applique les dégâts éventuels puis déclenche l'explosion. DirectResponse = réponse déjà résolue
+	 * de la cible directe (OnSphereOverlap), jamais Ignored : une cible intouchable est traversée sans exploser.
+	 */
+	void Explode(AActor* HitActor, const FVector& Location, EGenHitResponse DirectResponse = EGenHitResponse::Hit);
 
 	UFUNCTION()
 	void OnRep_Exploded();

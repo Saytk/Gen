@@ -131,7 +131,8 @@ void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, A
 		return;
 	}
 
-	if (const AGenCharacterBase* HitCharacter = Cast<AGenCharacterBase>(OtherActor))
+	EGenHitResponse DirectResponse = EGenHitResponse::Hit;
+	if (AGenCharacterBase* HitCharacter = Cast<AGenCharacterBase>(OtherActor))
 	{
 		// On traverse les alliés et les morts
 		if (HitCharacter->IsDead() || !AGenCharacterBase::AreEnemies(GetInstigator(), HitCharacter))
@@ -144,13 +145,23 @@ void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, A
 		{
 			return;
 		}
+
+		// Coup direct = projectile : la cible répond AVANT que le projectile s'engage. Intouchable : il la
+		// traverse et continue (ni explosion, ni éclaboussure, ni place prise dans la salve). Un contre, lui,
+		// consomme le projectile (il explose et éclabousse les alliés du contreur, Explode)
+		DirectResponse = HitCharacter->ResolveIncomingHit(GetInstigator(), EGenHitKind::Projectile, this);
+		if (DirectResponse == EGenHitResponse::Ignored)
+		{
+			UE_LOG(LogGenProjectile, Verbose, TEXT("%s traverse %s (intouchable)"), *GetName(), *HitCharacter->GetName());
+			return;
+		}
 	}
 	else if (OtherActor->IsA<APawn>())
 	{
 		return;
 	}
 
-	Explode(OtherActor, bFromSweep ? FVector(SweepResult.ImpactPoint) : GetActorLocation());
+	Explode(OtherActor, bFromSweep ? FVector(SweepResult.ImpactPoint) : GetActorLocation(), DirectResponse);
 }
 
 bool AGenProjectile::IsValidTarget(const AGenCharacterBase* Character) const
@@ -209,7 +220,7 @@ void AGenProjectile::ApplyHit(AGenCharacterBase* Target, const FVector& Origin, 
 	}
 }
 
-void AGenProjectile::Explode(AActor* HitActor, const FVector& Location)
+void AGenProjectile::Explode(AActor* HitActor, const FVector& Location, EGenHitResponse DirectResponse)
 {
 	UE_LOG(LogGenProjectile, Verbose, TEXT("%s explose sur %s en %s (%.2fs après spawn)"), *GetName(), *GetNameSafe(HitActor), *Location.ToCompactString(), GetGameTimeSinceCreation());
 
@@ -235,19 +246,21 @@ void AGenProjectile::Explode(AActor* HitActor, const FVector& Location)
 	bool bCountered = false;
 	if (IsValidTarget(DirectTarget))
 	{
+		// Une interaction par ennemi et par salve : même bloquée par un contre, la boule prend sa cible
+		// (spec Curffe, Bond météore et Retour de flamme). OnSphereOverlap a déjà écarté une cible prise
 		if (Salvo)
 		{
-			Salvo->TryClaim(DirectTarget);
+			const bool bClaimed = Salvo->TryClaim(DirectTarget);
+			ensureMsgf(bClaimed, TEXT("%s : cible directe déjà prise par la salve"), *GetName());
 		}
 
-		// Coup direct = projectile : un contre le bloque entièrement (pas d'éclaboussure sur lui non plus).
-		// Seul Hit inflige quelque chose : toute autre réponse (contre, et plus tard intouchable) n'applique rien.
-		const EGenHitResponse Response = DirectTarget->ResolveIncomingHit(GetInstigator(), EGenHitKind::Projectile, this);
-		if (Response == EGenHitResponse::Hit)
+		// Coup direct = projectile, réponse résolue par OnSphereOverlap : un contre le bloque entièrement
+		// (pas d'éclaboussure sur lui non plus). Seul Hit inflige quelque chose.
+		if (DirectResponse == EGenHitResponse::Hit)
 		{
 			Targets.Add(DirectTarget);
 		}
-		else if (Response == EGenHitResponse::Countered)
+		else if (DirectResponse == EGenHitResponse::Countered)
 		{
 			bCountered = true;
 		}

@@ -105,6 +105,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gen|Health")
 	bool IsDead() const { return bIsDead; }
 
+	/** Intouchable (State.Untouchable) : les coups le traversent (ResolveIncomingHit renvoie Ignored). */
+	UFUNCTION(BlueprintPure, Category = "Gen|Health")
+	bool IsUntouchable() const;
+
 	UFUNCTION(BlueprintPure, Category = "Gen|Health")
 	float GetHealth() const;
 
