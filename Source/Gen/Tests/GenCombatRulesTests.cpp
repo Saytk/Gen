@@ -71,19 +71,24 @@ bool FGenRingDirectionsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("1 flamme : une direction"), One.Num(), 1);
 	TestEqual(TEXT("1 flamme : droit devant"), One[0], FVector(0.f, 1.f, 0.f), 0.001f);
 
-	const TArray<FVector> Star = GenAreaRules::GetRingDirections(5, FVector(1.f, 0.f, 0.5f));
-	TestEqual(TEXT("5 flammes : étoile à 5 branches"), Star.Num(), 5);
-	TestEqual(TEXT("première branche selon l'avant aplati"), Star[0], FVector(1.f, 0.f, 0.f), 0.001f);
-	FVector Sum = FVector::ZeroVector;
-	for (int32 Index = 0; Index < Star.Num(); ++Index)
+	// Anneaux réguliers de 2 à 5 branches : le plafond de nourrissage (MaxFeed du sort) n'est pas une règle de l'anneau
+	for (int32 Count = 2; Count <= 5; ++Count)
 	{
-		TestEqual(TEXT("direction unitaire"), static_cast<float>(Star[Index].Size()), 1.f, 0.001f);
-		TestEqual(TEXT("horizontale"), static_cast<float>(Star[Index].Z), 0.f, 0.001f);
-		const FVector& Next = Star[(Index + 1) % Star.Num()];
-		TestEqual(TEXT("72° entre deux branches"), static_cast<float>(FVector::DotProduct(Star[Index], Next)), FMath::Cos(FMath::DegreesToRadians(72.f)), 0.001f);
-		Sum += Star[Index];
+		const TArray<FVector> Ring = GenAreaRules::GetRingDirections(Count, FVector(1.f, 0.f, 0.5f));
+		TestEqual(FString::Printf(TEXT("%d branches"), Count), Ring.Num(), Count);
+		TestEqual(TEXT("première branche selon l'avant aplati"), Ring[0], FVector(1.f, 0.f, 0.f), 0.001f);
+		const float ExpectedCos = FMath::Cos(FMath::DegreesToRadians(360.f / Count));
+		FVector Sum = FVector::ZeroVector;
+		for (int32 Index = 0; Index < Ring.Num(); ++Index)
+		{
+			TestEqual(TEXT("direction unitaire"), static_cast<float>(Ring[Index].Size()), 1.f, 0.001f);
+			TestEqual(TEXT("horizontale"), static_cast<float>(Ring[Index].Z), 0.f, 0.001f);
+			const FVector& Next = Ring[(Index + 1) % Ring.Num()];
+			TestEqual(TEXT("360° / Count entre deux branches"), static_cast<float>(FVector::DotProduct(Ring[Index], Next)), ExpectedCos, 0.001f);
+			Sum += Ring[Index];
+		}
+		TestEqual(TEXT("anneau régulier (somme nulle)"), Sum, FVector::ZeroVector, 0.001f);
 	}
-	TestEqual(TEXT("anneau régulier (somme nulle)"), Sum, FVector::ZeroVector, 0.001f);
 
 	TestEqual(TEXT("avant nul : axe X"), GenAreaRules::GetRingDirections(1, FVector::ZeroVector)[0], FVector(1.f, 0.f, 0.f), 0.001f);
 	return true;
