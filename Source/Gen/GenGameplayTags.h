@@ -29,6 +29,17 @@ namespace GenGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Stunned);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Casting);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Countering);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_CastLocked);
+
+	// Contrôles durs (guidelines §3.2) en plus de State_Stunned. Pas encore appliqués par un sort,
+	// mais les interruptions, les blocages de sorts et la barre de sorts les traitent déjà.
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Silenced);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Feared);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Incapacitated);
+
+	// --- Événements (gameplay events) ---
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Counter_Blocked);
 
 	// --- SetByCaller (magnitudes passées par le code aux GameplayEffects) ---
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Damage);
@@ -36,4 +47,11 @@ namespace GenGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_MoveSpeedMultiplier);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Energy);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Resource);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Duration);
+
+	/**
+	 * Contrôles durs (guidelines §3.2) : étourdi, silence, peur, neutralisé. Ils interrompent les incantations
+	 * (UGenGA_Cast) et bloquent l'activation des sorts (UGenGameplayAbility::CanActivateAbility).
+	 */
+	const FGameplayTagContainer& GetHardCCTags();
 }

@@ -407,6 +407,8 @@ void AGenCharacterBase::HandleOutOfHealth(AActor* DamageInstigator, AActor* Dama
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->CancelAllAbilities();
+		// Un mort ne garde ni contre, ni étourdissement, ni état temporaire (l'ASC survit au respawn)
+		AbilitySystemComponent->RemoveTimedStates();
 		AbilitySystemComponent->SetLooseGameplayTagCount(GenGameplayTags::State_Dead, 1, EGameplayTagReplicationState::TagOnly);
 	}
 

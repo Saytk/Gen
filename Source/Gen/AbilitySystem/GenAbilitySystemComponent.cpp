@@ -1,6 +1,7 @@
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
+#include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "GameplayEffect.h"
 #include "GenGameplayTags.h"
 
@@ -231,4 +232,41 @@ void UGenAbilitySystemComponent::AbilitySpecInputReleased(FGameplayAbilitySpec& 
 			InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased, Spec.Handle, Instance->GetCurrentActivationInfo().GetActivationPredictionKey());
 		}
 	}
+}
+
+FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag StateTag, float Duration, AActor* Source)
+{
+	if (!IsOwnerActorAuthoritative() || !StateTag.IsValid() || Duration <= 0.f)
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	FGameplayEffectContextHandle Context = MakeEffectContext();
+	Context.AddInstigator(Source, Source);
+
+	const FGameplayEffectSpecHandle Spec = MakeOutgoingSpec(UGenGE_TimedMoveSpeed::StaticClass(), 1.f, Context);
+	if (!Spec.IsValid())
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	// Étourdi ou neutralisé : ne bouge plus. Silence et peur laissent bouger (la fuite de la peur viendra avec son sort).
+	const bool bImmobile = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) || StateTag.MatchesTagExact(GenGameplayTags::State_Incapacitated);
+	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, bImmobile ? 0.f : 1.f, FGameplayTagContainer(StateTag));
+	return ApplyGameplayEffectSpecToSelf(*Spec.Data);
+}
+
+void UGenAbilitySystemComponent::RemoveTimedStates()
+{
+	if (!IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	FGameplayEffectQuery Query;
+	Query.CustomMatchDelegate.BindLambda([](const FActiveGameplayEffect& Effect)
+	{
+		return Effect.Spec.Def && Effect.Spec.Def->IsA<UGenGE_TimedState>();
+	});
+	RemoveActiveEffects(Query);
 }

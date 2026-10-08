@@ -40,6 +40,18 @@ public:
 	/** Vrai si un autre sort actif (que Except) porte State.Casting dans ses ActivationOwnedTags. */
 	bool IsAnotherAbilityCasting(FGameplayAbilitySpecHandle Except) const;
 
+	/**
+	 * Serveur : applique un contrôle dur (StateTag = un tag de GenGameplayTags::GetHardCCTags()) pendant Duration secondes.
+	 * Étourdi ou neutralisé : vitesse à 0. Tous : sorts bloqués (UGenGameplayAbility::CanActivateAbility) et incantation
+	 * interrompue. Point d'entrée unique de tous les contrôles durs (immunités et résilience s'y branchent).
+	 * Handle invalide si rien n'est appliqué.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Gen|CrowdControl")
+	FActiveGameplayEffectHandle ApplyHardCC(FGameplayTag StateTag, float Duration, AActor* Source);
+
+	/** Serveur : retire les états temporaires (UGenGE_TimedState et dérivés), ex. à la mort. */
+	void RemoveTimedStates();
+
 protected:
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
