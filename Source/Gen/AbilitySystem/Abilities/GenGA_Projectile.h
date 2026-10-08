@@ -22,14 +22,14 @@ struct FGameplayAbilityTargetData;
  *     Relâcher, atteindre le max ou épuiser la ressource enchaîne sur l'incantation.
  *     Le client décide du nombre ; le serveur le borne à sa ressource et au temps mesuré.
  *     Une seule barre de cast de l'appui au lancer : un cran par flamme, repliée à la fin du nourrissage.
- *  1. Si CastTime > 0 : incantation (barre de cast, ralenti), annulée si le lanceur est étourdi ou meurt
+ *  1. Si CastTime > 0 : incantation (barre de cast, ralenti), annulée par un contrôle dur (GenGameplayTags::GetHardCCTags) ou la mort
  *     (ou par un autre sort via CancelAbilitiesWithTag)
  *  2. Le client récupère le point visé sous la souris et l'envoie au serveur (target data,
  *     avec le nombre d'unités nourries) => on vise à la FIN de l'incantation.
  *     Serveur pour un client distant : pas de minuteur propre, c'est l'arrivée de la visée qui
  *     termine l'incantation (durée vérifiée à CastTimeTolerance près, voir GenFeeding::GetServerCastWait).
  *     Visée arrivée trop tôt : le serveur garde toute l'incantation jusqu'à sa propre fin (barre et effet vus
- *     par les autres, ralenti, interruption par un étourdissement), puis lance le tir (coût, cooldown) et le
+ *     par les autres, ralenti, interruption par un contrôle dur), puis lance le tir (coût, cooldown) et le
  *     projectile. Une seule visée par activation ; les autres sorts du joueur ne peuvent plus annuler ce tir.
  *  3. CommitAbility + dépense de la ressource nourrie au lancer : une incantation interrompue ne coûte rien.
  *  4. Le personnage se tourne vers la cible, joue un montage optionnel
@@ -63,7 +63,7 @@ protected:
 	UFUNCTION()
 	void OnCastFinished();
 
-	/** Étourdi pendant le nourrissage ou l'incantation. */
+	/** Contrôle dur (étourdi, silence, peur, neutralisé) pendant le nourrissage ou l'incantation. */
 	UFUNCTION()
 	void OnCastInterrupted();
 

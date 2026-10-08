@@ -93,7 +93,7 @@ bool UGenGA_Projectile::CanBeCanceled() const
 {
 	// Serveur, projectile différé (visée reçue en avance) : le client a déjà tiré. La boule de feu relancée
 	// par son clic maintenu (ou tout autre sort lancé après le tir) arrive juste derrière la visée et ne
-	// doit pas annuler ce tir. Ce verrou ne protège que des autres sorts du joueur : un étourdissement
+	// doit pas annuler ce tir. Ce verrou ne protège que des autres sorts du joueur : un contrôle dur
 	// annule quand même le tir (OnCastInterrupted le termine directement), la mort au départ du projectile.
 	return !bServerShotLocked && Super::CanBeCanceled();
 }
@@ -441,7 +441,7 @@ void UGenGA_Projectile::OnServerAimReceived(const FGameplayAbilityTargetDataHand
 
 	// Visée trop tôt (triche, ou activation retardée par une perte de paquet). Le serveur garde toute l'incantation
 	// jusqu'à SA fin (CastTime - tolérance) : barre de cast et effet de main vus par les autres, ralenti, interruption
-	// par un étourdissement. Cooldown et flammes ne sont payés qu'au départ du projectile (OnServerLaunchDelayFinished).
+	// par un contrôle dur. Cooldown et flammes ne sont payés qu'au départ du projectile (OnServerLaunchDelayFinished).
 	LogEarlyAim(Elapsed, Wait);
 	PendingAimData = DataHandle;
 
@@ -541,10 +541,14 @@ void UGenGA_Projectile::StartInterruptWatch()
 	}
 	bInterruptWatchStarted = true;
 
-	// Un étourdissement interrompt le nourrissage et l'incantation (la mort annule déjà tous les sorts)
-	UAbilityTask_WaitGameplayTagAdded* StunTask = UAbilityTask_WaitGameplayTagAdded::WaitGameplayTagAdd(this, GenGameplayTags::State_Stunned, nullptr, true);
-	StunTask->Added.AddDynamic(this, &ThisClass::OnCastInterrupted);
-	StunTask->ReadyForActivation();
+	// Un contrôle dur (étourdi, silence, peur, neutralisé) interrompt le nourrissage et l'incantation
+	// (la mort annule déjà tous les sorts). Une tâche par tag : le premier arrivé interrompt.
+	for (const FGameplayTag& HardCCTag : GenGameplayTags::GetHardCCTags())
+	{
+		UAbilityTask_WaitGameplayTagAdded* HardCCTask = UAbilityTask_WaitGameplayTagAdded::WaitGameplayTagAdd(this, HardCCTag, nullptr, true);
+		HardCCTask->Added.AddDynamic(this, &ThisClass::OnCastInterrupted);
+		HardCCTask->ReadyForActivation();
+	}
 }
 
 void UGenGA_Projectile::EndCastPresentation()
@@ -579,15 +583,15 @@ void UGenGA_Projectile::OnCastInterrupted()
 {
 	if (IsWaitingForDeferredLaunch())
 	{
-		// Serveur : visée reçue en avance, l'incantation du serveur n'est pas finie. Un étourdissement l'interrompt
+		// Serveur : visée reçue en avance, l'incantation du serveur n'est pas finie. Un contrôle dur l'interrompt
 		// comme n'importe quelle incantation : pas de projectile, rien de payé. CanBeCanceled est faux (verrou du tir
 		// contre les autres sorts du joueur) : on termine le sort directement.
-		GEN_ABILITY_LOG(Log, "Étourdi pendant l'incantation (visée reçue en avance) : tir annulé, sans coût");
+		GEN_ABILITY_LOG(Log, "Contrôle dur pendant l'incantation (visée reçue en avance) : tir annulé, sans coût");
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
 
-	GEN_ABILITY_LOG(Verbose, "Incantation interrompue (étourdi)");
+	GEN_ABILITY_LOG(Verbose, "Incantation interrompue (contrôle dur)");
 	CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
 }
 
