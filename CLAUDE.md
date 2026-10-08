@@ -85,8 +85,11 @@ tout le reste avance sans cérémonie.
   - Les tests tournent dans l'éditeur ouvert, pas dans un second process Unreal (sauf le test headless avant
     de pousser).
   - Pas de redémarrage « par sécurité » : seulement si une compilation l'exige ou si l'éditeur a planté.
-- **Visuel : montrer tôt.** VFX, animations et UI se font dans l'éditeur avec une capture avant/après dès
-  la première version, jamais construits « à l'aveugle » en headless puis branchés. Le style de référence
+- **Vérifications visuelles groupées à la fin.** Pas de PIE ni de capture après chaque petit changement : une
+  seule vérification visuelle quand tout le lot est en place. Exception : la toute première version d'un
+  nouveau style visuel (nouvelle famille de VFX, nouveau look) se montre tôt, avec une capture avant/après,
+  pour ne pas construire tout un lot dans une direction refusée. Jamais de VFX construits « à l'aveugle » en
+  headless puis branchés. Le style de référence
   (bible §7.4, [TASTE #5]) sert de base : on duplique et on adapte.
 - **Rapports courts.** Un agent rend 15 lignes maximum : commits, résultat des tests, ce qui reste. Le
   détail va dans un fichier si nécessaire.
