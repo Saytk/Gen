@@ -8,6 +8,7 @@
 class AGenCharacterBase;
 class AGenPlayerController;
 class UTexture2D;
+struct FGenAimGeometry;
 
 UENUM(BlueprintType)
 enum class EGenAbilityActivationPolicy : uint8
@@ -82,6 +83,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Gen|Ability")
 	AGenPlayerController* GetGenPlayerControllerFromActorInfo() const;
+
+	/**
+	 * Indicateur de visée du lanceur (local seulement) : géométrie calculée depuis les valeurs de jeu de CE sort.
+	 * Faux = aucun indicateur. Appelé chaque image tant que la visée est ouverte (UGenSpellIndicatorComponent).
+	 */
+	virtual bool GetAimGeometry(const AGenCharacterBase& Caster, int32 Fed, const FVector& Cursor, FGenAimGeometry& Out) const { return false; }
+
+	/**
+	 * Télégraphe centré sur le lanceur, vu par tous pendant l'incantation (bChannel faux) ou la canalisation (vrai).
+	 * Rayon en cm, 0 = aucun. Combustion : NovaRadius pendant l'incantation ; Living Flame : BurstRadius pendant la forme.
+	 */
+	virtual float GetSelfTelegraphRadius(bool bChannel) const { return 0.f; }
 
 private:
 	/** Conteneur temporaire renvoyé par GetCooldownTags() (tags du GE + CooldownTags). */
