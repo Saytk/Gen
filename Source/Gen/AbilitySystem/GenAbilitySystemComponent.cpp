@@ -409,6 +409,16 @@ int32 UGenAbilitySystemComponent::CancelPendingCasts(const UGameplayAbility* Exc
 		}
 	}
 
+	// Revue finale, M-3 : l'annulation retire tout de suite le ralenti d'incantation du client ; ses mouvements ralentis
+	// encore en attente partent avant la RPC d'annulation (comme avant l'activation et la visée)
+	if (Pending.Num() > 0)
+	{
+		if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetAvatarActor()))
+		{
+			Character->FlushMovesToServer();
+		}
+	}
+
 	// Annulation prédite (rien n'a été payé : coûts au lancer), répliquée au serveur qui la refuse si la visée est
 	// déjà arrivée (ordre des RPC du joueur : une visée envoyée avant l'annulation arrive avant elle)
 	for (UGenGA_Cast* CastAbility : Pending)
