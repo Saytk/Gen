@@ -6,7 +6,9 @@
 #include "GameplayEffect.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/Texture2D.h"
+#include "EnhancedInputSubsystems.h"
 #include "Engine/World.h"
 #include "GenGameplayTags.h"
 #include "Input/GenInputConfig.h"
@@ -46,6 +48,18 @@ void UGenAbilitySlot::NativeConstruct()
 	}
 	ApplyLayout();
 	RefreshVisuals();
+
+	// Les touches se lisent dans les mappings actifs, reconstruits au tick qui suit un AddMappingContext
+	// ou une réassignation : le libellé lu au Bind peut être vide, on le relit à chaque reconstruction (§8.4)
+	if (UEnhancedInputLocalPlayerSubsystem* Input = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetOwningLocalPlayer()))
+	{
+		Input->ControlMappingsRebuiltDelegate.AddUniqueDynamic(this, &ThisClass::HandleControlMappingsRebuilt);
+	}
+}
+
+void UGenAbilitySlot::HandleControlMappingsRebuilt()
+{
+	RefreshKeyLabel();
 }
 
 void UGenAbilitySlot::ApplyLayout()
@@ -75,6 +89,10 @@ void UGenAbilitySlot::ApplyLayout()
 
 void UGenAbilitySlot::NativeDestruct()
 {
+	if (UEnhancedInputLocalPlayerSubsystem* Input = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetOwningLocalPlayer()))
+	{
+		Input->ControlMappingsRebuiltDelegate.RemoveDynamic(this, &ThisClass::HandleControlMappingsRebuilt);
+	}
 	Unbind();
 	Super::NativeDestruct();
 }

@@ -59,6 +59,8 @@ protected:
 private:
 	void ApplyLayout();
 	void ResolveAbility();
+	/** Mappings Enhanced Input reconstruits (contexte ajouté, réassignation) : on relit le libellé de touche. */
+	UFUNCTION() void HandleControlMappingsRebuilt();
 	void RefreshKeyLabel();
 	void RefreshCooldown();
 	void RefreshVisuals();
