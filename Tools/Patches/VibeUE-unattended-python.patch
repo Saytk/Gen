@@ -1,0 +1,31 @@
+diff --git a/Source/VibeUE/Private/Tools/PythonExecutionService.cpp b/Source/VibeUE/Private/Tools/PythonExecutionService.cpp
+index 4dfebad..cf790a1 100644
+--- a/Source/VibeUE/Private/Tools/PythonExecutionService.cpp
++++ b/Source/VibeUE/Private/Tools/PythonExecutionService.cpp
+@@ -346,7 +346,7 @@ TResult<FPythonExecutionResult> FPythonExecutionService::ExecuteCode(
+ 	Command.Command = MakeCodeCommand(Code);
+ 	Command.ExecutionMode = EPythonCommandExecutionMode::ExecuteFile;
+ 	Command.FileExecutionScope = ExecutionScope;
+-	Command.Flags = EPythonCommandFlags::None;
++	Command.Flags = EPythonCommandFlags::Unattended;
+ 
+ 	// Execute with timing and timeout handling
+ 	double StartTime = FPlatformTime::Seconds();
+@@ -389,7 +389,7 @@ TResult<FPythonExecutionResult> FPythonExecutionService::ExecuteCode(
+ 		FPythonCommandEx ProbeCommand;
+ 		ProbeCommand.Command = TEXT("pass");
+ 		ProbeCommand.ExecutionMode = EPythonCommandExecutionMode::ExecuteStatement;
+-		ProbeCommand.Flags = EPythonCommandFlags::None;
++		ProbeCommand.Flags = EPythonCommandFlags::Unattended;
+ 		const FSEHExecutionResult ProbeResult = ExecutePythonWithSEH(PythonPlugin, &ProbeCommand);
+ 		if (!ProbeResult.bCrashed && ProbeResult.bSuccess)
+ 		{
+@@ -523,7 +523,7 @@ TResult<FPythonExecutionResult> FPythonExecutionService::EvaluateExpression(cons
+ 	Command.Command = Expression;
+ 	Command.ExecutionMode = EPythonCommandExecutionMode::EvaluateStatement;
+ 	Command.FileExecutionScope = EPythonFileExecutionScope::Private;
+-	Command.Flags = EPythonCommandFlags::None;
++	Command.Flags = EPythonCommandFlags::Unattended;
+ 
+ 	// Execute with timing
+ 	double StartTime = FPlatformTime::Seconds();
