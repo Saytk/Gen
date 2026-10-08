@@ -26,7 +26,7 @@ struct FOnAttributeChangeData;
 
 /**
  * Un emplacement de la barre de sorts (UI_Guidelines §4.1). Logique en C++, disposition et style dans WBP_AbilitySlot.
- * Piloté par événements (tags de recharge, étourdissement, énergie) ; un minuteur court ne tourne que
+ * Piloté par événements (tags de recharge, contrôles durs, énergie) ; un minuteur court ne tourne que
  * pendant une recharge ou un flash, jamais de NativeTick (§8.4).
  */
 UCLASS(Abstract)
@@ -88,11 +88,17 @@ private:
 	void TickRefresh();
 	void StartFlash(float Duration);
 	void OnCooldownTagChanged(const FGameplayTag Tag, int32 NewCount);
+	/** Un contrôle dur (étourdi, silence, peur, neutralisé) apparaît ou disparaît : état Locked (§4.1). */
 	void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);
+	/** L'énergie couvre-t-elle le coût du sort (même règle que CheckCost, GenEnergy::CanAfford) ? Vrai pour un sort gratuit. */
+	bool CanAffordAbility() const;
 	void OnEnergyChanged(const FOnAttributeChangeData& Data);
 	void OnEffectAdded(UAbilitySystemComponent* Target, const FGameplayEffectSpec& Spec, FActiveGameplayEffectHandle Handle);
-	/** Met à jour l'arc et l'impulsion ; renvoie vrai si l'ultime est pleine ET lançable (anneau à α 1.0). */
-	bool UpdateUltimateArc();
+	/**
+	 * Arc de coût (§4.1) : sur l'ultime, et sur tout sort qui coûte de l'énergie (R : 1 segment, F : 4).
+	 * Gère aussi l'impulsion de l'ultime ; renvoie vrai si l'ultime est pleine ET lançable (anneau à α 1.0).
+	 */
+	bool UpdateCostArc();
 	/** Largeur et décalage de la boîte du chiffre, changés seulement quand la classe de format change. */
 	void UpdateCooldownTextBox();
 	/** Mesure (une fois par classe) la valeur la plus étroite et la plus large de la classe dans la police du chiffre. */
@@ -105,14 +111,17 @@ private:
 	TWeakObjectPtr<const UGenGameplayAbility> AbilityCDO;
 	FGameplayTagContainer CooldownTags;
 
-	/** MID de M_UI_AbilityIcon : texture du sort (paramètre Icon) et désaturation pendant la recharge (DimAmount). */
+	/**
+	 * MID de M_UI_AbilityIcon : texture du sort (paramètre Icon), désaturation pendant la recharge (DimAmount) et
+	 * luminosité sans assez d'énergie (Brightness, §4.1).
+	 */
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> IconMID;
 	/** Texture par défaut du matériau d'icône, remise quand le slot n'a plus d'icône. */
 	UPROPERTY(Transient) TObjectPtr<UTexture> DefaultIconTexture;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> SweepMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> ArcMID;
 
-	/** Tags de l'ASC (étourdissement), gardés tant que l'ASC est lié. */
+	/** Tags de l'ASC (contrôles durs), gardés tant que l'ASC est lié. */
 	TArray<TPair<FGameplayTag, FDelegateHandle>> TagHandles;
 	/** Tags de recharge du sort résolu, retirés quand le sort change. */
 	TArray<TPair<FGameplayTag, FDelegateHandle>> CooldownTagHandles;

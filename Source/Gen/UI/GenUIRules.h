@@ -11,7 +11,9 @@ enum class EGenAbilitySlotState : uint8
 	Empty,
 	Ready,
 	Cooldown,
-	Locked
+	Locked,
+	/** Pas assez d'énergie pour le coût du sort (R, F) : voile cooldown.noEnergy, icône à 55 % (§4.1). */
+	NoEnergy
 };
 
 /** Règles pures de l'interface, testées hors monde. */
@@ -148,8 +150,8 @@ namespace GenUIRules
 		return ViewportScale > KINDA_SMALL_NUMBER ? FMath::Max(RimPx, 1.f / ViewportScale) : RimPx;
 	}
 
-	/** Priorité : vide > bloqué (étourdi) > recharge > prêt. */
-	inline EGenAbilitySlotState ResolveSlotState(bool bHasAbility, bool bLocked, float CooldownRemaining)
+	/** Priorité : vide > bloqué (contrôle dur) > recharge > pas assez d'énergie > prêt. */
+	inline EGenAbilitySlotState ResolveSlotState(bool bHasAbility, bool bLocked, float CooldownRemaining, bool bCanAfford = true)
 	{
 		if (!bHasAbility)
 		{
@@ -159,7 +161,11 @@ namespace GenUIRules
 		{
 			return EGenAbilitySlotState::Locked;
 		}
-		return CooldownRemaining > 0.f ? EGenAbilitySlotState::Cooldown : EGenAbilitySlotState::Ready;
+		if (CooldownRemaining > 0.f)
+		{
+			return EGenAbilitySlotState::Cooldown;
+		}
+		return bCanAfford ? EGenAbilitySlotState::Ready : EGenAbilitySlotState::NoEnergy;
 	}
 
 	/** Couleur d'un jeton hexadécimal sRGB ("#RRGGBB" ou "RRGGBB") convertie en linéaire. */
@@ -192,5 +198,15 @@ namespace GenUIRules
 			return 0;
 		}
 		return FMath::Clamp(FMath::FloorToInt32(Energy / (MaxEnergy / Segments) + KINDA_SMALL_NUMBER), 0, Segments);
+	}
+
+	/** Segments d'arc d'un coût (§4.1, un segment par tranche de Max/Segments) : R (25) = 1, F (100) = 4, sort gratuit = 0. */
+	inline int32 CostSegments(float EnergyCost, float MaxEnergy, int32 Segments)
+	{
+		if (EnergyCost <= 0.f || MaxEnergy <= 0.f || Segments <= 0)
+		{
+			return 0;
+		}
+		return FMath::Clamp(FMath::CeilToInt32(EnergyCost / (MaxEnergy / Segments) - KINDA_SMALL_NUMBER), 1, Segments);
 	}
 }
