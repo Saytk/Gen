@@ -132,36 +132,31 @@ bool UGenGA_Cast::IsServerForRemoteClient() const
 	return CurrentActorInfo && CurrentActorInfo->IsNetAuthority() && !IsLocallyControlled();
 }
 
-void UGenGA_Cast::GetPendingCasts(const UAbilitySystemComponent* ASC, FGameplayAbilitySpecHandle Except, TArray<UGenGA_Cast*, TInlineAllocator<4>>& OutPending)
+void UGenGA_Cast::CancelOtherPendingCasts()
 {
-	OutPending.Reset();
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	if (!ASC)
 	{
 		return;
 	}
 
+	TArray<UGenGA_Cast*, TInlineAllocator<4>> ToCancel;
 	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 	{
-		if (Spec.Handle == Except || !Spec.IsActive())
+		if (Spec.Handle == CurrentSpecHandle || !Spec.IsActive())
 		{
 			continue;
 		}
-		UGenGA_Cast* CastAbility = Cast<UGenGA_Cast>(Spec.GetPrimaryInstance());
-		// CanBeCanceled : serveur, visée du client reçue (départ différé compris) => le sort part quand même
-		if (CastAbility && CastAbility->IsCastPending() && CastAbility->CanBeCanceled())
+		UGenGA_Cast* Other = Cast<UGenGA_Cast>(Spec.GetPrimaryInstance());
+		if (Other && Other->IsCastPending())
 		{
-			OutPending.Add(CastAbility);
+			ToCancel.Add(Other);
 		}
 	}
-}
-
-void UGenGA_Cast::CancelOtherPendingCasts()
-{
-	TArray<UGenGA_Cast*, TInlineAllocator<4>> ToCancel;
-	GetPendingCasts(GetAbilitySystemComponentFromActorInfo(), CurrentSpecHandle, ToCancel);
 
 	for (UGenGA_Cast* Other : ToCancel)
 	{
+		// Sans effet sur un sort verrouillé côté serveur (déjà lancé par le client, CanBeCanceled faux)
 		Other->CancelAbility(Other->GetCurrentAbilitySpecHandle(), Other->GetCurrentActorInfo(), Other->GetCurrentActivationInfo(), true);
 	}
 }

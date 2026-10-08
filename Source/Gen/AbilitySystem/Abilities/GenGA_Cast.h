@@ -69,13 +69,6 @@ public:
 	/** Vrai pendant le nourrissage et l'incantation, avant le lancer. */
 	bool IsCastPending() const { return IsActive() && !bReleased; }
 
-	/**
-	 * Sorts à incantation de l'ASC encore en attente (IsCastPending) et annulables (CanBeCanceled), sauf Except.
-	 * Liste d'abord, annulation ensuite : annuler un sort modifie les specs actifs. Partagé par la touche
-	 * d'annulation (UGenAbilitySystemComponent::CancelPendingCasts) et le remplacement (CancelOtherPendingCasts).
-	 */
-	static void GetPendingCasts(const UAbilitySystemComponent* ASC, FGameplayAbilitySpecHandle Except, TArray<UGenGA_Cast*, TInlineAllocator<4>>& OutPending);
-
 	/** Serveur : visée reçue en avance, le lancer attend la fin de l'incantation mesurée par le serveur (tests). */
 	bool IsWaitingForDeferredLaunch() const { return bServerShotLocked && PendingAimData.Num() > 0; }
 
