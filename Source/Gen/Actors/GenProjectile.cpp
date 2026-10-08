@@ -135,7 +135,7 @@ void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, A
 	if (AGenCharacterBase* HitCharacter = Cast<AGenCharacterBase>(OtherActor))
 	{
 		// On traverse les alliés et les morts
-		if (HitCharacter->IsDead() || !AGenCharacterBase::AreEnemies(GetInstigator(), HitCharacter))
+		if (HitCharacter->IsDead() || !IsEnemy(HitCharacter))
 		{
 			return;
 		}
@@ -166,7 +166,29 @@ void AGenProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, A
 
 bool AGenProjectile::IsValidTarget(const AGenCharacterBase* Character) const
 {
-	return Character && !Character->IsDead() && AGenCharacterBase::AreEnemies(GetInstigator(), Character);
+	return Character && !Character->IsDead() && IsEnemy(Character);
+}
+
+void AGenProjectile::SetSourceTeam(uint8 InSourceTeam)
+{
+	SourceTeam = InSourceTeam;
+	bHasSourceTeam = true;
+}
+
+uint8 AGenProjectile::GetSourceTeam() const
+{
+	if (bHasSourceTeam)
+	{
+		return SourceTeam;
+	}
+	const AGenCharacterBase* InstigatorCharacter = Cast<AGenCharacterBase>(GetInstigator());
+	return InstigatorCharacter ? InstigatorCharacter->GetTeamId() : GenNoTeam;
+}
+
+bool AGenProjectile::IsEnemy(const AGenCharacterBase* Character) const
+{
+	// Jamais le lanceur lui-même ; sinon l'équipe retenue au tir décide (le pion du lanceur peut avoir disparu)
+	return Character && Character != GetInstigator() && AGenCharacterBase::AreTeamsEnemies(GetSourceTeam(), Character->GetTeamId());
 }
 
 void AGenProjectile::AddExplosionTargets(const FVector& Origin, const AGenCharacterBase* Excluded, TArray<AGenCharacterBase*>& InOutTargets) const

@@ -103,6 +103,36 @@ bool FGenRingDirectionsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenClientLeapTest, "Gen.Area.ClientLeap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenClientLeapTest::RunTest(const FString& Parameters)
+{
+	// AcceptClientLeap(ClientDistance, ClientYaw, MaxDistance, ServerYaw) : revue Plan 2 Tasks 7-8, I-1
+	TestTrue(TEXT("même bond"), GenAreaRules::AcceptClientLeap(650.f, 10.f, 700.f, 10.f));
+	TestTrue(TEXT("portée pile (arrondi)"), GenAreaRules::AcceptClientLeap(700.5f, 0.f, 700.f, 0.f));
+	TestFalse(TEXT("au-delà de la portée"), GenAreaRules::AcceptClientLeap(720.f, 0.f, 700.f, 0.f));
+	TestFalse(TEXT("pas de bond annoncé"), GenAreaRules::AcceptClientLeap(-1.f, 0.f, 700.f, 0.f));
+	TestTrue(TEXT("lacet à 4° du serveur"), GenAreaRules::AcceptClientLeap(500.f, 4.f, 700.f, 0.f));
+	TestFalse(TEXT("lacet à 10° du serveur"), GenAreaRules::AcceptClientLeap(500.f, 10.f, 700.f, 0.f));
+	TestTrue(TEXT("lacet autour de ±180°"), GenAreaRules::AcceptClientLeap(500.f, 178.f, 700.f, -179.f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenRingWallTest, "Gen.Area.RingWall",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenRingWallTest::RunTest(const FString& Parameters)
+{
+	// IsRingWall(ImpactNormal, WalkableFloorZ) : revue Plan 2 Tasks 7-8, M-8. WalkableFloorZ par défaut du CMC : cos(44.765°)
+	const float WalkableZ = 0.71f;
+	TestTrue(TEXT("mur vertical"), GenAreaRules::IsRingWall(FVector(-1.f, 0.f, 0.f), WalkableZ));
+	TestFalse(TEXT("sol plat"), GenAreaRules::IsRingWall(FVector::UpVector, WalkableZ));
+	TestFalse(TEXT("pente de 30°"), GenAreaRules::IsRingWall(FVector(-0.5f, 0.f, 0.866f), WalkableZ));
+	TestTrue(TEXT("pente de 60° (non praticable)"), GenAreaRules::IsRingWall(FVector(-0.866f, 0.f, 0.5f), WalkableZ));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenLineOfSightSamplesTest, "Gen.Area.LineOfSightSamples",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 

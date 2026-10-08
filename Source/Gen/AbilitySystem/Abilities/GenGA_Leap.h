@@ -5,7 +5,9 @@
 #include "GenGA_Leap.generated.h"
 
 class AGenGroundArea;
+class UAbilityTask_ApplyRootMotionJumpForce;
 class UAnimMontage;
+struct FHitResult;
 
 /**
  * Bond visible (guidelines §3.6) vers le curseur, ramené à MaxDistance. Nourrissable : le décollage
@@ -13,6 +15,9 @@ class UAnimMontage;
  * Pendant le vol : aucun sort (State.CastLocked), un contrôle dur ne coupe pas le bond (il interrompt le décollage).
  * Point d'atterrissage répliqué à tous pendant le vol (AGenCharacterBase::GetLeapTarget : cercle vu aussi par les ennemis).
  * Atterrissage : zone de dégâts (A) autour du point d'impact, puis fin du sort.
+ * Réseau (revue Plan 2 Tasks 7-8, I-1) : le client annonce la distance et le lacet de SON bond avec la visée, le serveur
+ * les reprend s'ils sont plausibles : les deux forces de saut sont identiques. Toujours posé à au plus un rayon de
+ * capsule du cercle montré aux autres (I-2) : à LeapDuration, la force de saut s'arrête et la gravité finit la chute.
  * Pas de CancelAbilitiesWithTag dans l'asset : un sort lancé ne doit pas couper le vol (le verrou les refuse de toute façon).
  */
 UCLASS()
@@ -22,6 +27,9 @@ class GEN_API UGenGA_Leap : public UGenGA_Cast
 
 public:
 	UGenGA_Leap();
+
+	/** Client : distance et lacet de ce bond, mesurés depuis la position du client (repris par le serveur). */
+	virtual void FillAimData(FGenTargetData_Aim& Data) const override;
 
 	/** En vol (après le décollage, avant l'atterrissage). */
 	bool IsAirborne() const { return bAirborne; }
@@ -36,9 +44,27 @@ protected:
 	/** Atterrissage (serveur et client). Par défaut : montage, effet, zone d'atterrissage (serveur). */
 	virtual void OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation);
 
-	/** Fin du bond : posé au sol (au plus tôt à LeapDuration × 0.5), ou filet de sécurité MaxFlightDuration. */
+	/** Force de saut : posé au sol avant LeapDuration (au plus tôt à LeapDuration × 0.5). */
 	UFUNCTION()
-	void OnLanded();
+	void OnJumpLanded();
+
+	/** Force de saut finie à LeapDuration (temps de simulation du mouvement) : encore en l'air => la gravité finit la chute. */
+	UFUNCTION()
+	void OnJumpForceEnded();
+
+	/** Chute après LeapDuration : posé au sol (ACharacter::LandedDelegate). */
+	UFUNCTION()
+	void OnCharacterLanded(const FHitResult& Hit);
+
+	/** Filet de sécurité MaxFlightDuration : posé sur le sol trouvé sous le personnage, sans zone ni anneau s'il n'y en a pas. */
+	UFUNCTION()
+	void OnSafetyNet();
+
+	/**
+	 * Distance et lacet du bond. Serveur d'un client distant : ceux annoncés par le client s'ils sont plausibles
+	 * (GenAreaRules::AcceptClientLeap), sinon les siens ; ailleurs : ceux du client lui-même (sa visée).
+	 */
+	void ResolveLeap(const FGenCastRelease& Release, const FVector& Start, float& OutDistance, float& OutYaw) const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Leap", meta = (ClampMin = "0.0", Units = "cm"))
 	float MaxDistance = 700.f;
@@ -50,9 +76,9 @@ protected:
 	float LeapDuration = 0.45f;
 
 	/**
-	 * Filet de sécurité : le bond se termine au plus tard après cette durée de vol, même sans atterrissage détecté.
-	 * La tâche de saut (bFinishOnLanded) n'a pas de délai propre : sans ce filet, un bond qui ne retrouve jamais le sol
-	 * (vide, géométrie coincée) garderait State.CastLocked. Toujours supérieur à LeapDuration.
+	 * Filet de sécurité : le bond se termine au plus tard après cette durée de vol, même sans atterrissage détecté (chute
+	 * sans fin après LeapDuration : vide, géométrie coincée), sinon State.CastLocked resterait. Toujours supérieur à
+	 * LeapDuration. L'atteindre veut dire que la géométrie du niveau est à revoir (avertissement dans le journal).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Leap", meta = (ClampMin = "0.2", Units = "s"))
 	float MaxFlightDuration = 1.5f;
@@ -87,6 +113,17 @@ private:
 	/** Efface le point d'atterrissage répliqué (AGenCharacterBase::LeapTarget). */
 	void ClearLeapTarget();
 
+	/** Atterrissage (une seule fois) : verrou retiré, zone et effets (OnLeapLanded), fin du sort. */
+	void Land(bool bSafetyNet);
+
+	/** Retire la force de saut (vitesse finale nulle) et n'écoute plus l'atterrissage du personnage. */
+	void StopJumpForce();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_ApplyRootMotionJumpForce> JumpTask;
+
 	FGenCastRelease LeapRelease;
 	bool bAirborne = false;
+	/** Après LeapDuration, en chute : LandedDelegate du personnage écouté. */
+	bool bWaitingForFloor = false;
 };

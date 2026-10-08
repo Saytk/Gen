@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
+#include "AbilitySystem/Abilities/GenGA_Cast.h"
 #include "AbilitySystem/GenTargetData.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/GenPlayerController.h"
@@ -69,6 +70,12 @@ void UGenAbilityTask_TargetDataUnderCursor::SendCursorData()
 	FGenTargetData_Aim* Data = new FGenTargetData_Aim();
 	Data->HitResult = CursorHit;
 	Data->FedCount = FedCount;
+
+	// Le sort ajoute ce que le serveur doit reprendre à l'identique (bond : distance et lacet du client)
+	if (const UGenGA_Cast* CastAbility = Cast<UGenGA_Cast>(Ability))
+	{
+		CastAbility->FillAimData(*Data);
+	}
 
 	FGameplayAbilityTargetDataHandle DataHandle;
 	DataHandle.Add(Data);

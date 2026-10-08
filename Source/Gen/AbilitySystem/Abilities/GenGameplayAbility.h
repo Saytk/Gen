@@ -40,6 +40,9 @@ public:
 	/** Tags posés sur le lanceur tant que le sort est actif (accès en lecture, ActivationOwnedTags est protégé). */
 	const FGameplayTagContainer& GetActivationOwnedTagsRO() const { return ActivationOwnedTags; }
 
+	/** Activation en cours déclenchée par un événement ou un tag (AbilityTriggers), pas par la touche du joueur. */
+	bool IsTriggeredActivation() const { return CurrentEventData.EventTag.IsValid(); }
+
 	/** Touche qui déclenche ce sort (InputTag.Ability.*). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gen|Input", meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;

@@ -16,6 +16,7 @@ class UAnimMontage;
 class UGameplayEffect;
 class UNiagaraSystem;
 struct FGameplayAbilityTargetData;
+struct FGenTargetData_Aim;
 struct FGenAreaParams;
 struct FGenProjectileSalvo;
 struct FGenProjectileShotParams;
@@ -29,6 +30,12 @@ struct FGenCastRelease
 	FVector AimDirection = FVector::ForwardVector;
 	/** Unités nourries, validées par le serveur et déjà dépensées. */
 	int32 Fed = 0;
+	/**
+	 * Bond annoncé par la visée du client (FGenTargetData_Aim::LeapDistance / LeapYaw), < 0 = aucun. Le sort le valide
+	 * (GenAreaRules::AcceptClientLeap) : revue Plan 2 Tasks 7-8, I-1.
+	 */
+	float ClientLeapDistance = -1.f;
+	float ClientLeapYaw = 0.f;
 };
 
 /**
@@ -72,6 +79,12 @@ public:
 	/** Serveur : visée reçue en avance, le lancer attend la fin de l'incantation mesurée par le serveur (tests). */
 	bool IsWaitingForDeferredLaunch() const { return bServerShotLocked && PendingAimData.Num() > 0; }
 
+	/**
+	 * Client (ou hôte), au moment d'envoyer la visée : le sort y ajoute ce que le serveur doit reprendre à l'identique
+	 * (bond : distance et lacet). Data.HitResult.Location = point visé. Par défaut : rien.
+	 */
+	virtual void FillAimData(FGenTargetData_Aim& Data) const {}
+
 	//~ UGameplayAbility
 	/** Faux sur le serveur entre la visée du client et le départ du sort : le client a déjà lancé. */
 	virtual bool CanBeCanceled() const override;
@@ -91,6 +104,9 @@ protected:
 
 	/** Termine le sort. Seul le serveur réplique la fin (voir le commentaire dans le .cpp). */
 	void FinishAbility();
+
+	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
+	bool IsServerForRemoteClient() const;
 
 	/**
 	 * Verrou de lancement (State.CastLocked, tag local sur le serveur et le client) ; retiré à la fin du sort.
@@ -295,9 +311,6 @@ private:
 	/** Arrête d'écouter la visée (après la première : les suivantes sont ignorées). */
 	void EndAimTask();
 
-	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
-	bool IsServerForRemoteClient() const;
-
 	/**
 	 * Lancer : borne le nourrissage, CommitAbility (cooldown, coût), dépense la ressource, tourne le lanceur,
 	 * joue le montage. Faux si le sort a été terminé (visée invalide, commit refusé).
@@ -316,7 +329,11 @@ private:
 	void AcknowledgeDeferredAim();
 	void SpendResource(int32 Amount);
 
-	FActiveGameplayEffectHandle CastSlowHandle;
+	/**
+	 * Ralenti de l'incantation posé (multiplicateur local de AGenCharacterBase). Revue Plan 2 Tasks 7-8, I-4 : plus de GE
+	 * prédit, chaque machine le pose à SON début et le retire à SA fin, comme ses propres mouvements (aucune correction).
+	 */
+	bool bCastSlowApplied = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitDelay> FeedTickTask;

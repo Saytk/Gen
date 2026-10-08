@@ -7,6 +7,8 @@
 #include "AbilitySystem/GenCastBarRules.h"
 #include "AbilitySystem/GenIndicatorRules.h"
 #include "AbilitySystem/GenKnockback.h"
+#include "Actors/GenGroundArea.h"
+#include "Actors/GenProjectile.h"
 #include "AbilitySystemGlobals.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -437,8 +439,21 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 		return EGenHitResponse::Hit;
 	}
 
-	// Seul un ennemi déclenche le contre ; un attaquant nul (instigateur détruit, ex. zone d'un lanceur mort) reste un ennemi
-	const bool bFromEnemy = !Attacker || AreEnemies(Attacker, this);
+	// Seul un ennemi déclenche le contre. Attaquant nul (instigateur détruit) : l'équipe retenue par la source (projectile,
+	// zone) décide (revue Plan 2 Tasks 7-8, M-6) ; sans source connue, il reste un ennemi
+	bool bFromEnemy = true;
+	if (Attacker)
+	{
+		bFromEnemy = AreEnemies(Attacker, this);
+	}
+	else if (const AGenProjectile* Projectile = Cast<AGenProjectile>(Source))
+	{
+		bFromEnemy = AreTeamsEnemies(Projectile->GetSourceTeam(), GetTeamId());
+	}
+	else if (const AGenGroundArea* Area = Cast<AGenGroundArea>(Source))
+	{
+		bFromEnemy = AreTeamsEnemies(Area->GetSourceTeam(), GetTeamId());
+	}
 	const bool bCountering = bFromEnemy && AbilitySystemComponent->HasMatchingGameplayTag(GenGameplayTags::State_Countering);
 	const EGenHitResponse Response = GenHitRules::Resolve(bCountering, IsUntouchable(), Kind);
 
@@ -503,7 +518,7 @@ void AGenCharacterBase::OnAbilitySystemInitialized()
 	AttributeSet->OnOutOfHealth.Remove(OutOfHealthHandle);
 
 	// Vitesse de déplacement pilotée par l'attribut MoveSpeed (slows / boosts via GameplayEffects)
-	GetCharacterMovement()->MaxWalkSpeed = AttributeSet->GetMoveSpeed();
+	RefreshMaxWalkSpeed();
 	MoveSpeedChangedHandle = AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMoveSpeedAttribute())
 		.AddUObject(this, &ThisClass::OnMoveSpeedChanged);
 
@@ -610,7 +625,52 @@ void AGenCharacterBase::RemoveStartupAbilitiesAndEffects()
 
 void AGenCharacterBase::OnMoveSpeedChanged(const FOnAttributeChangeData& Data)
 {
-	GetCharacterMovement()->MaxWalkSpeed = Data.NewValue;
+	RefreshMaxWalkSpeed();
+}
+
+void AGenCharacterBase::SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier)
+{
+	const FObjectKey Key(Source);
+	FLocalMoveSpeedMultiplier* Entry = LocalMoveSpeedMultipliers.FindByPredicate([&Key, Reason](const FLocalMoveSpeedMultiplier& Item)
+	{
+		return Item.Source == Key && Item.Reason == Reason;
+	});
+	if (!Entry)
+	{
+		Entry = &LocalMoveSpeedMultipliers.AddDefaulted_GetRef();
+		Entry->Source = Key;
+		Entry->Reason = Reason;
+	}
+	Entry->Multiplier = FMath::Max(Multiplier, 0.f);
+	RefreshMaxWalkSpeed();
+}
+
+void AGenCharacterBase::ClearLocalMoveSpeedMultiplier(const UObject* Source, FName Reason)
+{
+	const FObjectKey Key(Source);
+	if (LocalMoveSpeedMultipliers.RemoveAll([&Key, Reason](const FLocalMoveSpeedMultiplier& Item) { return Item.Source == Key && Item.Reason == Reason; }) > 0)
+	{
+		RefreshMaxWalkSpeed();
+	}
+}
+
+float AGenCharacterBase::GetLocalMoveSpeedMultiplier() const
+{
+	float Product = 1.f;
+	for (const FLocalMoveSpeedMultiplier& Item : LocalMoveSpeedMultipliers)
+	{
+		Product *= Item.Multiplier;
+	}
+	return Product;
+}
+
+void AGenCharacterBase::RefreshMaxWalkSpeed()
+{
+	// Sans ASC (pas encore initialisé) : la vitesse par défaut du CMC reste la base
+	if (AttributeSet)
+	{
+		GetCharacterMovement()->MaxWalkSpeed = AttributeSet->GetMoveSpeed() * GetLocalMoveSpeedMultiplier();
+	}
 }
 
 void AGenCharacterBase::HandleOutOfHealth(AActor* DamageInstigator, AActor* DamageCauser)

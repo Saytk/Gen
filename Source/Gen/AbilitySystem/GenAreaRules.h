@@ -31,6 +31,30 @@ namespace GenAreaRules
 		return FVector(Origin.X + Clamped.X, Origin.Y + Clamped.Y, Target.Z);
 	}
 
+	/** Revue Plan 2 Tasks 7-8, I-1 : écart de lacet (degrés) toléré entre le bond annoncé par le client et celui du serveur. */
+	inline constexpr float LeapYawTolerance = 5.f;
+
+	/**
+	 * Bond annoncé par le client (distance et lacet mesurés depuis SA position) : le serveur le reprend tel quel s'il ne
+	 * dépasse pas la portée (1 cm de marge d'arrondi) et que son lacet est à YawTolerance près du sien. Les deux machines
+	 * construisent alors la même force de saut (FRootMotionSource_JumpForce::Matches : distance exacte, rotation à 1°),
+	 * le serveur peut synchroniser la source du client pendant les corrections. Refusé : le serveur garde ses valeurs.
+	 */
+	inline bool AcceptClientLeap(float ClientDistance, float ClientYaw, float MaxDistance, float ServerYaw, float YawTolerance = LeapYawTolerance)
+	{
+		return ClientDistance >= 0.f && ClientDistance <= MaxDistance + 1.f
+			&& FMath::Abs(FMath::FindDeltaAngleDegrees(ServerYaw, ClientYaw)) <= YawTolerance;
+	}
+
+	/**
+	 * Revue Plan 2 Tasks 7-8, M-8 : un obstacle sur le chemin d'une boule de l'anneau n'est un mur que s'il n'est pas
+	 * praticable. Une pente ou le dessus d'une marche (normale assez verticale, WalkableFloorZ du personnage) ne l'est pas.
+	 */
+	inline bool IsRingWall(const FVector& ImpactNormal, float WalkableFloorZ)
+	{
+		return ImpactNormal.Z < WalkableFloorZ;
+	}
+
 	/** Count directions horizontales régulières (360° / Count), la première selon Forward aplati. */
 	inline TArray<FVector> GetRingDirections(int32 Count, const FVector& Forward)
 	{
@@ -90,6 +114,13 @@ namespace GenAreaRules
 	{
 		return Delay <= 0.f ? 0.f : FMath::Max(Delay, MinTelegraph);
 	}
+
+	/**
+	 * Revue Plan 2 Tasks 7-8, M-5 : un client distant reçoit la zone ~½ RTT après son apparition et montre donc son
+	 * télégraphe Delay − latence. Le plancher des zones retardées (MinTelegraph) est relevé de cette marge pour qu'il
+	 * reste respecté chez les autres joueurs jusqu'à 100 ms d'aller simple. Le remplissage suit l'heure serveur répliquée.
+	 */
+	inline constexpr float TelegraphLatencyMargin = 0.1f;
 
 	/** Remplissage du télégraphe : 0 à l'apparition, 1 à l'impact. */
 	inline float GetTelegraphFill(float Elapsed, float Delay)

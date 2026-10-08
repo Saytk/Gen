@@ -221,6 +221,20 @@ public:
 	void ServerReportFedResource(UClass* Ability, uint8 Count);
 
 	/**
+	 * Multiplicateur de vitesse posé par un sort (Source, Reason), local à cette machine et jamais répliqué : le serveur et
+	 * le client propriétaire le posent chacun au début de LEUR phase et le retirent à LEUR fin (ralenti d'incantation,
+	 * posture de contre). La vitesse de marche = attribut MoveSpeed × produit de ces multiplicateurs. Revue Plan 2
+	 * Tasks 7-8, I-4 : un GE prédit restait ~1 RTT de trop chez le client (le retrait du serveur) => correction du
+	 * mouvement à chaque fin de phase. Les autres clients n'en ont pas besoin (mouvement répliqué).
+	 */
+	void SetLocalMoveSpeedMultiplier(const UObject* Source, FName Reason, float Multiplier);
+	void ClearLocalMoveSpeedMultiplier(const UObject* Source, FName Reason);
+
+	/** Produit des multiplicateurs locaux (1 = aucun). */
+	UFUNCTION(BlueprintPure, Category = "Gen|Movement")
+	float GetLocalMoveSpeedMultiplier() const;
+
+	/**
 	 * Serveur : repousse le personnage de Distance (cm) dans Direction (aplatie à l'horizontale).
 	 * Le client propriétaire reçoit le même lancement pour éviter une correction brutale.
 	 */
@@ -426,6 +440,17 @@ private:
 	void GrantStartupAbilitiesAndEffects();
 	void RemoveStartupAbilitiesAndEffects();
 	void OnMoveSpeedChanged(const FOnAttributeChangeData& Data);
+
+	/** Vitesse de marche du CMC = MoveSpeed × GetLocalMoveSpeedMultiplier(). */
+	void RefreshMaxWalkSpeed();
+
+	struct FLocalMoveSpeedMultiplier
+	{
+		FObjectKey Source;
+		FName Reason;
+		float Multiplier = 1.f;
+	};
+	TArray<FLocalMoveSpeedMultiplier, TInlineAllocator<2>> LocalMoveSpeedMultipliers;
 
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 	TArray<FActiveGameplayEffectHandle> GrantedEffectHandles;

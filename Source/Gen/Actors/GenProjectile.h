@@ -54,6 +54,15 @@ public:
 	/** Serveur, avant FinishSpawning. */
 	void InitializeShot(const FGenProjectileShotParams& Params);
 
+	/**
+	 * Serveur, avant FinishSpawning : équipe du lanceur retenue au tir (revue Plan 2 Tasks 7-8, M-6, comme AGenGroundArea).
+	 * Les cibles restent justes si le pion du lanceur disparaît pendant le vol. Sans appel : équipe du pion instigateur.
+	 */
+	void SetSourceTeam(uint8 InSourceTeam);
+
+	/** Équipe retenue au tir, ou celle du pion instigateur (GenNoTeam si aucun). */
+	uint8 GetSourceTeam() const;
+
 	float GetSpeed() const { return Speed; }
 
 	/** A explosé (consommé par un impact) ; répliqué. */
@@ -122,6 +131,9 @@ protected:
 
 	bool IsValidTarget(const AGenCharacterBase* Character) const;
 
+	/** Character est un ennemi du lanceur (équipe retenue au tir). */
+	bool IsEnemy(const AGenCharacterBase* Character) const;
+
 	/**
 	 * Éclaboussure : ennemis vivants dans le rayon, en ligne de vue depuis Origin (pas à travers les murs),
 	 * hors Excluded (cible directe, touchée ou bloquée) et qui ne l'ignorent pas (nature : zone).
@@ -133,4 +145,8 @@ protected:
 
 private:
 	bool bImpactEffectsPlayed = false;
+
+	/** Équipe du lanceur au tir (serveur), valable si bHasSourceTeam. */
+	uint8 SourceTeam = 255;
+	bool bHasSourceTeam = false;
 };

@@ -371,7 +371,7 @@ void UGenAbilitySystemComponent::ClearCastLock()
 	CastLockEnforcedUntil = -1.0;
 }
 
-int32 UGenAbilitySystemComponent::CancelPendingCasts()
+int32 UGenAbilitySystemComponent::CancelPendingCasts(const UGameplayAbility* Except)
 {
 	// Plan 3 Task 6. Liste d'abord : annuler un sort modifie les specs actifs
 	TArray<UGenGA_Cast*, TInlineAllocator<4>> Pending;
@@ -379,7 +379,7 @@ int32 UGenAbilitySystemComponent::CancelPendingCasts()
 	{
 		UGenGA_Cast* CastAbility = Spec.IsActive() ? Cast<UGenGA_Cast>(Spec.GetPrimaryInstance()) : nullptr;
 		// CanBeCanceled : serveur, visée du client reçue (départ différé compris) => le sort part quand même
-		if (CastAbility && CastAbility->IsCastPending() && CastAbility->CanBeCanceled())
+		if (CastAbility && CastAbility != Except && CastAbility->IsCastPending() && CastAbility->CanBeCanceled())
 		{
 			Pending.Add(CastAbility);
 		}

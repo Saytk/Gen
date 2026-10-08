@@ -29,4 +29,7 @@ namespace GenWorldQueries
 
 	/** Sol sous Point (trace vers le bas sur WorldStatic) ; Point lui-même si rien n'est trouvé. */
 	GEN_API FVector FindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors);
+
+	/** Comme FindFloor, mais dit si un sol a été trouvé (OutFloor inchangé sinon). */
+	GEN_API bool TryFindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors, FVector& OutFloor);
 }

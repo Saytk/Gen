@@ -6,7 +6,6 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayTag.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "AbilitySystem/Effects/GenGE_Gain.h"
-#include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
 #include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenFeeding.h"
@@ -27,6 +26,17 @@
 #include "HAL/PlatformTime.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGenCast, Log, All);
+
+namespace GenCastPrivate
+{
+	/** Clé du ralenti d'incantation parmi les multiplicateurs locaux du personnage. */
+	FName GenCastSlowReason()
+	{
+		static const FName Reason(TEXT("CastSlow"));
+		return Reason;
+	}
+}
+using namespace GenCastPrivate;
 
 #define GEN_CAST_LOG(Verbosity, Format, ...) UE_LOG(LogGenCast, Verbosity, TEXT("[%s] %s: " Format), (CurrentActorInfo && CurrentActorInfo->IsNetAuthority()) ? TEXT("SERVEUR") : TEXT("CLIENT"), *GetName(), ##__VA_ARGS__)
 
@@ -133,30 +143,11 @@ bool UGenGA_Cast::IsServerForRemoteClient() const
 
 void UGenGA_Cast::CancelOtherPendingCasts()
 {
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!ASC)
+	// Même règle que la touche d'annulation (un sort déjà parti n'est jamais annulé, ni un sort verrouillé côté serveur :
+	// CanBeCanceled faux), sauf ce sort-ci
+	if (UGenAbilitySystemComponent* ASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
 	{
-		return;
-	}
-
-	TArray<UGenGA_Cast*, TInlineAllocator<4>> ToCancel;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-	{
-		if (Spec.Handle == CurrentSpecHandle || !Spec.IsActive())
-		{
-			continue;
-		}
-		UGenGA_Cast* Other = Cast<UGenGA_Cast>(Spec.GetPrimaryInstance());
-		if (Other && Other->IsCastPending())
-		{
-			ToCancel.Add(Other);
-		}
-	}
-
-	for (UGenGA_Cast* Other : ToCancel)
-	{
-		// Sans effet sur un sort verrouillé côté serveur (déjà lancé par le client, CanBeCanceled faux)
-		Other->CancelAbility(Other->GetCurrentAbilitySpecHandle(), Other->GetCurrentActorInfo(), Other->GetCurrentActivationInfo(), true);
+		ASC->CancelPendingCasts(this);
 	}
 }
 
@@ -690,17 +681,18 @@ void UGenGA_Cast::OnServerLaunchDelayFinished()
 
 void UGenGA_Cast::ApplyCastSlow()
 {
-	// Ralenti appliqué dans la fenêtre de prédiction de l'activation
-	if (CastSlowHandle.IsValid() || CastMoveSpeedMultiplier >= 1.f)
+	if (bCastSlowApplied || CastMoveSpeedMultiplier >= 1.f)
 	{
 		return;
 	}
 
-	FGameplayEffectSpecHandle SlowSpec = MakeOutgoingGameplayEffectSpec(UGenGE_MoveSpeedMultiplier::StaticClass(), GetAbilityLevel());
-	if (SlowSpec.IsValid())
+	// Revue Plan 2 Tasks 7-8, I-4 : multiplicateur local posé par le serveur et le client propriétaire, chacun au début de
+	// SON incantation et retiré à SA fin. Un GE prédit restait chez le client jusqu'au retrait du serveur (~1 RTT) :
+	// correction du mouvement à chaque fin d'incantation.
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 	{
-		SlowSpec.Data->SetSetByCallerMagnitude(GenGameplayTags::SetByCaller_MoveSpeedMultiplier, CastMoveSpeedMultiplier);
-		CastSlowHandle = ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, SlowSpec);
+		Character->SetLocalMoveSpeedMultiplier(this, GenCastSlowReason(), CastMoveSpeedMultiplier);
+		bCastSlowApplied = true;
 	}
 }
 
@@ -725,10 +717,13 @@ void UGenGA_Cast::StartInterruptWatch()
 
 void UGenGA_Cast::EndCastPresentation()
 {
-	if (CastSlowHandle.IsValid())
+	if (bCastSlowApplied)
 	{
-		BP_RemoveGameplayEffectFromOwnerWithHandle(CastSlowHandle);
-		CastSlowHandle.Invalidate();
+		bCastSlowApplied = false;
+		if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+		{
+			Character->ClearLocalMoveSpeedMultiplier(this, GenCastSlowReason());
+		}
 	}
 
 	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
@@ -880,6 +875,9 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	}
 
 	const int32 Fed = ResolveFedCount(Data);
+	const FGenTargetData_Aim* AimData = (Data && Data->GetScriptStruct() == FGenTargetData_Aim::StaticStruct())
+		? static_cast<const FGenTargetData_Aim*>(Data)
+		: nullptr;
 
 	// Le sort part : on applique cooldown, coût et dépense de la ressource maintenant, pour qu'une
 	// incantation interrompue (annulée, contrôle dur, mort) ne coûte rien. Le client est dans la fenêtre
@@ -909,13 +907,20 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 
 	GEN_CAST_LOG(Verbose, "Visée reçue : %s, nourri : %d", *Hit->Location.ToCompactString(), Fed);
 
-	OutRelease.AimLocation = Hit->Location;
+	// Revue Plan 2 Tasks 7-8, M-1 : le client honnête vise sur le plan du lanceur (GetCursorLocationOnPlane) ; un Z modifié
+	// ne choisit ni l'étage d'une carte à niveaux ni une zone sous le sol (FindFloor part de ce point)
+	OutRelease.AimLocation = FVector(Hit->Location.X, Hit->Location.Y, Avatar->GetActorLocation().Z);
 	OutRelease.AimDirection = (Hit->Location - Avatar->GetActorLocation()).GetSafeNormal2D();
 	if (OutRelease.AimDirection.IsNearlyZero())
 	{
 		OutRelease.AimDirection = Avatar->GetActorForwardVector().GetSafeNormal2D(UE_SMALL_NUMBER, FVector::ForwardVector);
 	}
 	OutRelease.Fed = Fed;
+	if (AimData)
+	{
+		OutRelease.ClientLeapDistance = AimData->LeapDistance;
+		OutRelease.ClientLeapYaw = AimData->LeapYaw;
+	}
 
 	// Se tourner vers la cible (client et serveur, pour que la prédiction concorde)
 	if (bTurnToAim)
@@ -1137,6 +1142,9 @@ AGenProjectile* UGenGA_Cast::SpawnProjectileShot(TSubclassOf<AGenProjectile> Sho
 	}
 
 	Projectile->InitializeShot(ShotParams);
+	// Équipe retenue au tir : les cibles restent justes si le lanceur disparaît pendant le vol (revue Plan 2 Tasks 7-8, M-6)
+	const AGenCharacterBase* Character = GetGenCharacterFromActorInfo();
+	Projectile->SetSourceTeam(Character ? Character->GetTeamId() : GenNoTeam);
 	Projectile->Salvo = Salvo;
 	Projectile->DamageEffectSpecHandle = MakeDamageSpec(DamageClass, DamageAmount, Projectile);
 	Projectile->InstigatorOnHitSpecHandle = MakeGainSpec(EnergyGain, ResourceGain);

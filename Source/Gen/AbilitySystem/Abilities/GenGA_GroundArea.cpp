@@ -59,7 +59,9 @@ void UGenGA_GroundArea::OnCastLaunched(const FGenCastRelease& Release)
 	{
 		FGenAreaParams Params;
 		Params.Radius = bFeedable ? GenFeeding::ScaleByFeed(Radius, RadiusAtMaxFeed, Release.Fed, MaxFeed) : Radius;
-		Params.Delay = GenAreaRules::GetImpactDelay(ImpactDelay, MinTelegraph);
+		// Plancher relevé de la latence d'apparition chez les autres joueurs (revue Plan 2 Tasks 7-8, M-5) : ils voient le
+		// télégraphe au moins MinTelegraph, rempli sur l'heure serveur répliquée (fin pile à l'impact)
+		Params.Delay = GenAreaRules::GetImpactDelay(ImpactDelay, MinTelegraph + GenAreaRules::TelegraphLatencyMargin);
 		Params.StunDuration = StunDuration;
 		Params.KnockbackDistance = KnockbackDistance;
 

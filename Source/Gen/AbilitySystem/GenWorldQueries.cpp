@@ -83,17 +83,25 @@ namespace GenWorldQueries
 
 	FVector FindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors)
 	{
+		FVector Floor = Point;
+		TryFindFloor(World, Point, IgnoredActors, Floor);
+		return Floor;
+	}
+
+	bool TryFindFloor(const UWorld* World, const FVector& Point, const TArray<const AActor*>& IgnoredActors, FVector& OutFloor)
+	{
 		if (!World)
 		{
-			return Point;
+			return false;
 		}
 
 		FHitResult Hit;
 		const FCollisionObjectQueryParams Floors(ECC_WorldStatic);
 		if (World->LineTraceSingleByObjectType(Hit, Point + FVector(0.f, 0.f, FloorTraceUp), Point - FVector(0.f, 0.f, FloorTraceDown), Floors, MakeParams(IgnoredActors)))
 		{
-			return FVector(Hit.ImpactPoint);
+			OutFloor = FVector(Hit.ImpactPoint);
+			return true;
 		}
-		return Point;
+		return false;
 	}
 }

@@ -23,11 +23,14 @@ class UGenNetTestGA_Backfire : public UGenGA_Counter
 	GENERATED_BODY()
 
 public:
+	/** Ralenti de la fenêtre (les tests le comparent au multiplicateur local du personnage). */
+	static constexpr float TestWindowMoveSpeedMultiplier = 0.5f;
+
 	UGenNetTestGA_Backfire()
 	{
 		CastTime = 0.1f;
 		CounterWindow = 3.f;
-		WindowMoveSpeedMultiplier = 0.5f;
+		WindowMoveSpeedMultiplier = TestWindowMoveSpeedMultiplier;
 		ResourcePerBlock = 2.f;
 		EnergyOnFirstBlock = 10.f;
 		MeleeKnockbackDistance = 300.f;
@@ -106,10 +109,76 @@ public:
 	 */
 	static FGameplayTagContainer TestCooldownTags;
 
+	/** Distance d'apparition des boules de l'anneau, reprise à l'activation (0 par défaut ; test de la règle des murs). */
+	static float TestRingSpawnOffset;
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
 	{
 		CooldownTags = TestCooldownTags;
+		RingSpawnOffset = TestRingSpawnOffset;
 		Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+	}
+};
+
+/** Sort passif de test (revue Plan 2 Tasks 7-8, I-3) : sans touche, serveur seulement, se termine aussitôt. */
+UCLASS(NotBlueprintable, HideDropdown)
+class UGenNetTestGA_Passive : public UGenGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	UGenNetTestGA_Passive()
+	{
+		NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+	}
+
+	/** Activations, toutes machines confondues (un seul process). */
+	static int32 ActivationCount;
+
+protected:
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
+	{
+		++ActivationCount;
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	}
+};
+
+/**
+ * Sort de test déclenché par un événement (revue Plan 2 Tasks 7-8, I-3) : il a une touche et il est prédit, mais une
+ * activation par événement n'est pas un appui du joueur. Touche et événement posés par le test (BEFORE_EACH) : la touche
+ * à chaque activation (avant PreActivate, qui prévient la posture), l'événement sur le CDO (lu quand le sort est accordé).
+ */
+UCLASS(NotBlueprintable, HideDropdown)
+class UGenNetTestGA_Triggered : public UGenGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	static FGameplayTag TestInputTag;
+	static int32 ActivationCount;
+
+	static void SetTriggerEvent(const FGameplayTag& EventTag)
+	{
+		UGenNetTestGA_Triggered* CDO = GetMutableDefault<UGenNetTestGA_Triggered>();
+		CDO->AbilityTriggers.Reset();
+		FAbilityTriggerData Trigger;
+		Trigger.TriggerTag = EventTag;
+		Trigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
+		CDO->AbilityTriggers.Add(Trigger);
+	}
+
+protected:
+	virtual void PreActivate(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+		FOnGameplayAbilityEnded::FDelegate* OnGameplayAbilityEndedDelegate, const FGameplayEventData* TriggerEventData = nullptr) override
+	{
+		InputTag = TestInputTag;
+		Super::PreActivate(Handle, ActorInfo, ActivationInfo, OnGameplayAbilityEndedDelegate, TriggerEventData);
+	}
+
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
+	{
+		++ActivationCount;
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 	}
 };

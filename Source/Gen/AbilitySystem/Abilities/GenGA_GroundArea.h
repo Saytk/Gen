@@ -48,7 +48,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (ClampMin = "0.0", Units = "s"))
 	float ImpactDelay = 0.8f;
 
-	/** Un télégraphe ne descend jamais sous cette durée (guidelines §3.1 : zones retardées 0.6–1.0 s). */
+	/**
+	 * Un télégraphe ne descend jamais sous cette durée chez les autres joueurs (guidelines §3.1 : zones retardées
+	 * 0.6–1.0 s). Le délai réel ajoute GenAreaRules::TelegraphLatencyMargin (latence d'apparition chez eux).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (ClampMin = "0.0", Units = "s"))
 	float MinTelegraph = 0.6f;
 

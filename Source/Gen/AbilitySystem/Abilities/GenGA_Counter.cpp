@@ -2,7 +2,6 @@
 
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
-#include "AbilitySystem/Effects/GenGE_TimedState.h"
 #include "AbilitySystem/GenHitRules.h"
 #include "AbilitySystemComponent.h"
 #include "Character/GenCharacterBase.h"
@@ -20,13 +19,8 @@ void UGenGA_Counter::OnCastLaunched(const FGenCastRelease& Release)
 {
 	BlockCount = 0;
 
-	// Un seul effet porte la posture (State.Countering, vu par tous) et le ralenti de la fenêtre
-	FGameplayEffectSpecHandle WindowSpec = MakeOutgoingGameplayEffectSpec(UGenGE_TimedMoveSpeed::StaticClass(), GetAbilityLevel());
-	if (WindowSpec.IsValid())
-	{
-		UGenGE_TimedMoveSpeed::SetMagnitudes(*WindowSpec.Data, CounterWindow, WindowMoveSpeedMultiplier, FGameplayTagContainer(GenGameplayTags::State_Countering));
-		WindowEffectHandle = ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, WindowSpec);
-	}
+	// Posture et ralenti de la fenêtre, sur cette machine (serveur ou client propriétaire)
+	SetWindowState(true);
 
 	// Seul le serveur résout les coups : il reçoit les blocages
 	if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
@@ -98,9 +92,60 @@ void UGenGA_Counter::OnWindowFinished()
 	FinishAbility();
 }
 
+bool UGenGA_Counter::EndsStanceOnActivation(const UGameplayAbility* ActivatedAbility)
+{
+	const UGenGameplayAbility* GenAbility = Cast<UGenGameplayAbility>(ActivatedAbility);
+	if (!GenAbility || !GenAbility->InputTag.IsValid() || GenAbility->IsTriggeredActivation())
+	{
+		return false;
+	}
+	const EGameplayAbilityNetExecutionPolicy::Type Policy = GenAbility->GetNetExecutionPolicy();
+	return Policy == EGameplayAbilityNetExecutionPolicy::LocalPredicted || Policy == EGameplayAbilityNetExecutionPolicy::LocalOnly;
+}
+
+void UGenGA_Counter::SetWindowState(bool bActive)
+{
+	if (bWindowStateApplied == bActive)
+	{
+		return;
+	}
+	bWindowStateApplied = bActive;
+
+	// Revue Plan 2 Tasks 7-8, I-4 : plus de GE prédit (il restait ~1 RTT chez le propriétaire après sa fin, ou revenait
+	// après une fin anticipée : bande qui clignote, corrections du mouvement). Chaque machine pose la posture à son départ
+	// et la retire à sa fin. Serveur : tag aussi répliqué aux proxys simulés (les autres joueurs voient la bande), jamais
+	// au propriétaire qui a le sien.
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
+		const EGameplayTagReplicationState Replication = bAuthority ? EGameplayTagReplicationState::SimulatedTagOnly : EGameplayTagReplicationState::None;
+		if (bActive)
+		{
+			ASC->AddLooseGameplayTag(GenGameplayTags::State_Countering, 1, Replication);
+		}
+		else
+		{
+			ASC->RemoveLooseGameplayTag(GenGameplayTags::State_Countering, 1, Replication);
+		}
+	}
+
+	if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
+	{
+		static const FName WindowReason(TEXT("CounterWindow"));
+		if (bActive)
+		{
+			Character->SetLocalMoveSpeedMultiplier(this, WindowReason, WindowMoveSpeedMultiplier);
+		}
+		else
+		{
+			Character->ClearLocalMoveSpeedMultiplier(this, WindowReason);
+		}
+	}
+}
+
 void UGenGA_Counter::OnAbilityActivated(UGameplayAbility* ActivatedAbility)
 {
-	if (ActivatedAbility != this && IsActive())
+	if (ActivatedAbility != this && IsActive() && EndsStanceOnActivation(ActivatedAbility))
 	{
 		UE_LOG(LogGenCounter, Verbose, TEXT("%s : posture terminée par %s"), *GetName(), *GetNameSafe(ActivatedAbility));
 		CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
@@ -115,12 +160,8 @@ void UGenGA_Counter::EndAbility(const FGameplayAbilitySpecHandle Handle, const F
 	}
 	AbilityActivatedHandle.Reset();
 
-	// Fin anticipée (autre sort, contrôle dur, mort) : la posture et le ralenti s'arrêtent avec le sort
-	if (WindowEffectHandle.IsValid())
-	{
-		BP_RemoveGameplayEffectFromOwnerWithHandle(WindowEffectHandle);
-		WindowEffectHandle.Invalidate();
-	}
+	// Fin (délai, autre sort, contrôle dur, mort) : la posture et le ralenti s'arrêtent avec le sort, sur cette machine
+	SetWindowState(false);
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

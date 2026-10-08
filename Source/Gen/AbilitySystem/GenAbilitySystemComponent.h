@@ -63,8 +63,9 @@ public:
 	 * (UGenGA_Cast::IsCastPending), annulation prédite et répliquée au serveur. Un sort déjà parti (fenêtre de contre,
 	 * bond en vol, forme de feu) n'est jamais annulé. Serveur, visée du client déjà reçue : CanBeCanceled est faux, le
 	 * sort part et ses coûts restent payés. Renvoie le nombre de sorts annulés.
+	 * Except : sort épargné (UGenGA_Cast::CancelOtherPendingCasts : le sort qui s'active remplace les autres incantations).
 	 */
-	int32 CancelPendingCasts();
+	int32 CancelPendingCasts(const UGameplayAbility* Except = nullptr);
 
 	/**
 	 * Serveur : un verrou de lancement (State.CastLocked) vient d'être posé (ex : bond en vol). MinLockDuration =
