@@ -73,10 +73,13 @@ Quand l'utilisateur annonce qu'il va modifier des assets à la main, proposer de
   `RunTestsByFilter("StartsWith:Gen.")`, puis `GetTestResults`.
 - **Multijoueur** : les vérifications déterministes (réplication, GAS, autorité serveur) s'écrivent en CQTest
   `NETWORK_TEST_CLASS` dans le module éditeur `GenTests`, qui fait tourner un serveur dédié et des clients
-  dans un seul process. Le PIE manuel (2 clients + serveur dédié) reste la vérification finale, à l'œil.
+  dans un seul process (guide : `Docs/Dev/CQTestNetworkTests.md`). Le PIE manuel (2 clients + serveur dédié)
+  reste la vérification finale, à l'œil.
+  - Lancés dans l'éditeur ouvert, ces tests remplacent le niveau courant par une carte vide, sans demander.
+    Il faut donc sauvegarder avant, puis rouvrir `L_Arena` après.
 - **Test headless, seulement comme barrière avant un commit** :
   `UnrealEditor-Cmd.exe "<projet>\Gen.uproject" -ExecCmds="Automation RunTests Gen.;Quit" -unattended -nullrhi -nosplash -nosound -stdout -ReportExportPath="<projet>\Saved\TestReport" -ModelContextProtocolPort=8011`.
-  Lire ensuite `index.json` dans le dossier du rapport, pas le log.
+  Lire ensuite `index.json` dans le dossier du rapport, pas le log. `Tools/RunGenTests.ps1` fait les deux.
 
 **Sécurité de l'éditeur**
 - **Ne jamais piloter l'UI de l'éditeur** (clics, saisie, glisser). `SlateInspectorToolset` est désactivé
