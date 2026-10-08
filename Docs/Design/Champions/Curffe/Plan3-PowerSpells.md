@@ -2,6 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Execution mode: fast mode.**
+> - Group consecutive C++ tasks into **batches**: write every task of the batch, then run **one build and one unit-test run** for the whole batch. The per-task "Build to verify it fails" steps are optional inside a batch; the per-task "Build, then run the unit tests" steps collapse into the batch's single run. Commit per task when the tasks touch different files, otherwise once per batch (the message lists the task titles).
+> - **Per-task review only for risky tasks**, the ones tagged **Review: required** below. Other tasks get one review per batch.
+> - Proposed batches:
+>
+> | Batch | Tasks | Needs the editor? | Review: required |
+> |---|---|---|---|
+> | A | 1–5: pure rules, fast feeding, energy costs, Untouchable, Resilience | No (editor closed, `Build.bat`) | Task 3 (energy costs), Task 4 (Untouchable), Task 5 (Resilience) |
+> | B | 6–9 and the C++ steps of 10 (Steps 1–7): cancel key, explosion, Living Flame, Combustion, ability-bar energy states | No | — (one batch review; Task 10 also runs the UI §9 checklist) |
+> | C | Task 10's editor steps (8–10) and Task 11: editor assets | Yes (VibeUE) | — |
+> | D | 12: PIE matrix, then the latency reruns | Yes (PIE) | — |
+
 **Goal:** Curffe gets his energy spells, **Living Flame** (R, 25 energy) and **Combustion** (F, 100 energy: Pyroblast, unlimited flames, fast feeding). The game gets four game-wide systems:
 - the **Untouchable** state;
 - **Resilience**, which grants immunity to hard CC after 2.5 s of it within 5 s;
@@ -12,7 +24,7 @@ Everything is verified in PIE with a dedicated server and 3 clients.
 
 **Architecture:**
 - **Generic systems** go in `Source/Gen/AbilitySystem/`:
-  - `UGenGameplayAbility::EnergyCost`, enforced through `CheckCost`/`ApplyCost`. `CommitAbility` runs at release in `UGenGA_Cast`, so an interrupted cast costs nothing.
+  - `UGenGameplayAbility::EnergyCost`, enforced through `CheckCost`/`ApplyCost`. `CommitAbility` runs at release in `UGenGA_Cast`, so an interrupted cast costs nothing. The ability bar shows it (cost arc, "Not enough energy" state, Task 10).
   - `State.Untouchable`, applied in the shared hit and CC chokepoints: `ResolveIncomingHit`, projectile overlap, `ApplyHardCC`, the damage meta-attribute and knockback.
   - Resilience inside `UGenAbilitySystemComponent::ApplyHardCC`.
   - Feeding on an interval snapshotted at feed start (the Plan 1 fixes already schedule ticks from the feed start). Two generic tags change it: `State.FastFeeding` (half the interval) and `State.FreeResource` (fed units are not spent).
@@ -24,7 +36,7 @@ Everything is verified in PIE with a dedicated server and 3 clients.
 
 **Tech Stack:** Unreal Engine 5.8, C++ module `Gen`, Gameplay Ability System (LocalPredicted abilities, ASC on the PlayerState, Mixed replication), Unreal Automation tests, VibeUE MCP for editor and PIE work.
 
-**Spec:** `Docs/Design/Champions/Curffe/Curffe.md` (§2, §3 R/F/LMB, §4, §9) and `Docs/Design/CharacterGuidelines.md` (§3.1, §3.3, §3.5, §4.1). Visuals: `Docs/ArtBible.md` §7.2 and §7.6.
+**Spec:** `Docs/Design/Champions/Curffe/Curffe.md` (§2, §3 R/F/LMB, §4, §9) and `Docs/Design/CharacterGuidelines.md` (§3.1, §3.3, §3.5, §4.1). Visuals: `Docs/ArtBible.md` §7.2 and §7.6 (current version, status vocabulary). UI: `Docs/UI_Guidelines.md` §2.5, §4.1 and the §9 checklist.
 
 ## Global Constraints
 
@@ -37,14 +49,17 @@ Everything is verified in PIE with a dedicated server and 3 clients.
   - `AGenCharacterBase::ResolveIncomingHit`;
   - `GenHitRules`;
   - `GenTestWorld.h`;
-  - `UGenStatusVisualsComponent` and `StatusVisualConfig`;
+  - `UGenStatusVisualsComponent` (appear flash, `OwnerMeshMaterial`) and `StatusVisualConfig`;
+  - `M_VFX_StatusShape` (`Colour`, `Opacity`, `RimOnly`, `RimPower`, `Flash`);
+  - `GenGameplayTags::GetHardCCTags()` and the cast-lock server window (`UGenAbilitySystemComponent::NoteCastLock`);
   - `CurffeGameplayTags`.
+- **Latency baseline.** Plan 1's latency checklist and the charge-bar PIE pass (run on `ui-ability-bar`) are the baseline: `C:/Users/Samy D/Documents/Unreal Projects/Gen/.superpowers/sdd/Plan-AbilityBar/task-9-combined-report.md`. Plan 2 Task 11 adds its own latency reruns. This plan doesn't rerun either; Task 12 adds `NetEmulation.PktLag` reruns of its own risky rows.
 - **Code comments in French**, matching the existing code. Docs use English (Canadian spelling).
 - **Compiling.** Close the editor cleanly first (`unreal.SystemLibrary.quit_editor()`), then build with `Build.bat`. Never run `Plugins/VibeUE/BuildAndLaunchGame.ps1`.
 - **Editor Python:** `execute_python_code` always runs with `auto_save: false`. Save only the assets you changed.
 - **LFS locks.**
-  - Before modifying an existing `.uasset`, run `git fetch origin` and check `git diff --stat HEAD...origin/main -- Content`. Then run `git lfs locks` and `git lfs lock <path>`. Never use `--force`.
-  - `IMC_Arena`, `DA_InputConfig`, `GA_Fireball` and `GA_GreatFireball` are also edited on `ui-ability-bar`. If they changed on `main` or are locked by someone else, stop and ask the user about the merge order.
+  - Before modifying an existing `.uasset`, run `git fetch origin` and check `git diff --stat HEAD...origin/main -- Content`. Then run `git lfs locks --verify` and `git lfs lock <path>`, skipping the locks you already own. Never use `--force`.
+  - **Hot shared files** (Art Bible §3.9): this plan creates one more master, `Content/Gen/Rendering/Masters/M_VFX_GhostDither`. Tell the user before creating it (Task 11 Step 1) so the other person doesn't create it in parallel.
 - **PIE verification** uses a dedicated server and **3 clients**. Clients 1 and 3 are team 0 and client 2 is team 1. Restore Standalone with 1 client afterwards.
 - **Starting values (spec §3, copied verbatim):**
   - **R: Living Flame (25 energy).**
@@ -64,7 +79,9 @@ Everything is verified in PIE with a dedicated server and 3 clients.
   - **Costs (guidelines §3.1):** cooldown and energy are only spent when the spell actually goes off. A cancelled or interrupted cast costs nothing.
   - **Cancel key (guidelines §3.1):** "A cancel key cancels the current cast."
 - **Key slots** (AZERTY): R is `InputTag.Ability.3`, F is `InputTag.Ability.Ultimate`, and Pyroblast shares `InputTag.Ability.Primary` with Fireball.
-- **Every new or changed ability sets** `InputTag`, `DisplayName` (French), `CooldownTags`/`CooldownDuration` (none for F) and `EnergyCost`. It also sets `Icon` when the property exists (it arrives with the `ui-ability-bar` merge).
+- **Every new or changed ability sets** `InputTag`, `DisplayName` (French), `CooldownTags`/`CooldownDuration` (none for F), `EnergyCost` and `Icon` (the property exists since the `ui-ability-bar` merge).
+- **Hard crowd control** = stun, silence, fear, incapacitate (CharacterGuidelines §3.2). Interrupts, activation blocks, resilience and the bar's Locked state go through `GenGameplayTags::GetHardCCTags()` (Plan 2), never `State.Stunned` alone.
+- **Status visuals** follow the current Art Bible §7.6 (Task 11 Step 6): `State.CCImmune` = one white ring flash, then a thin white halo; `State.Untouchable` = the body dithers to a ghosted look (masked, no translucency), the outline and team ring stay; `State.Curffe.Ablaze` = on the body only, no ground area. Each has a unique shape and never the `State.Shielded` shell motif.
 - **Folders.** Generic code goes in `Source/Gen/AbilitySystem/**`, `Source/Gen/Character/` or `Source/Gen/Player/`. Curffe-only code goes in `Source/Gen/Champions/Curffe/`.
 
 ## Review Focus
@@ -72,16 +89,17 @@ Everything is verified in PIE with a dedicated server and 3 clients.
 1. **Ablaze starts or ends while a spell is feeding.**
    - Expected: each machine keeps the interval it had when its feeding started, and the server validates against its own interval.
    - An honest client never sees `Nourrissage corrigé`. At worst, a feed that began in the last ~0.1 s of ablaze is clamped by one flame.
-   - Pinned by Task 1 (`Gen.Feeding.FastInterval`) and Task 11 W9.
-2. **Energy exactly at the cost.** For example, 25 energy for Living Flame, 100 for Combustion, or 99.99 after rounding. Expected: 25.0 and 100.0 pass, and anything under fails, with no float drift. Pinned by Task 1 (`Gen.Energy.CanAfford`) and Task 11 W1 and W5.
-3. **A hard CC lands while the target is untouchable, while immune, or from two overlapping sources.** Expected: untouchable and immune targets ignore it. Overlapping stuns count once (the union of the intervals) toward the 2.5 s. Pinned by Task 1 (`Gen.Combat.ResilienceHistory`), Task 4 (`Gen.Combat.Untouchable`), Task 5 (`Gen.Combat.Resilience`) and Task 11 W11.
+   - Pinned by Task 1 (`Gen.Feeding.FastInterval`) and Task 12 W9.
+2. **Energy exactly at the cost.** For example, 25 energy for Living Flame, 100 for Combustion, or 99.99 after rounding. Expected: 25.0 and 100.0 pass, and anything under fails, with no float drift. Pinned by Task 1 (`Gen.Energy.CanAfford`) and Task 12 W1 and W5.
+3. **A hard CC lands while the target is untouchable, while immune, or from two overlapping sources.** Expected: untouchable and immune targets ignore it. Overlapping stuns count once (the union of the intervals) toward the 2.5 s. Pinned by Task 1 (`Gen.Combat.ResilienceHistory`), Task 4 (`Gen.Combat.Untouchable`), Task 5 (`Gen.Combat.Resilience`) and Task 12 W11.
 4. **Cancel key edge cases.** Expected:
    - with nothing being cast, nothing happens;
    - during a spell that has already gone off (Backfire window, leap in flight, Living Flame form), nothing happens;
    - on the server after the client's aim has arrived, the cast is not cancelled and the costs stay paid (`CanBeCanceled` is false).
 
-   Pinned by Task 11 W12.
-5. **Death while ablaze, untouchable or immune.** Expected: every timed state is removed at death, the resilience history resets, and the respawned mage has a normal LMB (Fireball) and normal feeding. Pinned by Task 5 (`Gen.Combat.Resilience` reset case) and Task 11 W14.
+   Pinned by Task 12 W12.
+5. **Death while ablaze, untouchable or immune.** Expected: every timed state is removed at death, the resilience history resets, and the respawned mage has a normal LMB (Fireball) and normal feeding. Pinned by Task 5 (`Gen.Combat.Resilience` reset case) and Task 12 W14.
+6. **The ability bar agrees with `CheckCost`.** Expected: R and F show "Not enough energy" exactly when `CheckCost` would refuse (same `GenEnergy::CanAfford`), and R's one-segment arc fills at 25 energy. Pinned by Task 10 (`Gen.UI.EnergySlot`) and Task 12 W15.
 
 ---
 
@@ -108,9 +126,17 @@ Everything is verified in PIE with a dedicated server and 3 clients.
 | `Source/Gen/Champions/Curffe/CurffeGA_Combustion.h/.cpp` (new) | Combustion |
 | `Source/Gen/Tests/GenPowerRulesTests.cpp` (new) | Pure-rule tests |
 | `Source/Gen/Tests/GenPowerWorldTests.cpp` (new) | GAS tests (untouchable, resilience, energy cost) |
+| `Source/Gen/UI/GenUIRules.h` | `NoEnergy` slot state, `CostSegments` |
+| `Source/Gen/UI/GenUIDataAssets.h` | `Cooldown_NoEnergy` token, `NoEnergyBrightness` metric |
+| `Source/Gen/UI/GenAbilitySlot.h/.cpp` | Energy-cost arc on R and F, "Not enough energy" state, Locked on any hard CC |
+| `Source/Gen/Tests/GenUIRulesTests.cpp` | `Gen.UI.EnergySlot` |
+| `Content/Gen/UI/Foundation/DA_UIPalette`, `Content/Gen/UI/Materials/M_UI_AbilityIcon` | `Cooldown_NoEnergy` value, `Brightness` parameter |
+| `Content/Gen/Rendering/Masters/M_VFX_GhostDither` (new, hot shared file) | Untouchable body material (masked dither) |
 | `Content/Gen/Champions/Curffe/**` | `GA_LivingFlame`, `GA_Combustion`, `GA_Pyroblast`, `BP_Projectile_Pyroblast`, status visuals |
+| `Content/Gen/UI/Textures/Icons/Abilities/**` | `T_UI_Ability_Curffe_3`, `T_UI_Ability_Curffe_Ultimate`, `T_UI_Ability_Curffe_Pyroblast` |
 | `Content/Gen/Input/**` | `IA_Cancel`, mapping and config |
-| `Content/Python/gen_pie_tools.py` | `hard_cc`, `energy` helpers |
+| `Content/Python/gen_pie_tools.py` | `hard_cc`, `energy` and ability-bar helpers |
+| `Content/Python/gen_ui_icons.py` | Three more placeholder icons |
 
 **Build and unit tests:** use the same commands as Plan 2, with `$Root` set to the checkout you run the plan in.
 
@@ -490,7 +516,7 @@ git commit -m "Fast feeding on a feed-start snapshot of the interval; free resou
 
 ---
 
-### Task 3: Energy costs paid on release
+### Task 3: Energy costs paid on release (Review: required)
 
 **Files:**
 - Modify: `Source/Gen/AbilitySystem/Abilities/GenGameplayAbility.h/.cpp`
@@ -499,7 +525,7 @@ git commit -m "Fast feeding on a feed-start snapshot of the interval; free resou
 **Interfaces:**
 - Consumes: `GenEnergy::CanAfford` (Task 1), `UGenGE_Gain::SetMagnitudes`, `GenTestWorld` (Plan 2).
 - Produces:
-  - `UGenGameplayAbility::EnergyCost` (`float`, EditDefaultsOnly, BlueprintReadOnly, public; Python `energy_cost`). The ability bar reads it.
+  - `UGenGameplayAbility::EnergyCost` (`float`, EditDefaultsOnly, BlueprintReadOnly, public; Python `energy_cost`). The ability bar reads it from Task 10 on (cost arc on R and F, "Not enough energy" state).
   - `CheckCost` refuses below the cost (so activation is refused too).
   - `ApplyCost` spends the cost through `UGenGE_Gain` inside `CommitAbility`, which `UGenGA_Cast` calls at release.
 
@@ -564,7 +590,7 @@ bool FGenEnergyCostTest::RunTest(const FString& Parameters)
 #endif
 ```
 
-  If `ApplyCost` on the CDO asserts because the ability is instanced, delete the `ApplyCost` lines and their expectation. Note it in the commit; Task 11 W1 then covers the spend.
+  If `ApplyCost` on the CDO asserts because the ability is instanced, delete the `ApplyCost` lines and their expectation. Note it in the commit; Task 12 W1 then covers the spend.
 
 - [ ] **Step 2: Build to verify it fails.** Expected: `'EnergyCost': is not a member of 'UGenGA_Projectile'`.
 
@@ -636,7 +662,7 @@ git commit -m "Energy cost on abilities: checked at activation, paid at commit (
 
 ---
 
-### Task 4: Untouchable state
+### Task 4: Untouchable state (Review: required)
 
 **Files:**
 - Modify: `Source/Gen/GenGameplayTags.h/.cpp`
@@ -754,6 +780,22 @@ bool AGenCharacterBase::IsUntouchable() const
 
   Splash and areas need no change: `ResolveIncomingHit` returns `Ignored` and they already skip anything that is not `Hit`.
 
+  The **direct hit** in `AGenProjectile::Explode` must not treat `Ignored` as a hit either (a target that became untouchable inside an initial overlap, for example). Check that its direct-hit branch reads as Plan 2 Task 4 wrote it, and replace it with this if it doesn't:
+
+```cpp
+		const EGenHitResponse Response = DirectTarget->ResolveIncomingHit(GetInstigator(), EGenHitKind::Projectile, this);
+		if (Response == EGenHitResponse::Hit)
+		{
+			Targets.Add(DirectTarget);
+		}
+		else if (Response == EGenHitResponse::Countered)
+		{
+			bCountered = true;
+		}
+```
+
+  A direct `Ignored` therefore deals no damage and no knockback, and the attacker gains nothing from it.
+
 - [ ] **Step 6: No hard CC while untouchable.** In `GenAbilitySystemComponent.cpp`, `ApplyHardCC`, extend the first guard:
 
 ```cpp
@@ -782,7 +824,7 @@ git commit -m "Untouchable state: projectiles pass through, hits, CC, knockback 
 
 ---
 
-### Task 5: Resilience (immunity to hard CC)
+### Task 5: Resilience (immunity to hard CC) (Review: required)
 
 **Files:**
 - Modify: `Source/Gen/GenGameplayTags.h/.cpp`
@@ -871,9 +913,9 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 		return FActiveGameplayEffectHandle();
 	}
 
-	// Étourdi : ne bouge plus. Les autres contrôles durs (silence...) laisseront bouger.
-	const float MoveSpeedMultiplier = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) ? 0.f : 1.f;
-	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, MoveSpeedMultiplier, FGameplayTagContainer(StateTag));
+	// Étourdi ou neutralisé : ne bouge plus. Silence et peur laissent bouger (inchangé depuis le plan 2).
+	const bool bImmobile = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) || StateTag.MatchesTagExact(GenGameplayTags::State_Incapacitated);
+	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, bImmobile ? 0.f : 1.f, FGameplayTagContainer(StateTag));
 	const FActiveGameplayEffectHandle Handle = ApplyGameplayEffectSpecToSelf(*Spec.Data);
 
 	// Résilience : 2.5 s de contrôle dur sur 5 s => immunité jusqu'à 1.5 s après la fin de celui-ci
@@ -986,7 +1028,7 @@ void AGenPlayerController::CancelCast()
 }
 ```
 
-- [ ] **Step 4: Build, then run the unit tests.** Expected: `Result: Succeeded`, and every test passes. The behaviour is checked in Task 11 W12.
+- [ ] **Step 4: Build, then run the unit tests.** Expected: `Result: Succeeded`, and every test passes. The behaviour is checked in Task 12 W12.
 
 - [ ] **Step 5: Commit**
 
@@ -1079,7 +1121,7 @@ git commit -m "Projectiles can explode without feeding (base explosion radius)"
   - Tags `CurffeGameplayTags::State_Ablaze`, `Ability_LivingFlame`, `Cooldown_Ability_LivingFlame`, `Ability_Combustion` and `Ability_Pyroblast`.
   - `UCurffeGA_LivingFlame : UGenGA_Cast`, with properties `FormDuration`, `BurstAreaClass`, `BurstRadius`, `BurstDamage`, `BurstKnockback`, `RefillEffect`, `HasteMultiplier` and `HasteDuration`.
   - The sequence:
-    1. Launch (after the 0.1 s cast; the energy and cooldown are paid by the commit) applies the form, a timed state of `FormDuration` with `State.Untouchable` and `State.CastLocked`. It is predicted.
+    1. Launch (after the 0.1 s cast; the energy and cooldown are paid by the commit) applies the form, a timed state of `FormDuration` with `State.Untouchable` and `State.CastLocked`. It is predicted. The server also calls `UGenAbilitySystemComponent::NoteCastLock(FormDuration)`, so it refuses a remote client's casts only during the first `FormDuration − CastTimeTolerance` of its own copy of the form (Plan 2 Task 3).
     2. When the form ends, the server spawns the 2.5 m ring (A) with an 8 damage and 3 m knockback, refills the Hearth, and grants +30 % speed for 2 s.
 
 - [ ] **Step 1: Add the Curffe tags.**
@@ -1177,6 +1219,7 @@ private:
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/Effects/GenGE_Damage.h"
 #include "AbilitySystem/Effects/GenGE_TimedState.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "Actors/GenGroundArea.h"
 #include "Champions/Curffe/CurffeEffects.h"
 #include "GenGameplayTags.h"
@@ -1201,6 +1244,13 @@ void UCurffeGA_LivingFlame::OnCastLaunched(const FGenCastRelease& Release)
 		FormTags.AddTag(GenGameplayTags::State_CastLocked);
 		UGenGE_TimedState::SetDuration(*FormSpec.Data, FormDuration, FormTags);
 		FormEffectHandle = ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, FormSpec);
+	}
+
+	// Serveur : la forme du serveur commence ~½ RTT après celle du client ; son verrou ne refuse les sorts du client
+	// distant qu'au début (sans effet chez le client, NoteCastLock ne fait rien hors autorité)
+	if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+	{
+		GenASC->NoteCastLock(FormDuration);
 	}
 
 	UAbilityTask_WaitDelay* FormTask = UAbilityTask_WaitDelay::WaitDelay(this, FormDuration);
@@ -1274,7 +1324,7 @@ git commit -m "Living Flame: untouchable fire form, burst ring, Hearth refill, h
 
 **Interfaces:**
 - Consumes:
-  - `UGenGA_Cast` (cast interrupted by a stun; the commit at release pays `EnergyCost`);
+  - `UGenGA_Cast` (cast interrupted by any hard CC: stun, silence, fear, incapacitate, through `GetHardCCTags()`; the commit at release pays `EnergyCost`);
   - `SpawnGroundArea`;
   - `UGenGE_TimedState`;
   - `CurffeGameplayTags::State_Ablaze` (Task 8);
@@ -1286,8 +1336,8 @@ git commit -m "Living Flame: untouchable fire form, burst ring, Hearth refill, h
     - the Hearth refills;
     - "ablaze" is applied, a timed state of `AblazeDuration` with `State.Curffe.Ablaze`, `State.FastFeeding` and `State.FreeResource`;
     - the server spawns the 3 m nova (20 damage, 3 m knockback).
-  - The Pyroblast swap is data only (Task 10): `GA_Pyroblast` requires `State.Curffe.Ablaze` and `GA_Fireball` is blocked by it.
-  - "Telegraphs never drop below 0.5 s" needs no new code. Fast feeding only shortens the feed phase, and delayed areas already clamp their delay to `MinTelegraph` (0.5 s) through `GenAreaRules::GetImpactDelay` (Plan 2). Flame Pillar keeps 0.4 s + 0.8 s.
+  - The Pyroblast swap is data only (Task 11): `GA_Pyroblast` requires `State.Curffe.Ablaze` and `GA_Fireball` is blocked by it.
+  - "Telegraphs never drop below 0.5 s" needs no new code. Fast feeding only shortens the feed phase, and delayed areas already clamp their delay to `MinTelegraph` (0.6 s, the CharacterGuidelines §3.1 floor for delayed areas, which also covers the spec's 0.5 s) through `GenAreaRules::GetImpactDelay` (Plan 2). Flame Pillar keeps 0.4 s + 0.8 s.
 
 - [ ] **Step 1: Create `Source/Gen/Champions/Curffe/CurffeGA_Combustion.h`**
 
@@ -1408,9 +1458,388 @@ git commit -m "Combustion: nova, ablaze state (Pyroblast, unlimited flames, fast
 
 ---
 
-### Task 10: Editor assets: Living Flame, Combustion, Pyroblast, cancel key, status visuals, BP_Curffe
+### Task 10: Ability bar: energy-cost arc and "Not enough energy" (UI_Guidelines §4.1)
 
-The editor must be open with the new binaries. Load the VibeUE skills first: `VibeUE_blueprints`, `VibeUE_gas`, `VibeUE_gameplay_tags`, `VibeUE_enhanced_input`. Before touching visuals, read the Art Bible §7.2 and §7.6.
+The bar from `ui-ability-bar` draws the cost arc on the ultimate slot only and has no energy state. UI_Guidelines §4.1 asks for:
+- the **energy-cost arc** on the two energy slots and only there: R shows **one** segment (its 25 cost), F shows all four (100). Funded segments use `energy.charging`, unfunded ones are a hollow outline in `text.secondary`, and only a fully funded **ultimate** arc uses `energy.full`;
+- the **Not enough energy** state on R and F: a `cooldown.noEnergy` wash (`#2E4A78`, α 0.45) and the icon at **55 %** brightness, plus the hollow arc segments as the non-colour cue;
+- the **Locked** state on every CC that blocks casting (stun, silence, fear, incapacitate), not only on `State.Stunned`.
+
+Before writing anything, read UI_Guidelines §2.5, §4.1, §8.3, §8.4 and the §9 checklist. No widget hard-codes a colour, font or size: everything comes from `DA_UIPalette` and `DA_UIMetrics`.
+
+**Files:**
+- Modify: `Source/Gen/UI/GenUIRules.h`, `Source/Gen/UI/GenUIDataAssets.h`, `Source/Gen/UI/GenAbilitySlot.h`, `Source/Gen/UI/GenAbilitySlot.cpp`
+- Test: `Source/Gen/Tests/GenUIRulesTests.cpp`
+- Assets (Steps 8–10, editor): `Content/Gen/UI/Foundation/DA_UIPalette` (token value), `Content/Gen/UI/Materials/M_UI_AbilityIcon` (`Brightness` parameter). `WBP_AbilitySlot` needs no change: `ArcImage` is already in the slot widget used by every slot (checked in Step 10).
+
+**Interfaces:**
+- Consumes: `UGenGameplayAbility::EnergyCost` (Task 3), `GenEnergy::CanAfford` (Task 1), `GenGameplayTags::GetHardCCTags()` (Plan 2), `GenUIRules::FundedSegments`.
+- Produces:
+  - `EGenAbilitySlotState::NoEnergy` (appended after `Locked`).
+  - `GenUIRules::ResolveSlotState(bool bHasAbility, bool bLocked, float CooldownRemaining, bool bCanAfford = true)`. Priority: Empty > Locked > Cooldown > NoEnergy > Ready. The existing three-argument calls keep compiling.
+  - `GenUIRules::CostSegments(float EnergyCost, float MaxEnergy, int32 Segments) -> int32` (R = 1, F = 4, a free spell = 0).
+  - `UGenUIPalette::Cooldown_NoEnergy` (Python `cooldown_no_energy`) and `UGenUIMetrics::NoEnergyBrightness` (0.55).
+  - The slot sets `Brightness` on the icon MID (`M_UI_AbilityIcon`) and `SegmentSlots` on the arc MID.
+
+- [ ] **Step 1: Write the failing test.** Append this to `GenUIRulesTests.cpp`, before `#endif`:
+
+```cpp
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenUIEnergySlotTest, "Gen.UI.EnergySlot",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenUIEnergySlotTest::RunTest(const FString& Parameters)
+{
+	// CostSegments(EnergyCost, MaxEnergy, Segments) : un segment par tranche de Max/Segments (§4.1)
+	TestEqual(TEXT("R : 25 -> 1 segment"), GenUIRules::CostSegments(25.f, 100.f, 4), 1);
+	TestEqual(TEXT("F : 100 -> 4 segments"), GenUIRules::CostSegments(100.f, 100.f, 4), 4);
+	TestEqual(TEXT("sort gratuit : pas d'arc"), GenUIRules::CostSegments(0.f, 100.f, 4), 0);
+	TestEqual(TEXT("coût entre deux segments : arrondi au-dessus"), GenUIRules::CostSegments(30.f, 100.f, 4), 2);
+	TestEqual(TEXT("énergie max inconnue : pas d'arc"), GenUIRules::CostSegments(25.f, 0.f, 4), 0);
+
+	// ResolveSlotState(bHasAbility, bLocked, CooldownRemaining, bCanAfford)
+	TestEqual(TEXT("pas assez d'énergie"), GenUIRules::ResolveSlotState(true, false, 0.f, false), EGenAbilitySlotState::NoEnergy);
+	TestEqual(TEXT("la recharge prime sur l'énergie"), GenUIRules::ResolveSlotState(true, false, 2.f, false), EGenAbilitySlotState::Cooldown);
+	TestEqual(TEXT("bloqué prime sur l'énergie"), GenUIRules::ResolveSlotState(true, true, 0.f, false), EGenAbilitySlotState::Locked);
+	TestEqual(TEXT("assez d'énergie : prêt"), GenUIRules::ResolveSlotState(true, false, 0.f, true), EGenAbilitySlotState::Ready);
+	TestEqual(TEXT("sans le 4e argument : prêt"), GenUIRules::ResolveSlotState(true, false, 0.f), EGenAbilitySlotState::Ready);
+	return true;
+}
+```
+
+- [ ] **Step 2: Build to verify it fails.** Expected: `'CostSegments': is not a member of 'GenUIRules'` and `'NoEnergy': is not a member of 'EGenAbilitySlotState'`.
+
+- [ ] **Step 3: Rules.** In `GenUIRules.h`:
+  - add `NoEnergy` at the end of `EGenAbilitySlotState`:
+
+```cpp
+	Locked,
+	/** Pas assez d'énergie pour le coût du sort (R, F) : voile cooldown.noEnergy, icône à 55 % (§4.1). */
+	NoEnergy
+```
+
+  - replace `ResolveSlotState` and its comment with:
+
+```cpp
+	/** Priorité : vide > bloqué (contrôle dur) > recharge > pas assez d'énergie > prêt. */
+	inline EGenAbilitySlotState ResolveSlotState(bool bHasAbility, bool bLocked, float CooldownRemaining, bool bCanAfford = true)
+	{
+		if (!bHasAbility)
+		{
+			return EGenAbilitySlotState::Empty;
+		}
+		if (bLocked)
+		{
+			return EGenAbilitySlotState::Locked;
+		}
+		if (CooldownRemaining > 0.f)
+		{
+			return EGenAbilitySlotState::Cooldown;
+		}
+		return bCanAfford ? EGenAbilitySlotState::Ready : EGenAbilitySlotState::NoEnergy;
+	}
+```
+
+  - after `FundedSegments`, add:
+
+```cpp
+	/** Segments d'arc d'un coût (§4.1, un segment par tranche de Max/Segments) : R (25) = 1, F (100) = 4, sort gratuit = 0. */
+	inline int32 CostSegments(float EnergyCost, float MaxEnergy, int32 Segments)
+	{
+		if (EnergyCost <= 0.f || MaxEnergy <= 0.f || Segments <= 0)
+		{
+			return 0;
+		}
+		return FMath::Clamp(FMath::CeilToInt32(EnergyCost / (MaxEnergy / Segments) - KINDA_SMALL_NUMBER), 1, Segments);
+	}
+```
+
+- [ ] **Step 4: Tokens.** In `GenUIDataAssets.h`:
+  - in `UGenUIPalette`, after `Cooldown_Locked`:
+
+```cpp
+	/** cooldown.noEnergy #2E4A78 α 0.45 (§2.5) : voile « pas assez d'énergie ». Valeur posée dans DA_UIPalette via HexToLinear. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldown") FLinearColor Cooldown_NoEnergy = FLinearColor::Black;
+```
+
+  - in `UGenUIMetrics`, after `CooldownDesaturation`:
+
+```cpp
+	/** Luminosité de l'icône quand l'énergie manque (§4.1 : 55 %). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilityBar") float NoEnergyBrightness = 0.55f;
+```
+
+- [ ] **Step 5: Slot header.** In `GenAbilitySlot.h`:
+  - replace `void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);` with:
+
+```cpp
+	/** Un contrôle dur (étourdi, silence, peur, neutralisé) apparaît ou disparaît : état Locked (§4.1). */
+	void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);
+	/** L'énergie couvre-t-elle le coût du sort (même règle que CheckCost) ? Vrai pour un sort gratuit. */
+	bool CanAffordAbility() const;
+```
+
+  - replace the `UpdateUltimateArc` declaration and its comment with:
+
+```cpp
+	/**
+	 * Arc de coût (§4.1) : sur l'ultime, et sur tout sort qui coûte de l'énergie (R : 1 segment, F : 4).
+	 * Gère aussi l'impulsion de l'ultime ; renvoie vrai si l'ultime est pleine ET lançable (anneau à α 1.0).
+	 */
+	bool UpdateCostArc();
+```
+
+- [ ] **Step 6: Slot implementation.** In `GenAbilitySlot.cpp`, add `#include "AbilitySystem/GenEnergy.h"`, then:
+  - in `Bind`, replace the stun block:
+
+```cpp
+	// Étourdi => bloqué (§4.1 Locked)
+	FDelegateHandle StunHandle = ASC->RegisterGameplayTagEvent(GenGameplayTags::State_Stunned, EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(this, &ThisClass::OnStunTagChanged);
+	TagHandles.Emplace(GenGameplayTags::State_Stunned, StunHandle);
+	bLocked = ASC->HasMatchingGameplayTag(GenGameplayTags::State_Stunned);
+```
+
+    with:
+
+```cpp
+	// Contrôle dur qui empêche de lancer (étourdi, silence, peur, neutralisé) => bloqué (§4.1 Locked)
+	for (const FGameplayTag& HardCCTag : GenGameplayTags::GetHardCCTags())
+	{
+		FDelegateHandle LockHandle = ASC->RegisterGameplayTagEvent(HardCCTag, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &ThisClass::OnStunTagChanged);
+		TagHandles.Emplace(HardCCTag, LockHandle);
+	}
+	bLocked = ASC->HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags());
+```
+
+  - in `Bind`, replace the `if (bIsUltimate) { ... }` energy block with:
+
+```cpp
+	// Énergie : arc de coût et état « pas assez d'énergie » (R, F), impulsion de l'ultime. Le coût du sort n'est connu
+	// qu'après ResolveAbility (réessais) : chaque emplacement écoute, un événement par changement d'énergie (§8.4).
+	EnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
+	MaxEnergyHandle = ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetMaxEnergyAttribute()).AddUObject(this, &ThisClass::OnEnergyChanged);
+
+	if (bIsUltimate)
+	{
+		// Déjà pleine au moment du Bind (respawn, rebind) : pas d'impulsion
+		const int32 Segments = GetUIMetrics()->UltimateSegments;
+		bUltimateWasReadyFull = Segments > 0 && GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()), Segments) == Segments;
+	}
+```
+
+  - in `RefreshVisuals`, replace `State = GenUIRules::ResolveSlotState(AbilityCDO.IsValid(), bLocked, Remaining);` with:
+
+```cpp
+	State = GenUIRules::ResolveSlotState(AbilityCDO.IsValid(), bLocked, Remaining, CanAffordAbility());
+```
+
+  - in `RefreshVisuals`, replace `const bool bUltimateReady = bIsUltimate && UpdateUltimateArc();` with:
+
+```cpp
+	const bool bUltimateReady = UpdateCostArc();
+```
+
+  - in `RefreshVisuals`, replace the icon block:
+
+```cpp
+	if (IconMID)
+	{
+		IconMID->SetScalarParameterValue(TEXT("DimAmount"), State == EGenAbilitySlotState::Cooldown ? Metrics->CooldownDesaturation : 0.f);
+	}
+```
+
+    with:
+
+```cpp
+	if (IconMID)
+	{
+		IconMID->SetScalarParameterValue(TEXT("DimAmount"), State == EGenAbilitySlotState::Cooldown ? Metrics->CooldownDesaturation : 0.f);
+		// Pas assez d'énergie : icône à 55 % de luminosité (§4.1)
+		IconMID->SetScalarParameterValue(TEXT("Brightness"), State == EGenAbilitySlotState::NoEnergy ? Metrics->NoEnergyBrightness : 1.f);
+	}
+```
+
+  - in `RefreshVisuals`, replace `const float Progress = (State == EGenAbilitySlotState::Cooldown && CooldownDuration > 0.f) ? Remaining / CooldownDuration : 0.f;` with:
+
+```cpp
+		// Pas assez d'énergie : voile cooldown.noEnergy sur tout le disque (balayage plein), sans chiffre
+		const bool bNoEnergy = State == EGenAbilitySlotState::NoEnergy;
+		const float Progress = bNoEnergy ? 1.f : ((State == EGenAbilitySlotState::Cooldown && CooldownDuration > 0.f) ? Remaining / CooldownDuration : 0.f);
+```
+
+  - in `RefreshVisuals`, replace `SweepMID->SetVectorParameterValue(TEXT("OverlayColour"), State == EGenAbilitySlotState::Locked ? Palette->Cooldown_Locked : Palette->Cooldown_Overlay);` with:
+
+```cpp
+		SweepMID->SetVectorParameterValue(TEXT("OverlayColour"), State == EGenAbilitySlotState::Locked ? Palette->Cooldown_Locked
+			: (bNoEnergy ? Palette->Cooldown_NoEnergy : Palette->Cooldown_Overlay));
+```
+
+  - replace `OnStunTagChanged` with:
+
+```cpp
+void UGenAbilitySlot::OnStunTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	// Plusieurs tags bloquent : on relit l'ensemble plutôt que le compte de celui qui change
+	bLocked = ASC.IsValid() && ASC->HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags());
+	RefreshVisuals();
+}
+
+bool UGenAbilitySlot::CanAffordAbility() const
+{
+	const float Cost = AbilityCDO.IsValid() ? AbilityCDO->EnergyCost : 0.f;
+	return !ASC.IsValid() || GenEnergy::CanAfford(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), Cost);
+}
+```
+
+  - replace the whole `UpdateUltimateArc` function with:
+
+```cpp
+bool UGenAbilitySlot::UpdateCostArc()
+{
+	const UGenUIMetrics* Metrics = GetUIMetrics();
+	const UGenUIPalette* Palette = GetUIPalette();
+
+	// Toujours sur l'ultime ; ailleurs seulement si le sort coûte de l'énergie (R : 1 segment). Un segment garde
+	// la taille d'un segment de l'ultime (SegmentSlots).
+	const float MaxEnergy = ASC.IsValid() ? ASC->GetNumericAttribute(UGenAttributeSet::GetMaxEnergyAttribute()) : 0.f;
+	const float Cost = AbilityCDO.IsValid() ? AbilityCDO->EnergyCost : 0.f;
+	const int32 CostSegments = GenUIRules::CostSegments(Cost, MaxEnergy, Metrics->UltimateSegments);
+	const int32 Segments = CostSegments > 0 ? CostSegments : (bIsUltimate ? Metrics->UltimateSegments : 0);
+
+	if (ArcImage)
+	{
+		ArcImage->SetVisibility(Segments > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (!ASC.IsValid() || Segments == 0)
+	{
+		return false;
+	}
+
+	const int32 Funded = FMath::Min(GenUIRules::FundedSegments(ASC->GetNumericAttribute(UGenAttributeSet::GetEnergyAttribute()), MaxEnergy, Metrics->UltimateSegments), Segments);
+	const bool bFull = Funded == Segments;
+	// energy.full et son contour : seulement l'arc complet de l'ultime (§4.1)
+	const bool bUltimateFull = bIsUltimate && bFull;
+
+	if (ArcMID)
+	{
+		ArcMID->SetScalarParameterValue(TEXT("SegmentSlots"), Metrics->UltimateSegments);
+		ArcMID->SetScalarParameterValue(TEXT("Segments"), Segments);
+		ArcMID->SetScalarParameterValue(TEXT("Funded"), Funded);
+		ArcMID->SetScalarParameterValue(TEXT("FullOutline"), bUltimateFull ? 1.f : 0.f);
+		ArcMID->SetVectorParameterValue(TEXT("Colour"), bUltimateFull ? Palette->Energy_Full : Palette->Energy_Charging);
+		// Segments non financés : contour creux text.secondary ; contour de l'arc plein : text.primary (§4.1)
+		ArcMID->SetVectorParameterValue(TEXT("HollowColour"), Palette->Text_Secondary);
+		ArcMID->SetVectorParameterValue(TEXT("OutlineColour"), Palette->Text_Primary);
+	}
+
+	if (!bIsUltimate)
+	{
+		return false;
+	}
+
+	// Ultime prête : une seule impulsion de 300 ms via le RimFlash du balayage (indépendante de l'arc), jamais de boucle (§4.1).
+	// Seulement quand elle est lançable : pleine pendant un contrôle dur ou une recharge => impulsion quand elle le redevient.
+	// Tant que le sort n'est pas résolu (Empty), on garde l'état précédent.
+	if (State != EGenAbilitySlotState::Empty)
+	{
+		const bool bReadyFull = bFull && State == EGenAbilitySlotState::Ready;
+		if (bReadyFull && !bUltimateWasReadyFull)
+		{
+			StartFlash(Metrics->UltimatePulseDuration);
+		}
+		bUltimateWasReadyFull = bReadyFull;
+	}
+
+	// État courant, sans le verrou de l'impulsion : une ultime vide, non lançable ou sans assez d'énergie n'a jamais l'anneau à α 1.0
+	return bFull && State == EGenAbilitySlotState::Ready;
+}
+```
+
+  - in `ApplyLayout`, leave the `ArcImage` visibility line as it is: it shows the ultimate's arc before the ability resolves, and `UpdateCostArc` sets the final visibility on every refresh.
+
+- [ ] **Step 7: Build, then run the unit tests.** Expected: `Gen.UI.EnergySlot` passes, and every `Gen.UI.*` test and all earlier tests still pass (`Gen.UI.SlotState` keeps its three-argument calls).
+
+  Commit the C++ part:
+
+```bash
+git add Source/Gen/UI/GenUIRules.h Source/Gen/UI/GenUIDataAssets.h Source/Gen/UI/GenAbilitySlot.h Source/Gen/UI/GenAbilitySlot.cpp Source/Gen/Tests/GenUIRulesTests.cpp
+git commit -m "Ability bar: energy-cost arc on R and F, Not enough energy state, Locked on any hard CC"
+```
+
+- [ ] **Step 8: Lock the two UI assets** (editor open with the new binaries; runs in batch C).
+
+```bash
+git fetch origin
+git diff --stat HEAD...origin/main -- Content/Gen/UI
+git log --oneline HEAD..ui-ability-bar -- Content/Gen/UI
+mine=$(git lfs locks --verify | awk '$1 == "O" { print $2 }')
+for f in Content/Gen/UI/Foundation/DA_UIPalette.uasset Content/Gen/UI/Materials/M_UI_AbilityIcon.uasset; do
+  if printf '%s\n' "$mine" | grep -qxF "$f"; then echo "déjà à moi : $f"; continue; fi
+  git lfs lock "$f" || { echo "STOP : $f est verrouillé par quelqu'un d'autre"; break; }
+done
+```
+
+  If `git diff` or `git log` lists one of them, or a lock fails, stop and ask the user (the bar is still being worked on in `ui-ability-bar`).
+
+- [ ] **Step 9: The token and the icon brightness** (`execute_python_code`, `auto_save: false`).
+
+```python
+import unreal
+EAL = unreal.EditorAssetLibrary
+MNS = unreal.MaterialNodeService
+MEL = unreal.MaterialEditingLibrary
+
+# Jeton cooldown.noEnergy (§2.5) : toujours depuis le hex, jamais collé
+PAL = "/Game/Gen/UI/Foundation/DA_UIPalette"
+pal = unreal.load_asset(PAL)
+print("avant :", pal.get_editor_property("cooldown_no_energy"))
+pal.set_editor_property("cooldown_no_energy", unreal.GenUILibrary.hex_to_linear("#2E4A78", 0.45))
+print("palette", EAL.save_asset(PAL, only_if_is_dirty=False), pal.get_editor_property("cooldown_no_energy"))
+
+# Paramètre Brightness sur l'icône : sortie finale x Brightness (1 par défaut, 0.55 sans énergie)
+MAT = "/Game/Gen/UI/Materials/M_UI_AbilityIcon"
+mat = unreal.load_asset(MAT)
+if "Brightness" in [str(n) for n in MEL.get_scalar_parameter_names(mat)]:
+    print("Brightness déjà présent")
+else:
+    print(MNS.export_material_graph_summary(MAT))
+    outs = {o.property_name: o.connected_expression_id for o in MNS.get_output_connections(MAT) if o.is_connected}
+    print("sorties :", outs)
+    src = outs["EmissiveColor"]
+    mul = MNS.batch_create_expressions(MAT, ["Multiply"], [-150], [0])[0]
+    b = MNS.create_parameter(MAT, "Scalar", "Brightness", "Icon", "1", -400, 250)
+    print("connexions :", MNS.batch_connect_expressions(MAT, [src, b.id], ["", ""], [mul.id, mul.id], ["A", "B"]), "/ 2")
+    print("emissive", MNS.connect_expression_to_output(MAT, mul.id, "", "EmissiveColor"))
+print("compile", unreal.MaterialService.compile_material(MAT), MNS.get_material_diagnostics(MAT))
+print("save", EAL.save_asset(MAT, only_if_is_dirty=False))
+```
+
+  - Expected: `palette True` with about `(0.027, 0.068, 0.188, 0.45)`; `connexions : 2 / 2`, `emissive True`, `compile True` with no error, `save True`.
+  - If the summary shows that `EmissiveColor` comes from a named output of the Custom node (not output 0), pass that name instead of `""` for `src`. If the material's output property is listed under another name (the UI domain's Final Color), use the name `get_output_connections` prints.
+  - The opacity (the circle mask) is untouched, so the 55 % applies to the colour only.
+
+- [ ] **Step 10: Check in the editor** (Standalone, 1 player, Curffe; `gen_pie_tools` helpers from Plan 2 work in Standalone through the server world).
+  - Confirm that `WBP_AbilitySlot`, the widget every slot uses, has `ArcImage` (material `M_UI_SegmentArc`): look for it in `unreal.WidgetService.list_components("/Game/Gen/UI/HUD/WBP_AbilitySlot")`. If it is missing, stop and report it: the arc then needs a WBP change on `ui-ability-bar`.
+  - With 20 energy: R and F show the blue-grey wash and a dimmed icon; R has one hollow segment under it, F four hollow segments. Capture the bar (`capture_image source=game`).
+  - With 25 energy: R is bright with one funded `energy.charging` segment; F still shows the wash, with one funded and three hollow segments.
+  - With 100 energy: R and F are ready; F's arc is complete in `energy.full` with the ring at α 1.0 and one 300 ms pulse.
+  - Stun yourself (`hard_cc` from Task 12, or a dummy's pillar): every slot shows the lock (Locked beats NoEnergy).
+  - If R's single segment isn't the size of one ultimate segment, centred under the slot, report how `M_UI_SegmentArc` draws `Segments` < `SegmentSlots`; don't change the material in this task.
+  - **UI_Guidelines §9 checklist:** go through it for this change and list each item in the report (tokens only, no hard-coded colour or size; the NoEnergy state has a non-colour cue, the brightness drop and the hollow arc; the wash has no motion; one event per energy change, no tick).
+
+  Commit the assets:
+
+```bash
+git add Content/Gen/UI/Foundation/DA_UIPalette.uasset Content/Gen/UI/Materials/M_UI_AbilityIcon.uasset
+git commit -m "UI palette: cooldown.noEnergy token; ability icon Brightness parameter"
+```
+
+---
+
+### Task 11: Editor assets: Living Flame, Combustion, Pyroblast, cancel key, status visuals, BP_Curffe
+
+The editor must be open with the new binaries. Load the VibeUE skills first: `VibeUE_blueprints`, `VibeUE_materials`, `VibeUE_gas`, `VibeUE_gameplay_tags`, `VibeUE_enhanced_input`. Before touching visuals, read the Art Bible §3.0, §3.9, §7.2 and §7.6 (the current version) and UI_Guidelines §2.11.
 
 **Files (assets):**
 - Create:
@@ -1420,21 +1849,30 @@ The editor must be open with the new binaries. Load the VibeUE skills first: `Vi
   - `Content/Gen/Champions/Curffe/Projectiles/BP_Projectile_Pyroblast`
   - `Content/Gen/Champions/Curffe/Areas/BP_Area_Nova`
   - `Content/Gen/Input/IA_Cancel`
+  - `Content/Gen/Rendering/Masters/M_VFX_GhostDither` (hot shared file, announced in Step 1)
+  - `Content/Gen/UI/Textures/Icons/Abilities/T_UI_Ability_Curffe_3`, `T_UI_Ability_Curffe_Ultimate`, `T_UI_Ability_Curffe_Pyroblast`
 - Modify:
   - `GA_Fireball` (blocked while ablaze) and `GA_GreatFireball` (must stay castable);
   - `BP_Curffe` and `BP_Champion` (status visuals, startup abilities);
   - `IMC_Arena` and `DA_InputConfig` (cancel key).
 
-- [ ] **Step 1: Lock the assets.**
+- [ ] **Step 1: Announce the new master, then lock the assets.**
+  - **Tell the user** before Step 6: "I'm about to create `Content/Gen/Rendering/Masters/M_VFX_GhostDither` (Art Bible hot shared file) on `curffe-plan3`. Is anyone else creating it?" Check `git ls-tree -r --name-only origin/main -- Content/Gen/Rendering` and `origin/docs/art-bible` first, and wait for the go-ahead.
+  - Lock the existing assets this task modifies. `git lfs locks --verify` marks your own locks with `O`; skip those (Plan 2 may already hold `BP_Curffe` and `BP_Champion`):
 
 ```bash
 git fetch origin
 git diff --stat HEAD...origin/main -- Content
-git lfs locks
-for f in Content/Gen/Champions/Curffe/Abilities/GA_Fireball.uasset Content/Gen/Champions/Curffe/Abilities/GA_GreatFireball.uasset Content/Gen/Champions/Curffe/BP_Curffe.uasset Content/Gen/Characters/BP_Champion.uasset Content/Gen/Input/IMC_Arena.uasset Content/Gen/Input/DA_InputConfig.uasset; do git lfs lock "$f"; done
+git lfs locks --verify
+mine=$(git lfs locks --verify | awk '$1 == "O" { print $2 }')
+for f in Content/Gen/Champions/Curffe/Abilities/GA_Fireball.uasset Content/Gen/Champions/Curffe/Abilities/GA_GreatFireball.uasset Content/Gen/Champions/Curffe/BP_Curffe.uasset Content/Gen/Characters/BP_Champion.uasset Content/Gen/Input/IMC_Arena.uasset Content/Gen/Input/DA_InputConfig.uasset; do
+  if printf '%s\n' "$mine" | grep -qxF "$f"; then echo "déjà à moi : $f"; continue; fi
+  git lfs lock "$f" || { echo "STOP : $f est verrouillé par quelqu'un d'autre"; break; }
+done
 ```
 
-  If `git diff` lists any of these files changed on `main` (by `ui-ability-bar`, for example), stop and ask the user which order to merge in.
+  - If a lock fails because someone else holds it, stop and tell the user. Never use `--force`.
+  - If `git diff` lists any of these files changed on `main`, stop and ask the user which order to merge in.
 
 - [ ] **Step 2: Cancel key.** The key is `X`. The spec does not name one: X is free on AZERTY and close to the left hand. It becomes rebindable once a key settings screen exists.
 
@@ -1468,11 +1906,15 @@ PYRO = "/Game/Gen/Champions/Curffe/Projectiles/BP_Projectile_Pyroblast"
 if not EAL.does_asset_exist(PYRO):
     EAL.duplicate_asset("/Game/Gen/Champions/Curffe/Projectiles/BP_Projectile_GreatFireball", PYRO)
 pyro = unreal.load_asset(PYRO)
-# Visuel de la grosse boule de feu (plus gros), portée et vitesse de la boule de feu (spec : "bigger projectile")
-cdo(pyro).set_editor_property("speed", 1200.0)
-cdo(pyro).set_editor_property("max_range", 1100.0)
+# Visuel de la grosse boule de feu (plus gros), portée et vitesse de la boule de feu (spec : "bigger projectile") :
+# lues sur BP_Projectile_Fireball, jamais recopiées à la main
+fireball = cdo(unreal.load_asset("/Game/Gen/Champions/Curffe/Projectiles/BP_Projectile_Fireball"))
+speed, max_range = fireball.get_editor_property("speed"), fireball.get_editor_property("max_range")
+print("boule de feu : vitesse", speed, "portée", max_range)
+cdo(pyro).set_editor_property("speed", speed)
+cdo(pyro).set_editor_property("max_range", max_range)
 BEL.compile_blueprint(pyro)
-print(PYRO, EAL.save_asset(PYRO, only_if_is_dirty=False))
+print(PYRO, EAL.save_asset(PYRO, only_if_is_dirty=False), cdo(pyro).get_editor_property("speed"), cdo(pyro).get_editor_property("max_range"))
 
 NOVA = "/Game/Gen/Champions/Curffe/Areas/BP_Area_Nova"
 if not EAL.does_asset_exist(NOVA):
@@ -1482,7 +1924,7 @@ BEL.compile_blueprint(nova)
 print(NOVA, EAL.save_asset(NOVA, only_if_is_dirty=False))
 ```
 
-  - Expected: two `True` lines.
+  - Expected: two `True` lines; the Pyroblast's speed and range equal the printed Fireball values.
   - `BP_Area_Nova` keeps `NS_ST_GreatFireballImpact`. With no delay it shows no telegraph, only the impact. The ultimate's "unmistakable" VFX is a later art pass; see Open points.
 
 - [ ] **Step 4: Fireball blocked while ablaze; Great Fireball unaffected; Pyroblast.**
@@ -1510,6 +1952,8 @@ fb_names = tag_names(fb.get_editor_property("activation_blocked_tags"))
 print("GA_Fireball bloqué par :", fb_names, "| GA_GreatFireball :", tag_names(gf_blocked))
 fb.set_editor_property("activation_blocked_tags", GTS.request_tag_container(fb_names + ["State.Curffe.Ablaze"]))
 BEL.compile_blueprint(fb_bp)
+# Compiler le parent régénère la classe de l'enfant : son CDO d'avant est périmé, on le relit
+gf_bp, gf = bpc("GA_GreatFireball")
 gf.set_editor_property("activation_blocked_tags", gf_blocked)   # l'enfant garde ses tags d'avant
 BEL.compile_blueprint(gf_bp)
 
@@ -1596,11 +2040,44 @@ print("relu :", lf.get_editor_property("energy_cost"), cb.get_editor_property("e
 
   Expected: two `True` lines, then `relu : 25.0 100.0 InputTag.Ability.Ultimate`.
 
-- [ ] **Step 6: Status visuals.**
-  - Generic, on `BP_Champion`: resilience gets a white-gold shell (the motif of `State.Shielded` in Art Bible §7.6).
+- [ ] **Step 6: Status visuals** (Art Bible §7.6, current version). Every shape is unique and none is a filled shell (the `State.Shielded` motif). All are placeholders until the GameplayCue status library.
+  - Generic, on `BP_Champion`:
+    - `State.CCImmune` (resilience): **one white ring flash, then a thin white halo** for the immunity. A rim-only (Fresnel) halo hugging the body, `#FFFFFF`, with a 0.15 s appear flash.
+    - `State.Untouchable`: **the body dithers to a ghosted look** (masked, no translucency); the outline and the team ring stay. No shape: the body's material is swapped for `M_VFX_GhostDither` while the tag lasts (`owner_mesh_material`). Untouchable is game-wide, so it lives on `BP_Champion`.
   - On `BP_Curffe`, which copies the champion list and adds to it:
-    - the fire form: the body is hidden and replaced by a fire orb;
-    - ablaze: a fire disc at the feet. This is a placeholder for the ultimate's VFX, see Open points.
+    - `State.Curffe.Ablaze`: **on the body only, no ground area** (§7.2 self-buff rule). Placeholder: a flame-shaped cone of `M_ST_FireOrb` around the body. The target is stepped flames over the body and enlarged orbiting flames; see Open points.
+  - The spec's "living fire" form (Curffe §3 R) is **not** drawn here: §7.6 asks for a ghosted body for `State.Untouchable`. The conflict is flagged to the user in Open points (Art Bible §13); don't settle it here.
+
+  First create `M_VFX_GhostDither` (after the user's go-ahead from Step 1): unlit, **masked**, used with skeletal meshes, a neutral `Colour`, and the engine's `DitherTemporalAA` function on the opacity mask.
+
+```python
+import unreal
+tools = unreal.AssetToolsHelpers.get_asset_tools()
+MNS = unreal.MaterialNodeService
+EAL = unreal.EditorAssetLibrary
+GD = "/Game/Gen/Rendering/Masters/M_VFX_GhostDither"
+if EAL.does_asset_exist(GD):
+    print("M_VFX_GhostDither existe déjà :", unreal.MaterialEditingLibrary.get_scalar_parameter_names(unreal.load_asset(GD)))
+else:
+    m = tools.create_asset("M_VFX_GhostDither", "/Game/Gen/Rendering/Masters", unreal.Material, unreal.MaterialFactoryNew())
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MASKED)
+    m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    m.set_editor_property("used_with_skeletal_mesh", True)
+    # Neutre (Art Bible §7.6 : pas de teinte d'équipe) : text.secondary #C2A893
+    c = MNS.create_parameter(GD, "Vector", "Colour", "Ghost", "0.539,0.392,0.292,1", -500, -100)
+    a = MNS.create_parameter(GD, "Scalar", "GhostOpacity", "Ghost", "0.5", -800, 150)
+    d = MNS.create_function_call(GD, "/Engine/Functions/Engine_MaterialFunctions02/Utility/DitherTemporalAA", -450, 150)
+    pin = next(p.name for p in MNS.get_expression_pins(GD, d.id) if p.direction.lower().startswith("in") and p.name.startswith("Alpha"))
+    print("connexion :", MNS.batch_connect_expressions(GD, [a.id], [""], [d.id], [pin]), "/ 1 (", pin, ")")
+    print(MNS.connect_expression_to_output(GD, c.id, "", "EmissiveColor"), MNS.connect_expression_to_output(GD, d.id, "", "OpacityMask"))
+    print("compile", unreal.MaterialService.compile_material(GD), MNS.get_material_diagnostics(GD))
+    print("save", EAL.save_asset(GD, only_if_is_dirty=False))
+```
+
+  - Expected: `connexion : 1 / 1 ( Alpha Threshold )` (or the function's alpha input name), `True True`, `compile True` with no error, `save True`.
+  - The `Colour` default is `text.secondary` computed with `unreal.GenUILibrary.hex_to_linear("#C2A893")`; check it before saving.
+
+  Then the visuals:
 
 ```python
 import unreal
@@ -1608,38 +2085,52 @@ BEL = unreal.BlueprintEditorLibrary
 EAL = unreal.EditorAssetLibrary
 GTS = unreal.GameplayTagService
 shape = unreal.load_asset("/Game/Gen/Rendering/Masters/M_VFX_StatusShape")
+ghost = unreal.load_asset("/Game/Gen/Rendering/Masters/M_VFX_GhostDither")
 fire = unreal.load_asset("/Game/Gen/VFX/Stylized/M_ST_FireOrb")
-def visual(tag, mesh, material, colour, opacity, offset, scale, hide=False):
+hex_lin = unreal.GenUILibrary.hex_to_linear
+def visual(tag, mesh=None, material=None, hex_colour="#FFFFFF", opacity=1.0, offset=(0, 0, 0), scale=(1, 1, 1),
+           rim_only=False, rim_power=3.0, flash=0.0, owner_material=None):
     v = unreal.GenStatusVisual()
     v.set_editor_property("tag", GTS.request_tag(tag))
-    v.set_editor_property("mesh", unreal.load_asset(mesh))
+    if mesh:
+        v.set_editor_property("mesh", unreal.load_asset(mesh))
     v.set_editor_property("material", material)
-    v.set_editor_property("colour", unreal.LinearColor(*colour, 1.0))
+    v.set_editor_property("colour", hex_lin(hex_colour, 1.0))
     v.set_editor_property("opacity", opacity)
+    v.set_editor_property("rim_only", rim_only)
+    v.set_editor_property("rim_power", rim_power)
+    v.set_editor_property("appear_flash_duration", flash)
     v.set_editor_property("offset", unreal.Vector(*offset))
     v.set_editor_property("scale", unreal.Vector(*scale))
-    v.set_editor_property("hide_owner_mesh", hide)
+    v.set_editor_property("owner_mesh_material", owner_material)
     return v
 
 champ_bp = unreal.load_asset("/Game/Gen/Characters/BP_Champion")
 champ = unreal.get_default_object(BEL.generated_class(champ_bp))
-base = list(champ.get_editor_property("status_visual_config"))
-base.append(visual("State.CCImmune", "/Engine/BasicShapes/Sphere", shape, (0.888, 0.79, 0.54), 0.25, (0, 0, 0), (1.7, 1.7, 2.3)))
+base = [v for v in champ.get_editor_property("status_visual_config")
+        if str(v.get_editor_property("tag")) not in ("State.CCImmune", "State.Untouchable")]
+base += [
+    # Résilience : un flash d'anneau blanc, puis un halo blanc fin qui épouse le corps (contour seul, jamais une coque pleine)
+    visual("State.CCImmune", "/Engine/BasicShapes/Sphere", shape, "#FFFFFF", 0.5, (0, 0, 0), (1.15, 1.15, 1.9), rim_only=True, rim_power=6.0, flash=0.15),
+    # Intouchable : corps tramé « fantôme » (masqué), le contour et l'anneau d'équipe restent
+    visual("State.Untouchable", owner_material=ghost),
+]
 champ.set_editor_property("status_visual_config", base)
 BEL.compile_blueprint(champ_bp)
 
 curffe_bp = unreal.load_asset("/Game/Gen/Champions/Curffe/BP_Curffe")
 curffe = unreal.get_default_object(BEL.generated_class(curffe_bp))
 curffe.set_editor_property("status_visual_config", base + [
-    visual("State.Untouchable", "/Engine/BasicShapes/Sphere", fire, (1, 1, 1), 1.0, (0, 0, 0), (1.3, 1.3, 2.0), hide=True),
-    visual("State.Curffe.Ablaze", "/Engine/BasicShapes/Cylinder", fire, (1, 1, 1), 1.0, (0, 0, -90), (2.2, 2.2, 0.05)),
+    # Embrasé (PROVISOIRE) : flamme en cône sur le corps, rien au sol
+    visual("State.Curffe.Ablaze", "/Engine/BasicShapes/Cone", fire, "#FFFFFF", 1.0, (0, 0, 0), (0.9, 0.9, 1.8)),
 ])
 BEL.compile_blueprint(curffe_bp)
 print(EAL.save_asset("/Game/Gen/Characters/BP_Champion", only_if_is_dirty=False), EAL.save_asset("/Game/Gen/Champions/Curffe/BP_Curffe", only_if_is_dirty=False))
 print([str(v.get_editor_property("tag")) for v in curffe.get_editor_property("status_visual_config")])
 ```
 
-  Expected: `True True`, then 5 tags: Countering, Stunned, CCImmune, Untouchable, Ablaze.
+  - Expected: `True True`, then 5 tags: Countering, Stunned, CCImmune, Untouchable, Ablaze.
+  - **Readability capture** (`capture_image source=game`, gameplay camera, Standalone): put each state on the player in turn (`hard_cc`/`gain` helpers or the spells) and capture: the countering band, the stun disc, the CCImmune flash then halo, the ghosted body (the outline and the team ring still visible) and the ablaze cone. Each must read as a different shape in greyscale too (Art Bible §10). If two look alike, change the placeholder's scale or rim power, not its hue.
 
 - [ ] **Step 7: BP_Curffe's abilities.**
 
@@ -1660,24 +2151,56 @@ print(BEL.compile_blueprint(bp), EAL.save_asset(P, only_if_is_dirty=False), [c.g
   - Expected: `True True` and the 8 names.
   - `GA_Fireball` comes before `GA_Pyroblast`, so the ability bar's Primary slot (first spec with that InputTag) shows the Fireball. Showing Pyroblast during Combustion is a UI follow-up; see Open points.
 
-- [ ] **Step 8: Icons.** If the `icon` property and `Content/Python/gen_ui_icons.py` exist, add `Curffe_3` (Living Flame), `Curffe_Ultimate` (Combustion) and `Curffe_Pyroblast`, generate them, and set them. Otherwise skip this step and list it as pending in the report.
+- [ ] **Step 8: Icons** (UI_Guidelines §2.11).
+  - In `Content/Python/gen_ui_icons.py`, add `icon_living_flame()`, `icon_combustion()` and `icon_pyroblast()` in the script's style (256 px, flat bands, top-left light, the fire palette on the `#20160F` disc, no text), and add them to the `icons` dict in `main()` as `T_UI_Ability_Curffe_3`, `T_UI_Ability_Curffe_Ultimate` and `T_UI_Ability_Curffe_Pyroblast`. Give each a silhouette none of the five existing icons has:
+    - Living Flame: a standing flame figure with a burst ring at its base;
+    - Combustion: a radial eruption (a star of flame tongues around a bright core);
+    - Pyroblast: a large comet whose head is clearly bigger than the Primary icon's, with a short, thick tail.
+  - Generate them with the system Python: `python Content/Python/gen_ui_icons.py`.
+  - **`run_checks` must still pass:** in `Saved/UIIcons/checks/checks.txt`, every pair of the eight icons has a silhouette IoU at 32 px of **≤ 0.45** (Pyroblast against Primary is the pair to watch), and each new icon reads in the greyscale and 2 px blur cells. If a pair fails, change the new icon's shape and regenerate.
+  - Import them into **`/Game/Gen/UI/Textures/Icons/Abilities/`** with the existing icons' settings (compression **UserInterface2D** `TC_EDITOR_ICON`, **no mips**, texture group **UI**, **sRGB on**) and set `icon` on the abilities, as in Plan 2 Task 10 Step 12:
+
+```python
+import unreal, os
+EAL = unreal.EditorAssetLibrary
+BEL = unreal.BlueprintEditorLibrary
+SRC = os.path.join(unreal.Paths.project_dir(), "Saved", "UIIcons")
+DST = "/Game/Gen/UI/Textures/Icons/Abilities"
+AB = "/Game/Gen/Champions/Curffe/Abilities/"
+for name, ability in [("T_UI_Ability_Curffe_3", "GA_LivingFlame"), ("T_UI_Ability_Curffe_Ultimate", "GA_Combustion"),
+                      ("T_UI_Ability_Curffe_Pyroblast", "GA_Pyroblast")]:
+    path, err = unreal.AssetDiscoveryService.import_asset(os.path.join(SRC, name + ".png"), DST, name)
+    tex = unreal.load_asset(DST + "/" + name)
+    tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_EDITOR_ICON)
+    tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+    tex.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_UI)
+    tex.set_editor_property("srgb", True)
+    print(name, path, err, EAL.save_asset(DST + "/" + name, only_if_is_dirty=False))
+    bp = unreal.load_asset(AB + ability)
+    d = unreal.get_default_object(BEL.generated_class(bp))
+    d.set_editor_property("icon", tex)
+    BEL.compile_blueprint(bp)
+    print(ability, EAL.save_asset(AB + ability, only_if_is_dirty=False), d.get_editor_property("icon"))
+```
+
+  - Expected: three imports with an empty error and `True`, then each ability saved with its icon.
 
 - [ ] **Step 9: Smoke test** (Standalone, 1 player).
-  - With 25 energy at the start, R works: a fire orb, then a ring, and speed 715 for 2 s. Energy goes to 0.
-  - Set energy to 100 with `gain(1, energy=75)` from the PIE helpers (or the HUD). F: nova, then 5 s of Pyroblasts on LMB.
+  - With 25 energy at the start, R works: the body turns to the ghost dither for 0.5 s (the outline stays), then the ring, and speed 715 for 2 s. Energy goes to 0, and the R slot shows "Not enough energy" (Task 10).
+  - Set energy to 100 with `gain(1, energy=75)` from the PIE helpers (or the HUD). F: nova, then 5 s of Pyroblasts on LMB, with the ablaze cone on the body and nothing on the ground.
   - Hold RMB: 5 flames in about 0.5 s, and the Hearth stays at 5.
   - X during a long RMB feed cancels it.
 
-- [ ] **Step 10: Commit** (no push, no unlock until merge).
+- [ ] **Step 10: Commit** (no push, no unlock until merge). Tell the user that `M_VFX_GhostDither` now exists on `curffe-plan3` and is not pushed yet.
 
 ```bash
-git add Content/Gen/Champions/Curffe Content/Gen/Characters/BP_Champion.uasset Content/Gen/Input
-git commit -m "Living Flame, Combustion, Pyroblast and cancel-key assets; resilience and fire-form visuals"
+git add Content/Gen/Champions/Curffe Content/Gen/Characters/BP_Champion.uasset Content/Gen/Input Content/Gen/Rendering/Masters/M_VFX_GhostDither.uasset Content/Gen/UI/Textures/Icons/Abilities Content/Python/gen_ui_icons.py
+git commit -m "Living Flame, Combustion, Pyroblast and cancel-key assets; resilience, untouchable and ablaze visuals; three ability icons"
 ```
 
 ---
 
-### Task 11: PIE verification matrix (dedicated server + 3 clients)
+### Task 12: PIE verification matrix (dedicated server + 3 clients)
 
 **Files:**
 - Modify: `Content/Python/gen_pie_tools.py`
@@ -1697,9 +2220,32 @@ def set_energy(client_index, value):
 
 def is_ablaze(client_index):
     return has_tag(server_pawn_for(client_index), "State.Curffe.Ablaze")
+
+
+def status_flashing(viewer_index, subject_index, tag_name):
+    """Flash d'apparition de la forme d'état de subject en cours chez le client viewer."""
+    p = client_pawn(viewer_index, subject_index)
+    comp = p.get_editor_property("status_visuals") if p else None
+    return bool(comp) and comp.is_status_flashing(unreal.GameplayTagService.request_tag(tag_name))
+
+
+def body_material(viewer_index, subject_index, slot=0):
+    """Matériau de la section slot du corps de subject chez le client viewer (corps fantôme d'Intouchable)."""
+    p = client_pawn(viewer_index, subject_index)
+    mesh = p.get_editor_property("mesh") if p else None
+    m = mesh.get_material(slot) if mesh else None
+    return m.get_name() if m else None
+
+
+def slot_states(client_index):
+    """États de la barre de sorts chez un client : {InputTag: état} (Ready, Cooldown, Locked, NoEnergy...)."""
+    _, clients = worlds()
+    slots = unreal.WidgetBlueprintLibrary.get_all_widgets_of_class(clients[client_index - 1], unreal.GenAbilitySlot, False)
+    return {str(s.get_editor_property("input_tag")): str(s.get_state()) for s in slots}
 ```
 
-- [ ] **Step 2: Set up the session**, exactly as in Plan 2 Task 11 Step 2.
+- [ ] **Step 2: Set up the session**, exactly as in Plan 2 Task 11 Step 2 (Plan 2's `set_pkt_lag`, `client_walls` and the other helpers are already in `gen_pie_tools.py`).
+  - Read the latency baseline first (Global Constraints) and Plan 2's latency results; don't rerun them.
   - Also turn on `log LogCurffeLivingFlame Verbose` and `log LogCurffeCombustion Verbose`.
   - Same frame of reference: c1 at (-700,-1250), with **+X** forward.
 
@@ -1712,7 +2258,7 @@ def is_ablaze(client_index):
 | # | Scenario | Setup | Expected |
 |---|---|---|---|
 | W1 | **Living Flame cost** | (a) `set_energy(1, 24)`, then tap `IA_Ability_3`. (b) `set_energy(1, 25)`, then tap. (c) `set_energy(1, 60)`; c2's pillar stuns c1 during the 0.1 s cast (use `time_dilation(0.1)`) | (a) No `Activé` log and energy stays 24. (b) Energy goes 25→0 at release, and `Cooldown.Ability.LivingFlame` lasts 16 s. (c) The cast is cancelled, energy stays 60 and there is no cooldown |
-| W2 | **Fire form** | c1 casts R. During the 0.5 s form: c2 fires a Fireball through c1 at a dummy behind c1, and c2's pillar lands on c1 | The Fireball **passes through** c1 (hp unchanged) and hits the dummy. The pillar deals no damage and no stun to c1. `status_shown(2, 1, "State.Untouchable")` is true and the body is hidden. Client 1 taps LMB: no activation. c1 can move |
+| W2 | **Fire form** | c1 casts R. During the 0.5 s form: c2 fires a Fireball through c1 at a dummy behind c1, and c2's pillar lands on c1 | The Fireball **passes through** c1 (hp unchanged) and hits the dummy. The pillar deals no damage and no stun to c1. `status_shown(2, 1, "State.Untouchable")` is true and `body_material(2, 1)` is `M_VFX_GhostDither`: the body stays visible, dithered, with its outline and team ring; after the form it is back to its own material. Client 1 taps LMB: no activation. c1 can move |
 | W3 | **Living Flame's end** | Enemy dummy at +200, ally c3 at -200, c1 at 1 flame | After 0.5 s: the dummy takes −8 and is knocked back by about 300 cm; **c3 is untouched**. c1 flames 1→5 (and `client_view_flames(2,1) == 5`). Speed is 715 for 2 s, then 550. Client 1 casts a Fireball during the haste and it fires |
 | W4 | **Living Flame versus Backfire** | c2 counters; c1 casts R next to c2 | The ring (A) hits c2 through the counter: −8 and a knockback. c2 gains nothing |
 | W5 | **Combustion cost and interrupt** | (a) `set_energy(1, 99)`, then tap `IA_Ability_Ultimate`. (b) `set_energy(1, 100)`; c2's pillar stuns c1 during the 0.5 s cast. (c) `set_energy(1, 100)` with no interruption | (a) No activation. (b) The cast is cancelled and energy stays 100. (c) Energy goes 100→0 **when the cast completes** (not at the press), then the nova fires |
@@ -1721,13 +2267,28 @@ def is_ablaze(client_index):
 | W8 | **Unlimited flames** | During ablaze: hold RMB 1 s (5 flames) at a dummy, then E fed 5, then Space fed 5 | Each spell gets its full fed effect (Great Fireball −44 with knockback, pillar radius 350, a 5-Fireball ring). The Hearth reads **5 after each spell**, on the server and on client 2 |
 | W9 | **Fast feeding and validation** | (a) During ablaze, hold RMB for 0.55 s. (b) Start an RMB feed 4.8 s after F (ablaze ends mid-feed) | (a) `[CLIENT] Nourrissage terminé : 5 (0.50s)` (±1 frame), `Nourrissage validé : 5`, no `corrigé`. (b) The interval stays 0.1 s for that feed, and there is no `corrigé` |
 | W10 | **Normal cadence (regression of the Plan 1 drift fix)** | Outside ablaze, hold RMB 1.2 s, with `watch_start()` running | `fed` reaches 1, 2, 3, 4 and 5 at 0.2, 0.4, 0.6, 0.8 and 1.0 s (±1 frame each, **no cumulative drift**). The 5th arrives at 1.00–1.02 s |
-| W11 | **Resilience** | No spell active on c2. Using `time_dilation(0.25)`, call `hard_cc(2, 1.0)` at t=0, 1.2 and 2.4 (game time); then `hard_cc(2, 1.0)` at t=3.0; then wait | After the third call: `State.CCImmune` is present and the shell is visible on clients 1 and 3. The call at 3.0 returns an invalid handle and no new stun. `State.CCImmune` ends around t=4.9. A pillar on c2 at t=5.2 stuns again |
+| W11 | **Resilience** | No spell active on c2. Using `time_dilation(0.25)`, call `hard_cc(2, 1.0)` at t=0, 1.2 and 2.4 (game time); then `hard_cc(2, 1.0)` at t=3.0; then wait | After the third call: `State.CCImmune` is present and the white halo is visible on clients 1 and 3 (`status_shown(1, 2, "State.CCImmune")`), and `status_flashing(1, 2, "State.CCImmune")` is true for the first 0.15 s only (the ring flash). The call at 3.0 returns an invalid handle and no new stun. `State.CCImmune` ends around t=4.9. A pillar on c2 at t=5.2 stuns again |
 | W12 | **Cancel key** | (a) c1 feeds RMB (3 flames), then taps `IA_Cancel`. (b) X with nothing in progress. (c) X during the Backfire window. (d) X during a leap in flight. (e) X during the Combustion cast | (a) `Fin (annulé=1)`, flames 5, no cooldown, preview or fed display cleared everywhere. (b) Nothing in the log. (c) and (d): the spell continues (`State.Countering` stays; the leap lands with its ring). (e) Cancelled, and energy stays 100 |
 | W13 | **Untouchable versus counter** | c2 counters and c1 casts R; c3's Fireball at c1 during the form | The Fireball passes through c1. c1 gains nothing (no counter reward): untouchable comes first |
 | W14 | **Death in a power state** | c1 ablaze (or immune after W11-type stuns) at 10 hp; c2 kills c1 with a pillar | After respawn: no `State.Curffe.Ablaze`, `State.CCImmune` or `State.FastFeeding` (`inspect_tags`). LMB fires a Fireball (not a Pyroblast). The feed rate is 0.2 s per flame. A fresh 1 s stun does not trigger immunity |
 
+- [ ] **Step 3a: Ability bar row** (Task 10, client 1's HUD).
+
+| # | Scenario | Setup | Expected |
+|---|---|---|---|
+| W15 | **Energy states on the bar** | `set_energy(1, 20)`, then 25, then 100; then `hard_cc(1, 1.0)` at 20 energy. Read `slot_states(1)` after each step and capture the bar | 20: `InputTag.Ability.3` and `InputTag.Ability.Ultimate` are `NoEnergy` (blue-grey wash, dimmed icon), R shows one hollow segment and F four. 25: R `Ready` with one funded segment; F still `NoEnergy` with one funded segment. 100: both `Ready`, F's arc complete in `energy.full` with one pulse. Stunned: every slot `Locked` |
+
+- [ ] **Step 3b: Latency reruns.** Plan 1's and Plan 2's latency rows are the baseline; here only this plan's risky rows run again.
+  - `set_pkt_lag(120)` (any value from 100 to 150 ms), then rerun **W3, W7, W9 and W12(a)**.
+  - Expected: the same results as without latency, plus:
+    - W3: client 1's Fireball pressed right at the end of the form is accepted by the server (the form's cast-lock window, Task 8); the flames read 5 on the server and on client 2 within about one RTT;
+    - W7, **at the end of ablaze**: hold LMB across the end. The server never fires a Pyroblast after its own ablaze ended; at most one shot around the switch is refused (it costs nothing), then `GA_Fireball` fires again;
+    - W9: no `Nourrissage corrigé`, except at most one flame when the feed starts within one latency of the ablaze end (Review Focus 1);
+    - W12(a): the cancel reaches the server before any aim: flames 5 and no cooldown on the server.
+  - `set_pkt_lag(0)` afterwards.
+
 - [ ] **Step 4: Clean up.**
-  - `watch_stop()`, `PIEActorService.destroy_all()`, then `StopPIE`.
+  - `set_pkt_lag(0)`, `watch_stop()`, `PIEActorService.destroy_all()`, then `StopPIE`.
   - Restore Standalone with 1 client and turn background throttling back on.
   - Set the log categories back to `Log`.
 
@@ -1737,7 +2298,7 @@ def is_ablaze(client_index):
 
 ```bash
 git add Content/Python/gen_pie_tools.py
-git commit -m "PIE helpers for energy, resilience and Combustion verification"
+git commit -m "PIE helpers for energy, resilience, status visuals, ability bar and Combustion verification"
 ```
 
   In the report, list the VibeUE skills and services you used (CLAUDE.md rule 4).
@@ -1746,7 +2307,17 @@ git commit -m "PIE helpers for energy, resilience and Combustion verification"
 
 ## Open points (not in this plan)
 
-- **Audio.** The spec says Combustion has "unmistakable visuals and audio", and guidelines §1 say an ultimate has an audio cue enemies can hear. No sound assets exist yet. The current ablaze visual is a placeholder fire disc, below the Ultimate tier in Art Bible §7.2.
-- **Ability bar during Combustion.** The Primary slot shows the first spec with `InputTag.Ability.Primary` (the Fireball). Showing Pyroblast while `State.Curffe.Ablaze` is active is a follow-up for `UGenAbilitySlot` on `ui-ability-bar`.
+**Spec gaps and taste calls (questions for the user; this plan doesn't invent answers):**
+- **"Living fire" versus Art Bible §7.6 (flag per Art Bible §13).** The spec (Curffe §3 R) says the mage *becomes living fire* for 0.5 s; the earlier draft of this plan hid the body behind a fire orb. The current Art Bible §7.6 says `State.Untouchable` **dithers the body to a ghosted look (masked, no translucency) and keeps the outline and team ring**, the same for every champion. This plan follows §7.6 (Task 11 Step 6) and does not decide the fantasy. Options for the user: keep the generic ghost; add a Curffe-only flame layer on top of the ghost (body still readable, outline and ring kept); or amend §7.6 for champion-specific untouchable forms. Any change goes through the §13 procedure (taste log, [TASTE] rules, change log) and must keep the §3.0 budget and the §10 readability tests.
+- **Pyroblast in the Primary slot during Combustion.** The Primary slot shows the first spec with `InputTag.Ability.Primary` (the Fireball). Whether the slot swaps to Pyroblast (icon, name) while `State.Curffe.Ablaze` is active, and how, is a UI decision; then it is a follow-up for `UGenAbilitySlot`.
+- **Combustion's audio and VFX.** The spec says Combustion has "unmistakable visuals and audio", and guidelines §1 say an ultimate has an audio cue enemies can hear. No sound assets exist yet, and the ablaze cone and the nova burst are placeholders below the Ultimate tier in Art Bible §7.2 (target per §7.6: stepped flames over the body and enlarged orbiting flames).
+- **The 25-energy round start** (guidelines §4.1: 25 energy at the start of each round) belongs to the round system, not to Curffe. The spec doesn't say whether Curffe starts a round able to cast R at once; today the energy at spawn comes from the start-up effects.
+
+**Art Bible and UI follow-ups:**
 - **Art Bible §7.2** still lists `GA_GreatFireball` at VisualWeight 9 (spec §8: it should scale 5 → 8 with flames, and Combustion should be 9–10). That is a doc update for the Art Bible owner.
-- **Energy reset per round** (guidelines §4.1: 25 at the start of each round) belongs to the round system, not to Curffe.
+- §7.6 names the tag `State.Ablaze`; the code uses `State.Curffe.Ablaze` (a champion custom state). Align the Art Bible's table or the tag when the status library is built.
+- The status shapes (countering band, CCImmune halo, ablaze cone) and `M_VFX_GhostDither` are placeholders until the GameplayCue status library and the VFX pass.
+
+**Playtest and cheat notes:**
+- **Cast time not enforced for Living Flame (cheat only).** Its `CastTime` of 0.1 s equals `GenFeeding::CastTimeTolerance`, so the server can't tell an honest client from one that skips the cast (same as Backfire in Plan 2). Honest clients are unaffected.
+- **The form's lock can outlast the form on the client by up to ½ RTT.** The form is a predicted GE; when the server's copy replaces the predicted one, the client's `State.CastLocked` follows the server's timing. The server-side window (Task 8) means the server never refuses the client's next cast, but the client itself may wait up to ½ RTT longer than 0.5 s before it can cast. Check in W3 under latency; if it is noticeable, give the lock its own local tag like the leap's.

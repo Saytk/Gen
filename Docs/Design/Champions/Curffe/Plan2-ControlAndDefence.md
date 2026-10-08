@@ -2,6 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Execution mode: fast mode.**
+> - Group consecutive C++ tasks into **batches**: write every task of the batch, then run **one build and one unit-test run** for the whole batch. The per-task "Build to verify it fails" steps are optional inside a batch; the per-task "Build, then run the unit tests" steps collapse into the batch's single run. Commit per task when the tasks touch different files, otherwise once per batch (the message lists the task titles).
+> - **Per-task review only for risky tasks**, the ones tagged **Review: required** below. Other tasks get one review per batch.
+> - Proposed batches:
+>
+> | Batch | Tasks | Needs the editor? | Review: required |
+> |---|---|---|---|
+> | A | 1–4: pure rules, timed states and hard CC, hit resolution and cast lock, world queries and projectile | No (editor closed, `Build.bat`) | Task 3 (counter framework, cast lock), Task 4 (projectile counters) |
+> | B | 5: `UGenGA_Cast` extraction | Build with the editor closed; Step 8 (Blueprint smoke check) needs the editor | Task 5 |
+> | C | 6–9: ground area, counter ability, leap, status visuals | No | Task 7 (counter ability), Task 8 (leap lock and networking) |
+> | D | 10: editor assets | Yes (VibeUE) | — |
+> | E | 11: PIE matrix, then the latency reruns | Yes (PIE) | — |
+>
+> Batch B's Step 8 can wait for the editor session of batch D if that saves an editor restart; run it before Task 10 Step 1.
+
 **Goal:** Curffe gets his defensive and control spells: the counter framework and **Backfire** (A key), a delayed ground area with a telegraph and **Flame Pillar** (E, the kit's only stun), and **Meteor Leap** (Space, feedable, ring of Fireballs on landing). Everything is verified in PIE with a dedicated server and 3 clients.
 
 **Architecture:**
@@ -25,9 +40,14 @@
 ## Global Constraints
 
 - **Starting point.**
-  - Plan 1 is done, including its final fixes: the `curffe-plan1` branch at commit `7799691` or later, where `UGenGA_Projectile` has `ReleaseShot`/`LaunchShot`, `ApplyReportedFedCount`, `FeedSlotsAtPress` and `MarkFeedEnded`, and `AGenCharacterBase` has `StartFeedCast`/`MarkFeedEnded` (one cast bar from press to throw).
-  - Work on a new branch, `curffe-plan2`, cut from that tip.
+  - Branch **`curffe-plan2`**, cut from `ui-ability-bar` after merge `08a1b20` (`Merge branch 'curffe-plan1' into ui-ability-bar`). It contains:
+    - Plan 1 with its final fixes (commit `7799691`): `UGenGA_Projectile` has `ReleaseShot`/`LaunchShot`, `ApplyReportedFedCount`, `FeedSlotsAtPress` and `MarkFeedEnded`, and `AGenCharacterBase` has `StartFeedCast`/`MarkFeedEnded`;
+    - the charge bar (one cast bar from press to throw, flame ticks);
+    - the ability bar (CommonUI HUD, `UGenAbilitySlot`, `UGenGameplayAbility::Icon`, the placeholder icons);
+    - the latest Art Bible and UI guidelines (commit `3e0bab3`).
+  - If you are already on `curffe-plan2` (the `Gen-curffe` worktree is), skip the switch.
   - Never push to `main`. Merge only with the user's consent.
+- **Latency baseline.** Plan 1's latency checklist and the charge-bar PIE pass are being run right now on `ui-ability-bar`, in the main project folder. Their report is the baseline for this plan: `C:/Users/Samy D/Documents/Unreal Projects/Gen/.superpowers/sdd/Plan-AbilityBar/task-9-combined-report.md`. Read it before Task 11; don't rerun it here. Task 11 adds `NetEmulation.PktLag` reruns of this plan's own risky rows.
 - **Code comments in French**, matching the existing code (tabs, Allman braces, UE naming). Docs use English (Canadian spelling).
 - **Compiling.**
   - Close the editor cleanly first (`unreal.SystemLibrary.quit_editor()`), then build with `Build.bat`.
@@ -37,7 +57,8 @@
 - **LFS locks.**
   - Before modifying any existing `.uasset` or `.umap`, run `git fetch origin` and check `git diff --stat HEAD...origin/main -- Content`. Then check `git lfs locks` and run `git lfs lock <path>`.
   - If a file is locked by someone else, stop and tell the user. Never use `--force`.
-  - **Collision risk:** the `ui-ability-bar` branch edits `GA_Fireball`, `GA_GreatFireball`, `GA_FlameLeap` (icons) and `IMC_Arena`. Coordinate with the user before Task 10 if those assets are locked or have changed on `main`.
+  - **Collision risk:** `ui-ability-bar` is already merged into this branch, so its edits to `GA_Fireball`, `GA_GreatFireball`, `GA_FlameLeap` (icons) and `IMC_Arena` are already here. Work on `ui-ability-bar` continues in the main project folder, though. Before Task 10, run `git log --oneline HEAD..ui-ability-bar -- Content` and `git log --oneline HEAD..origin/main -- Content`; if either lists one of the assets this plan modifies, stop and ask the user about the merge order.
+  - **Hot shared files** (Art Bible §3.9): `MPC_TeamColours`, `M_VFX_Telegraph` and every master under `Content/Gen/Rendering/Masters/`. Two people work on the project and these can't be merged. **Tell the user before creating them** (Task 10 Step 1) and wait for the go-ahead, so the other person doesn't create them in parallel.
 - **PIE verification** uses a dedicated server and **3 clients**. Clients 1 and 3 are team 0 and client 2 is team 1. Restore the user's PIE settings afterwards (Standalone, 1 client).
 - **Starting values (spec §3, copied verbatim):**
   - **Q: Backfire.**
@@ -52,14 +73,17 @@
     - **8** damage in a small area on landing (A). Energy **+2** on landing hit.
     - Each fed flame bursts out as a Fireball (P, 8 damage) in an even ring around the landing point. Ring Fireballs follow the Fireball rules (range, walls, counters). An enemy can be hit by **one ring projectile at most**.
 - **Key slots.** The project uses AZERTY. The spec's Q is `InputTag.Ability.1` (key A), E is `InputTag.Ability.2`, and Space is `InputTag.Ability.Mobility`.
-- **Every new or changed ability sets** `InputTag`, `DisplayName` (French, like the existing ones), `CooldownTags` and `CooldownDuration`. It also sets `Icon` when the property exists (it arrives with the `ui-ability-bar` merge). The ability bar reads these.
+- **Every new or changed ability sets** `InputTag`, `DisplayName` (French, like the existing ones), `CooldownTags`, `CooldownDuration` and `Icon` (the property exists since the `ui-ability-bar` merge). The ability bar reads these.
 - **Costs are paid on release.** A cancelled or interrupted cast spends no cooldown and no flames.
+- **Hard crowd control** = stun, silence, fear, incapacitate (CharacterGuidelines §3.2). Interrupts and activation blocks go through `GenGameplayTags::GetHardCCTags()` (Task 2), never through `State.Stunned` alone.
 - **Telegraphs** (Art Bible §7.5, UI §4.12):
   - unlit only;
   - the border equals the hitbox radius;
   - fill at α 0.20 for self and ally, and α 0.15 with static hazard stripes for an enemy;
-  - border α 0.90;
-  - relation colour from the team-colour MPC through `RelationIndex` (1 self, 2 ally, 3 enemy, 4 neutral).
+  - border α 0.90, plus the 1 px keyline whose polarity (dark `line.outline`, light `line.keylineLight`, or both) comes from the MPC's `KeylinePolarity` (Art Bible §4.3, UI §8.6);
+  - relation colour from the team-colour MPC through `RelationIndex` (1 self, 2 ally, 3 enemy, 4 neutral);
+  - a delayed area never shows less than **0.6 s** of telegraph (`MinTelegraph`, CharacterGuidelines §3.1 and Art Bible §7.5: delayed areas appear 0.6–1.0 s before impact).
+- **Status visuals** follow the current Art Bible §7.6: one unique **shape** per state, never just a hue, and never the `State.Shielded` shell motif for another state. Task 9's shapes are placeholders until the GameplayCue status library exists.
 - **Folders.** Generic code goes in `Source/Gen/AbilitySystem/**`, `Source/Gen/Actors/` or `Source/Gen/Character/`. Curffe-only code goes in `Source/Gen/Champions/Curffe/` and Curffe assets in `Content/Gen/Champions/Curffe/`.
 
 ## Review Focus
@@ -90,6 +114,12 @@
    - a target that is only partly behind cover is still hit (multi-point line of sight).
 
    Pinned by Task 1 (`Gen.Area.LineOfSightSamples`) and Task 11 V10 and V17.
+6. **Leap, then an immediate LMB, under latency.** `State.CastLocked` is a loose tag that each machine sets on its own launch and clears on its own landing. The server launches about ½ RTT after the client, so a Fireball pressed right after the client lands can reach the server while the server's copy of the lock is still on. Expected:
+   - the client enforces the lock (it is the predicting side);
+   - the server enforces it only during the first `LeapDuration − CastTimeTolerance` of its own lock, so an honest client is never refused and a cheating one gains at most the tolerance;
+   - the landing area and the ring are never skipped.
+
+   Pinned by Task 1 (`Gen.Feeding.CastLockRule`) and Task 11 V19 (with `NetEmulation.PktLag`).
 
 ---
 
@@ -100,30 +130,32 @@
 | `Source/Gen/AbilitySystem/GenHitRules.h` (new) | Pure counter rule (`EGenHitKind`, `EGenHitResponse`), counter reward |
 | `Source/Gen/AbilitySystem/GenAreaRules.h` (new) | Pure area maths: range clamp, ring directions, line-of-sight samples, viewer relation, telegraph timing |
 | `Source/Gen/AbilitySystem/GenSalvo.h` (new) | `FGenProjectileSalvo`: one hit per target for a ring of projectiles |
-| `Source/Gen/AbilitySystem/GenFeeding.h` | Adds `FFedDisplay` (one spell owns the fed-count display) |
+| `Source/Gen/AbilitySystem/GenFeeding.h` | Adds `FFedDisplay` (one spell owns the fed-count display) and the cast-lock timing rule |
 | `Source/Gen/AbilitySystem/GenWorldQueries.h/.cpp` (new) | Wall trace, multi-point line of sight, floor trace (shared by projectiles and areas) |
 | `Source/Gen/AbilitySystem/Effects/GenGE_TimedState.h/.cpp` (new) | Timed state (tags for N s) and timed move-speed state (slow, haste, stun) |
 | `Source/Gen/AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.cpp` | Multipliers compound instead of adding up |
-| `Source/Gen/AbilitySystem/GenAbilitySystemComponent.h/.cpp` | `ApplyHardCC`, `RemoveTimedStates` |
-| `Source/Gen/AbilitySystem/Abilities/GenGameplayAbility.h/.cpp` | `State.CastLocked` blocks activation |
-| `Source/Gen/AbilitySystem/Abilities/GenGA_Cast.h/.cpp` (new) | Feeding, cast, aim, release (moved out of `UGenGA_Projectile`), spawn helpers |
+| `Source/Gen/AbilitySystem/GenAbilitySystemComponent.h/.cpp` | `ApplyHardCC`, `RemoveTimedStates`, server cast-lock window (`NoteCastLock`, `GetCastLockEnforcedUntil`) |
+| `Source/Gen/AbilitySystem/Abilities/GenGameplayAbility.h/.cpp` | Hard CC and `State.CastLocked` block activation (the lock only on the predicting side, plus the server window) |
+| `Source/Gen/AbilitySystem/Abilities/GenGA_Cast.h/.cpp` (new) | Feeding, cast, aim, release (moved out of `UGenGA_Projectile`), spawn helpers, hard-CC interrupts, montage root-motion scale, client montage stop on a server-side release failure |
 | `Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.h/.cpp` | Shrinks to the projectile-specific part |
 | `Source/Gen/AbilitySystem/Abilities/GenGA_GroundArea.h/.cpp` (new) | Ground-targeted area spell with an aim preview (Flame Pillar) |
 | `Source/Gen/AbilitySystem/Abilities/GenGA_Counter.h/.cpp` (new) | Counter stance (Backfire) |
 | `Source/Gen/AbilitySystem/Abilities/GenGA_Leap.h/.cpp` (new) | Feedable leap with a landing area |
 | `Source/Gen/Actors/GenGroundArea.h/.cpp` (new) | Replicated area actor: telegraph, impact, stun, knockback |
 | `Source/Gen/Actors/GenProjectile.h/.cpp` | Counter on direct hit, salvo, shared wall rule, multi-point splash line of sight |
-| `Source/Gen/Character/GenCharacterBase.h/.cpp` | `ResolveIncomingHit`, fed display owner, status visuals, timed states removed at death |
-| `Source/Gen/Character/GenStatusVisualsComponent.h/.cpp` (new) | One placeholder shape per state tag (countering, stunned...) |
-| `Source/Gen/GenGameplayTags.h/.cpp` | `State.Countering`, `State.CastLocked`, `Event.Counter.Blocked`, `SetByCaller.Duration` |
+| `Source/Gen/Character/GenCharacterBase.h/.cpp` | `ResolveIncomingHit`, fed display owner, status visuals, timed states removed at death, `ClientStopCastMontage` |
+| `Source/Gen/Character/GenStatusVisualsComponent.h/.cpp` (new) | One placeholder shape per state tag (countering, stunned...), appear flash, owner-mesh material override |
+| `Source/Gen/GenGameplayTags.h/.cpp` | `State.Countering`, `State.CastLocked`, `State.Silenced`, `State.Feared`, `State.Incapacitated`, `GetHardCCTags()`, `Event.Counter.Blocked`, `SetByCaller.Duration` |
 | `Source/Gen/Champions/Curffe/CurffeGameplayTags.h/.cpp` (new) | Backfire and Flame Pillar tags, the block cue tag |
 | `Source/Gen/Champions/Curffe/CurffeGA_MeteorLeap.h/.cpp` (new) | Ring of Fireballs on landing |
 | `Source/Gen/Tests/GenTestWorld.h` (new) | Shared test world (moved out of `GenResourceTests.cpp`) |
 | `Source/Gen/Tests/GenCombatRulesTests.cpp` (new) | Pure-rule tests |
 | `Source/Gen/Tests/GenCombatWorldTests.cpp` (new) | GAS tests in a test world (stun, slows, counter, timed states) |
-| `Content/Gen/Rendering/**` (new) | `MPC_TeamColours`, `Masters/M_VFX_Telegraph`, `Masters/M_VFX_StatusShape` |
+| `Content/Gen/Rendering/**` (new, hot shared files) | `MPC_TeamColours` (with `KeylineLight` and `KeylinePolarity`), `Masters/M_VFX_Telegraph`, `Masters/M_VFX_StatusShape` |
 | `Content/Gen/Champions/Curffe/**` | `GA_Backfire`, `GA_FlamePillar`, reparented `GA_FlameLeap`, area Blueprints, block cue |
-| `Content/Python/gen_pie_tools.py` | Tag, cooldown and ability helpers for the matrix |
+| `Content/Gen/UI/Textures/Icons/Abilities/**` | `T_UI_Ability_Curffe_1` (Backfire), `T_UI_Ability_Curffe_2` (Flame Pillar) |
+| `Content/Python/gen_ui_icons.py` | Two more placeholder icons |
+| `Content/Python/gen_pie_tools.py` | Tag, cooldown, latency and ability helpers for the matrix; replicated test walls |
 
 **Running the unit tests and the build** (editor closed). `$Root` is the checkout you run the plan in. By default it's the `Gen-curffe` worktree.
 
@@ -163,12 +195,14 @@ The ~20 `Condition failed` lines at frame 0 come from the engine's own start-up 
   - `FGenProjectileSalvo::HasHit(const UObject*) const -> bool`
   - `FGenProjectileSalvo::TryClaim(const UObject*) -> bool`
   - `GenFeeding::FFedDisplay { uint8 Count; FObjectKey Source; bool Set(FObjectKey, uint8); }`
+  - `GenFeeding::GetCastLockEnforcedUntil(float LockStart, float LockDuration, float Tolerance) -> float`
+  - `GenFeeding::IsRefusedByCastLock(bool bLocked, bool bPredictingSide, float Now, float EnforcedUntil) -> bool`
 
 - [ ] **Step 0: Check the starting point.**
-  - Run `git log --oneline -3` and `git status --short`.
-  - Confirm the tree is clean and contains commit `7799691`.
-  - Run `git log --oneline 7799691..HEAD -- Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.cpp`. Note any later commit: Task 5 must port it into `UGenGA_Cast`.
-  - Create the branch: `git switch -c curffe-plan2`.
+  - Run `git branch --show-current`, `git log --oneline -3` and `git status --short`.
+  - Expected: branch `curffe-plan2`, a clean tree (untracked `Content/Python/__pycache__/` is fine), and `git merge-base --is-ancestor 08a1b20 HEAD` succeeds (so `7799691` is in too).
+  - If you are not on `curffe-plan2` yet: `git switch curffe-plan2` if it exists, otherwise `git switch -c curffe-plan2 ui-ability-bar`. If you are already on it, skip this.
+  - Run `git log --oneline 7799691..HEAD -- Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.cpp Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.h`. Expected: nothing (checked at `3e0bab3`). Note any later commit: Task 5 must port it into `UGenGA_Cast`.
 
 - [ ] **Step 1: Write the failing tests** in `Source/Gen/Tests/GenCombatRulesTests.cpp`
 
@@ -300,10 +334,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenTelegraphTimingTest, "Gen.Area.TelegraphTim
 
 bool FGenTelegraphTimingTest::RunTest(const FString& Parameters)
 {
-	// GetImpactDelay(Delay, MinTelegraph)
-	TestEqual(TEXT("zone instantanée"), GenAreaRules::GetImpactDelay(0.f, 0.5f), 0.f);
-	TestEqual(TEXT("pilier : 0.8 s"), GenAreaRules::GetImpactDelay(0.8f, 0.5f), 0.8f);
-	TestEqual(TEXT("jamais sous le minimum"), GenAreaRules::GetImpactDelay(0.3f, 0.5f), 0.5f);
+	// GetImpactDelay(Delay, MinTelegraph) ; minimum 0.6 s (guidelines §3.1 : zones retardées 0.6–1.0 s)
+	TestEqual(TEXT("zone instantanée"), GenAreaRules::GetImpactDelay(0.f, 0.6f), 0.f);
+	TestEqual(TEXT("pilier : 0.8 s"), GenAreaRules::GetImpactDelay(0.8f, 0.6f), 0.8f);
+	TestEqual(TEXT("jamais sous le minimum"), GenAreaRules::GetImpactDelay(0.3f, 0.6f), 0.6f);
 
 	// GetTelegraphFill(Elapsed, Delay)
 	TestEqual(TEXT("mi-parcours"), GenAreaRules::GetTelegraphFill(0.4f, 0.8f), 0.5f, 0.001f);
@@ -352,6 +386,23 @@ bool FGenFedDisplayTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("un nouveau sort qui nourrit remplace l'affichage"), Display.Set(GreatFireball, 1));
 	TestFalse(TEXT("l'ancien ne l'efface plus"), Display.Set(Leap, 0));
 	TestEqual(TEXT("1 affichée"), static_cast<int32>(Display.Count), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCastLockRuleTest, "Gen.Feeding.CastLockRule",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenCastLockRuleTest::RunTest(const FString& Parameters)
+{
+	// GetCastLockEnforcedUntil(LockStart, LockDuration, Tolerance)
+	TestEqual(TEXT("bond de 0.45 s lancé à 10 s : refus serveur jusqu'à 10.35 s"), GenFeeding::GetCastLockEnforcedUntil(10.f, 0.45f, 0.1f), 10.35f, 0.0001f);
+	TestEqual(TEXT("verrou plus court que la tolérance : aucun refus serveur"), GenFeeding::GetCastLockEnforcedUntil(10.f, 0.05f, 0.1f), 10.f, 0.0001f);
+
+	// IsRefusedByCastLock(bLocked, bPredictingSide, Now, EnforcedUntil)
+	TestFalse(TEXT("pas de verrou"), GenFeeding::IsRefusedByCastLock(false, true, 10.f, 11.f));
+	TestTrue(TEXT("client : son propre verrou fait foi"), GenFeeding::IsRefusedByCastLock(true, true, 20.f, 10.35f));
+	TestTrue(TEXT("serveur, tôt dans le verrou : refusé (triche)"), GenFeeding::IsRefusedByCastLock(true, false, 10.2f, 10.35f));
+	TestFalse(TEXT("serveur, fin du vol : le client a déjà atterri, accepté"), GenFeeding::IsRefusedByCastLock(true, false, 10.4f, 10.35f));
 	return true;
 }
 
@@ -511,7 +562,10 @@ namespace GenAreaRules
 		return ViewerTeam == SourceTeam ? EGenViewerRelation::Ally : EGenViewerRelation::Enemy;
 	}
 
-	/** Délai d'impact : 0 = immédiat ; sinon jamais sous MinTelegraph (spec Combustion : télégraphes ≥ 0.5 s). */
+	/**
+	 * Délai d'impact : 0 = immédiat ; sinon jamais sous MinTelegraph (0.6 s par défaut : guidelines §3.1,
+	 * zones retardées 0.6–1.0 s ; couvre aussi la spec Combustion, télégraphes ≥ 0.5 s).
+	 */
 	inline float GetImpactDelay(float Delay, float MinTelegraph)
 	{
 		return Delay <= 0.f ? 0.f : FMath::Max(Delay, MinTelegraph);
@@ -561,7 +615,7 @@ private:
 };
 ```
 
-- [ ] **Step 6: Add `FFedDisplay` to `Source/Gen/AbilitySystem/GenFeeding.h`.**
+- [ ] **Step 6: Add `FFedDisplay` and the cast-lock rule to `Source/Gen/AbilitySystem/GenFeeding.h`.**
   - Add `#include "UObject/ObjectKey.h"` after `#include "CoreMinimal.h"`.
   - Add this at the end of the `GenFeeding` namespace, after `ReachesThreshold`:
 
@@ -588,21 +642,38 @@ private:
 			return bChanged;
 		}
 	};
+
+	/**
+	 * Verrou de lancement (State.CastLocked, ex : bond en vol) : jusqu'à quand le serveur le fait respecter
+	 * à un client distant. Chaque machine pose le verrou à SON départ et le retire à SON atterrissage ; celui
+	 * du serveur commence ~½ RTT après celui du client et finit d'autant plus tard. Le serveur ne refuse donc
+	 * que pendant LockDuration - Tolerance : un client honnête n'est jamais refusé, un tricheur gagne au plus Tolerance.
+	 */
+	inline float GetCastLockEnforcedUntil(float LockStart, float LockDuration, float Tolerance)
+	{
+		return LockStart + FMath::Max(LockDuration - Tolerance, 0.f);
+	}
+
+	/** Activation refusée par le verrou ? Le côté qui prédit (client, hôte, IA) le respecte toujours ; le serveur seulement avant EnforcedUntil. */
+	inline bool IsRefusedByCastLock(bool bLocked, bool bPredictingSide, float Now, float EnforcedUntil)
+	{
+		return bLocked && (bPredictingSide || Now < EnforcedUntil);
+	}
 ```
 
 - [ ] **Step 7: Build, then run the unit tests.**
-  Expected: these all show `Result={Success}`: `Gen.Combat.CounterTrigger`, `Gen.Combat.CounterReward`, `Gen.Area.ClampToRange`, `Gen.Area.RingDirections`, `Gen.Area.LineOfSightSamples`, `Gen.Area.ViewerRelation`, `Gen.Area.TelegraphTiming`, `Gen.Combat.Salvo` and `Gen.Feeding.FedDisplay`. The Plan 1 tests still pass.
+  Expected: these all show `Result={Success}`: `Gen.Combat.CounterTrigger`, `Gen.Combat.CounterReward`, `Gen.Area.ClampToRange`, `Gen.Area.RingDirections`, `Gen.Area.LineOfSightSamples`, `Gen.Area.ViewerRelation`, `Gen.Area.TelegraphTiming`, `Gen.Combat.Salvo`, `Gen.Feeding.FedDisplay` and `Gen.Feeding.CastLockRule`. The Plan 1 tests still pass.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add Source/Gen/AbilitySystem/GenHitRules.h Source/Gen/AbilitySystem/GenAreaRules.h Source/Gen/AbilitySystem/GenSalvo.h Source/Gen/AbilitySystem/GenFeeding.h Source/Gen/Tests/GenCombatRulesTests.cpp
-git commit -m "Add pure counter, area, salvo and fed-display rules with tests"
+git commit -m "Add pure counter, area, salvo, fed-display and cast-lock rules with tests"
 ```
 
 ---
 
-### Task 2: Timed states, stun, compounding slows, shared test world
+### Task 2: Timed states, hard CC, compounding slows, shared test world
 
 **Files:**
 - Modify: `Source/Gen/GenGameplayTags.h`, `Source/Gen/GenGameplayTags.cpp`
@@ -617,7 +688,8 @@ git commit -m "Add pure counter, area, salvo and fed-display rules with tests"
 **Interfaces:**
 - Consumes: `UGenGE_Gain`, `UGenAttributeSet::GetMoveSpeedAttribute()`, `AGenTrainingDummy`.
 - Produces:
-  - Tags `GenGameplayTags::State_Countering`, `State_CastLocked`, `Event_Counter_Blocked`, `SetByCaller_Duration`.
+  - Tags `GenGameplayTags::State_Countering`, `State_CastLocked`, `State_Silenced`, `State_Feared`, `State_Incapacitated`, `Event_Counter_Blocked`, `SetByCaller_Duration`.
+  - `GenGameplayTags::GetHardCCTags() -> const FGameplayTagContainer&` (stun, silence, fear, incapacitate).
   - `UGenGE_TimedState`, with `static void SetDuration(FGameplayEffectSpec&, float Duration, const FGameplayTagContainer& GrantedTags)`.
   - `UGenGE_TimedMoveSpeed : UGenGE_TimedState`, with `static void SetMagnitudes(FGameplayEffectSpec&, float Duration, float MoveSpeedMultiplier, const FGameplayTagContainer& GrantedTags)`.
   - `UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag StateTag, float Duration, AActor* Source) -> FActiveGameplayEffectHandle` (UFUNCTION, server only).
@@ -771,6 +843,15 @@ bool FGenStunTest::RunTest(const FString& Parameters)
 	TestWorld.Advance(1.1f);
 	TestEqual(TEXT("fin de l'étourdissement"), ASC->GetTagCount(GenGameplayTags::State_Stunned), 0);
 	TestEqual(TEXT("vitesse rendue"), Get(ASC, UGenAttributeSet::GetMoveSpeedAttribute()), 550.f);
+
+	// Les autres contrôles durs passent par le même point d'entrée
+	TestEqual(TEXT("4 contrôles durs"), GenGameplayTags::GetHardCCTags().Num(), 4);
+	TestTrue(TEXT("silence appliqué"), ASC->ApplyHardCC(GenGameplayTags::State_Silenced, 1.f, nullptr).IsValid());
+	TestEqual(TEXT("réduit au silence : bouge encore"), Get(ASC, UGenAttributeSet::GetMoveSpeedAttribute()), 550.f);
+	TestWorld.Advance(1.1f);
+	TestTrue(TEXT("neutralisé appliqué"), ASC->ApplyHardCC(GenGameplayTags::State_Incapacitated, 1.f, nullptr).IsValid());
+	TestEqual(TEXT("neutralisé : immobile"), Get(ASC, UGenAttributeSet::GetMoveSpeedAttribute()), 0.f);
+	TestWorld.Advance(1.1f);
 	return true;
 }
 
@@ -829,7 +910,7 @@ bool FGenRemoveTimedStatesTest::RunTest(const FString& Parameters)
 ```
 
 - [ ] **Step 4: Build to verify it fails.**
-  Expected: errors for the missing `GenGE_TimedState.h`, `ApplyHardCC` and `State_Countering`.
+  Expected: errors for the missing `GenGE_TimedState.h`, `ApplyHardCC`, `State_Countering` and `GetHardCCTags`.
 
 - [ ] **Step 5: Add the tags.**
   - In `GenGameplayTags.h`, after `UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Casting);`:
@@ -837,6 +918,12 @@ bool FGenRemoveTimedStatesTest::RunTest(const FString& Parameters)
 ```cpp
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Countering);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_CastLocked);
+
+	// Contrôles durs (guidelines §3.2) en plus de State_Stunned. Pas encore appliqués par un sort,
+	// mais les interruptions, les blocages de sorts et la barre de sorts les traitent déjà.
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Silenced);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Feared);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Incapacitated);
 
 	// --- Événements (gameplay events) ---
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Counter_Blocked);
@@ -846,6 +933,12 @@ bool FGenRemoveTimedStatesTest::RunTest(const FString& Parameters)
 
 ```cpp
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Duration);
+
+	/**
+	 * Contrôles durs (guidelines §3.2) : étourdi, silence, peur, neutralisé. Ils interrompent les incantations
+	 * (UGenGA_Cast) et bloquent l'activation des sorts (UGenGameplayAbility::CanActivateAbility).
+	 */
+	const FGameplayTagContainer& GetHardCCTags();
 ```
 
   - In `GenGameplayTags.cpp`, after the `State_Casting` definition:
@@ -854,13 +947,32 @@ bool FGenRemoveTimedStatesTest::RunTest(const FString& Parameters)
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Countering, "State.Countering", "Posture de contre : projectiles et melee sont bloques, pas les zones au sol");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_CastLocked, "State.CastLocked", "Ne peut lancer aucun sort (bond en vol, forme de feu...)");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Silenced, "State.Silenced", "Controle dur : peut bouger, ne peut pas lancer de sort");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Feared, "State.Feared", "Controle dur : fuit la source, ne peut pas lancer de sort");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Incapacitated, "State.Incapacitated", "Controle dur : comme un etourdissement, prend fin au moindre degat");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Counter_Blocked, "Event.Counter.Blocked", "Un coup a ete bloque par le contre de la cible (serveur)");
 ```
 
-    and after the `SetByCaller_Resource` definition:
+    and after the `SetByCaller_Resource` definition, still inside `namespace GenGameplayTags`:
 
 ```cpp
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Duration, "SetByCaller.Duration", "Duree passee aux etats temporaires (contre, etourdissement...)");
+
+	const FGameplayTagContainer& GetHardCCTags()
+	{
+		// Construit au premier appel (les tags natifs sont alors enregistrés)
+		static const FGameplayTagContainer HardCCTags = []()
+		{
+			FGameplayTagContainer Tags;
+			Tags.AddTag(State_Stunned);
+			Tags.AddTag(State_Silenced);
+			Tags.AddTag(State_Feared);
+			Tags.AddTag(State_Incapacitated);
+			return Tags;
+		}();
+		return HardCCTags;
+	}
 ```
 
 - [ ] **Step 6: Create `Source/Gen/AbilitySystem/Effects/GenGE_TimedState.h`**
@@ -964,9 +1076,10 @@ void UGenGE_TimedMoveSpeed::SetMagnitudes(FGameplayEffectSpec& Spec, float Durat
 
 ```cpp
 	/**
-	 * Serveur : applique un contrôle dur (StateTag = State.Stunned...) pendant Duration secondes.
-	 * Étourdi : vitesse à 0 et sorts bloqués (ActivationBlockedTags). Point d'entrée unique de tous
-	 * les contrôles durs (immunités et résilience s'y branchent). Handle invalide si rien n'est appliqué.
+	 * Serveur : applique un contrôle dur (StateTag = un tag de GenGameplayTags::GetHardCCTags()) pendant Duration secondes.
+	 * Étourdi ou neutralisé : vitesse à 0. Tous : sorts bloqués (UGenGameplayAbility::CanActivateAbility) et incantation
+	 * interrompue. Point d'entrée unique de tous les contrôles durs (immunités et résilience s'y branchent).
+	 * Handle invalide si rien n'est appliqué.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Gen|CrowdControl")
 	FActiveGameplayEffectHandle ApplyHardCC(FGameplayTag StateTag, float Duration, AActor* Source);
@@ -994,9 +1107,9 @@ FActiveGameplayEffectHandle UGenAbilitySystemComponent::ApplyHardCC(FGameplayTag
 		return FActiveGameplayEffectHandle();
 	}
 
-	// Étourdi : ne bouge plus. Les autres contrôles durs (silence...) laisseront bouger.
-	const float MoveSpeedMultiplier = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) ? 0.f : 1.f;
-	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, MoveSpeedMultiplier, FGameplayTagContainer(StateTag));
+	// Étourdi ou neutralisé : ne bouge plus. Silence et peur laissent bouger (la fuite de la peur viendra avec son sort).
+	const bool bImmobile = StateTag.MatchesTagExact(GenGameplayTags::State_Stunned) || StateTag.MatchesTagExact(GenGameplayTags::State_Incapacitated);
+	UGenGE_TimedMoveSpeed::SetMagnitudes(*Spec.Data, Duration, bImmobile ? 0.f : 1.f, FGameplayTagContainer(StateTag));
 	return ApplyGameplayEffectSpecToSelf(*Spec.Data);
 }
 
@@ -1030,25 +1143,30 @@ void UGenAbilitySystemComponent::RemoveTimedStates()
 
 ```bash
 git add Source/Gen/GenGameplayTags.h Source/Gen/GenGameplayTags.cpp Source/Gen/AbilitySystem/Effects Source/Gen/AbilitySystem/GenAbilitySystemComponent.h Source/Gen/AbilitySystem/GenAbilitySystemComponent.cpp Source/Gen/Character/GenCharacterBase.cpp Source/Gen/Tests
-git commit -m "Timed states, stun through ApplyHardCC, compounding slows, shared test world"
+git commit -m "Timed states, hard CC through ApplyHardCC, compounding slows, shared test world"
 ```
 
 ---
 
-### Task 3: Hit resolution on the character, fed display owner, cast lock
+### Task 3: Hit resolution on the character, fed display owner, cast lock (Review: required)
 
 **Files:**
 - Modify: `Source/Gen/Character/GenCharacterBase.h/.cpp`
 - Modify: `Source/Gen/AbilitySystem/Abilities/GenGameplayAbility.h/.cpp`
+- Modify: `Source/Gen/AbilitySystem/GenAbilitySystemComponent.h/.cpp` (server cast-lock window)
 - Modify: `Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.cpp` (one call site)
 - Test: `Source/Gen/Tests/GenCombatWorldTests.cpp`
 
 **Interfaces:**
-- Consumes: `GenHitRules::Resolve`, `GenFeeding::FFedDisplay` (Task 1); `State_Countering`, `State_CastLocked`, `Event_Counter_Blocked` (Task 2).
+- Consumes: `GenHitRules::Resolve`, `GenFeeding::FFedDisplay`, `GenFeeding::{GetCastLockEnforcedUntil, IsRefusedByCastLock, CastTimeTolerance}` (Task 1); `State_Countering`, `State_CastLocked`, `Event_Counter_Blocked`, `GetHardCCTags()` (Task 2).
 - Produces:
   - `EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitKind Kind, const UObject* Source)`. Server only. Every damage source calls it before applying anything. A counter that blocks receives `Event.Counter.Blocked` with `Instigator` = Attacker, `OptionalObject` = Source and `EventMagnitude` = `(float)Kind`.
   - `void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)`, which replaces `SetFedResource(uint8)`.
-  - `UGenGameplayAbility::CanActivateAbility` refuses while `State.CastLocked` is present.
+  - `UGenAbilitySystemComponent::NoteCastLock(float LockDuration)` (server) and `GetCastLockEnforcedUntil() const -> float`.
+  - `UGenGameplayAbility::CanActivateAbility` refuses:
+    - under any hard CC (`GetHardCCTags()`), on every machine;
+    - under `State.CastLocked` on the predicting side (`ActorInfo->IsLocallyControlled()`: the owning client, a listen host, an AI), and on the server for a remote client only before `GetCastLockEnforcedUntil()`.
+  - **Why the server window and not "accept and end the flight":** ending the server's flight early would move the landing point and the Fireball ring away from what the client predicted, or skip them. With the window, the server keeps the flight and the ring exactly as predicted, refuses only casts that arrive earlier than any honest client could send them (more than `CastTimeTolerance` before its own landing), and accepts everything after. The cost is a misprediction (the new spell is refused and costs nothing) only when the activation RPC overtakes the aim RPC by more than the tolerance (jitter > 100 ms).
 
 - [ ] **Step 1: Write the failing test.** Add this to `GenCombatWorldTests.cpp`, before the final `#endif`, and add `#include "Character/GenTrainingDummy.h"` to the includes:
 
@@ -1171,15 +1289,53 @@ EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitK
 		Character->SetFedResource(this, static_cast<uint8>(FMath::Clamp(Count, 0, 255)));
 ```
 
-- [ ] **Step 6: Block casting under `State.CastLocked`.**
+- [ ] **Step 6: Server cast-lock window on the ASC.**
+  - In `GenAbilitySystemComponent.h`, after `RemoveTimedStates()`:
+
+```cpp
+	/**
+	 * Serveur : un verrou de lancement (State.CastLocked) de LockDuration s vient d'être posé (ex : bond en vol).
+	 * Les activations d'un client distant ne sont refusées que pendant LockDuration - CastTimeTolerance
+	 * (GenFeeding::GetCastLockEnforcedUntil) : le verrou du serveur finit ~½ RTT après celui du client.
+	 */
+	void NoteCastLock(float LockDuration);
+
+	/** Serveur : fin (temps du monde) de la fenêtre où le verrou refuse les activations d'un client distant. */
+	float GetCastLockEnforcedUntil() const { return CastLockEnforcedUntil; }
+```
+
+    and in the `protected:` section:
+
+```cpp
+	/** Serveur : fin de la fenêtre où State.CastLocked refuse les activations d'un client distant. */
+	float CastLockEnforcedUntil = -1.f;
+```
+
+  - In `GenAbilitySystemComponent.cpp`, add `#include "AbilitySystem/GenFeeding.h"` and `#include "Engine/World.h"`, then append:
+
+```cpp
+void UGenAbilitySystemComponent::NoteCastLock(float LockDuration)
+{
+	if (IsOwnerActorAuthoritative() && GetWorld())
+	{
+		CastLockEnforcedUntil = GenFeeding::GetCastLockEnforcedUntil(GetWorld()->GetTimeSeconds(), LockDuration, GenFeeding::CastTimeTolerance);
+	}
+}
+```
+
+- [ ] **Step 7: Block casting under hard CC and `State.CastLocked`.**
   - In `GenGameplayAbility.h`, after the `ApplyCooldown` override:
 
 ```cpp
-	/** Refuse aussi pendant State.CastLocked (bond en vol, forme de feu...), posé par code et non par les assets. */
+	/**
+	 * Refuse aussi sous un contrôle dur (GenGameplayTags::GetHardCCTags) et pendant State.CastLocked (bond en vol,
+	 * forme de feu...), posé par code et non par les assets. Le verrou fait foi du côté qui prédit ; le serveur ne
+	 * l'applique à un client distant que dans sa fenêtre (UGenAbilitySystemComponent::GetCastLockEnforcedUntil).
+	 */
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 ```
 
-  - In `GenGameplayAbility.cpp`, after `GetCooldownTags()`, add the following and `#include "AbilitySystemComponent.h"`:
+  - In `GenGameplayAbility.cpp`, after `GetCooldownTags()`, add the following, plus `#include "AbilitySystem/GenAbilitySystemComponent.h"`, `#include "AbilitySystem/GenFeeding.h"`, `#include "AbilitySystemComponent.h"` and `#include "Engine/World.h"`:
 
 ```cpp
 bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
@@ -1190,22 +1346,40 @@ bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Ha
 	}
 
 	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	return !ASC || !ASC->HasMatchingGameplayTag(GenGameplayTags::State_CastLocked);
+	if (!ASC)
+	{
+		return true;
+	}
+
+	// Contrôle dur (répliqué par le serveur) : refusé partout
+	if (ASC->HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags()))
+	{
+		return false;
+	}
+
+	// Verrou de lancement : tag local posé par chaque machine à SON départ, retiré à SON atterrissage.
+	// Le côté qui prédit fait foi ; le serveur ne refuse un client distant qu'au début du verrou
+	// (sinon un sort lancé juste après l'atterrissage du client arriverait sous le verrou du serveur)
+	const bool bLocked = ASC->HasMatchingGameplayTag(GenGameplayTags::State_CastLocked);
+	const UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC);
+	const float EnforcedUntil = GenASC ? GenASC->GetCastLockEnforcedUntil() : -1.f;
+	const float Now = ASC->GetWorld() ? ASC->GetWorld()->GetTimeSeconds() : 0.f;
+	return !GenFeeding::IsRefusedByCastLock(bLocked, ActorInfo->IsLocallyControlled(), Now, EnforcedUntil);
 }
 ```
 
-- [ ] **Step 7: Build, then run the unit tests.** Expected: `Gen.Combat.CounterResolve` passes, and all earlier tests still pass.
+- [ ] **Step 8: Build, then run the unit tests.** Expected: `Gen.Combat.CounterResolve` passes, and all earlier tests still pass. The cast lock and the hard-CC block are checked in PIE (Task 11 V7, V14, V19).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add Source/Gen/Character Source/Gen/AbilitySystem/Abilities Source/Gen/Tests/GenCombatWorldTests.cpp
-git commit -m "Resolve incoming hits through counters, single owner for the fed display, cast lock"
+git add Source/Gen/Character Source/Gen/AbilitySystem/Abilities Source/Gen/AbilitySystem/GenAbilitySystemComponent.h Source/Gen/AbilitySystem/GenAbilitySystemComponent.cpp Source/Gen/Tests/GenCombatWorldTests.cpp
+git commit -m "Resolve incoming hits through counters, single owner for the fed display, hard-CC block, cast lock with a server window"
 ```
 
 ---
 
-### Task 4: Shared wall and line-of-sight queries; projectiles trigger counters and support salvos
+### Task 4: Shared wall and line-of-sight queries; projectiles trigger counters and support salvos (Review: required)
 
 **Files:**
 - Create: `Source/Gen/AbilitySystem/GenWorldQueries.h`, `Source/Gen/AbilitySystem/GenWorldQueries.cpp`
@@ -1258,6 +1432,7 @@ namespace GenWorldQueries
 #include "AbilitySystem/GenWorldQueries.h"
 
 #include "AbilitySystem/GenAreaRules.h"
+#include "Actors/GenProjectile.h"
 #include "CollisionQueryParams.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/HitResult.h"
@@ -1302,13 +1477,15 @@ namespace GenWorldQueries
 		World->LineTraceMultiByObjectType(Hits, Start, End, WallObjects, MakeParams(IgnoredActors));
 		for (const FHitResult& Hit : Hits)
 		{
-			// Un projectile (Overlap sur Pawn) ou un volume qui ne bloque pas les Pawns n'est pas un mur
+			// Un autre projectile ou un volume qui ne bloque pas les Pawns n'est pas un mur (comme l'ancien
+			// AGenProjectile::FindWallHit : on garde le test explicite, un Blueprint de projectile peut bloquer les Pawns)
 			const UPrimitiveComponent* HitComponent = Hit.GetComponent();
-			if (HitComponent && HitComponent->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Block)
+			if (Cast<AGenProjectile>(Hit.GetActor()) || !HitComponent || HitComponent->GetCollisionResponseToChannel(ECC_Pawn) != ECR_Block)
 			{
-				OutHit = Hit;
-				return true;
+				continue;
 			}
+			OutHit = Hit;
+			return true;
 		}
 		return false;
 	}
@@ -1735,14 +1912,16 @@ void AGenProjectile::Explode(AActor* HitActor, const FVector& Location)
 			Salvo->TryClaim(DirectTarget);
 		}
 
-		// Coup direct = projectile : un contre le bloque entièrement (pas d'éclaboussure sur lui non plus)
-		if (DirectTarget->ResolveIncomingHit(GetInstigator(), EGenHitKind::Projectile, this) == EGenHitResponse::Countered)
-		{
-			bCountered = true;
-		}
-		else
+		// Coup direct = projectile : un contre le bloque entièrement (pas d'éclaboussure sur lui non plus).
+		// Seul Hit inflige quelque chose : toute autre réponse (contre, et plus tard intouchable) n'applique rien.
+		const EGenHitResponse Response = DirectTarget->ResolveIncomingHit(GetInstigator(), EGenHitKind::Projectile, this);
+		if (Response == EGenHitResponse::Hit)
 		{
 			Targets.Add(DirectTarget);
+		}
+		else if (Response == EGenHitResponse::Countered)
+		{
+			bCountered = true;
 		}
 	}
 
@@ -1826,7 +2005,7 @@ git commit -m "Shared wall and multi-point line-of-sight queries; projectiles tr
 
 ---
 
-### Task 5: Extract `UGenGA_Cast` from `UGenGA_Projectile` (no behaviour change for projectiles)
+### Task 5: Extract `UGenGA_Cast` from `UGenGA_Projectile` (no behaviour change for projectiles) (Review: required)
 
 Feeding, the cast, the aim, the server's cast-time check and costs on release become the base class of every spell that "goes off". `UGenGA_Projectile` keeps only what is specific to projectiles.
 
@@ -1835,7 +2014,7 @@ A UPROPERTY that moves to a parent class keeps its saved value in the Blueprints
 **Files:**
 - Create: `Source/Gen/AbilitySystem/Abilities/GenGA_Cast.h`, `Source/Gen/AbilitySystem/Abilities/GenGA_Cast.cpp`
 - Modify (full replacement): `Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.h`, `Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.cpp`
-- Modify: `Source/Gen/Character/GenCharacterBase.cpp` (`ServerReportFedResource`)
+- Modify: `Source/Gen/Character/GenCharacterBase.h/.cpp` (`ServerReportFedResource`, `ClientStopCastMontage`)
 
 **Interfaces:**
 - Consumes:
@@ -1850,12 +2029,15 @@ A UPROPERTY that moves to a parent class keeps its saved value in the Blueprints
     - protected virtual: `OnCastLaunched(const FGenCastRelease&)` (default: `FinishAbility()`) and `IsInterruptedByHardCC() const` (default `true`);
     - protected helpers:
       - `FinishAbility()`
-      - `SetCastLock(bool)`
+      - `SetCastLock(bool bLocked, float ExpectedDuration = 0.f)` (the server also calls `UGenAbilitySystemComponent::NoteCastLock(ExpectedDuration)`)
       - `MakeDamageSpec(TSubclassOf<UGameplayEffect>, float Amount, UObject* SourceObject) const -> FGameplayEffectSpecHandle`
       - `MakeGainSpec(float Energy, float Resource) const -> FGameplayEffectSpecHandle`
       - `SpawnProjectileShot(TSubclassOf<AGenProjectile>, const FVector& Origin, const FVector& Direction, const FGenProjectileShotParams&, TSubclassOf<UGameplayEffect> DamageClass, float DamageAmount, float EnergyGain, float ResourceGain, const TSharedPtr<FGenProjectileSalvo>& Salvo = nullptr) -> AGenProjectile*`
-    - protected properties: `CastTime`, `CastMoveSpeedMultiplier`, `CastFX`, `CastFXSocket`, `ChargeMontage`, `CastMontage`, `bFeedable`, `FeedInterval`, `MaxFeed`, `bTurnToAim`.
+    - protected properties: `CastTime`, `CastMoveSpeedMultiplier`, `CastFX`, `CastFXSocket`, `ChargeMontage`, `CastMontage`, `CastMontageRootMotionScale` (default 1; Python `cast_montage_root_motion_scale`), `bFeedable`, `FeedInterval`, `MaxFeed`, `bTurnToAim`.
+    - interrupts: every hard-CC tag (`GenGameplayTags::GetHardCCTags()`), not only `State.Stunned`.
+    - server-side release failure for a remote client (invalid aim, `CommitAbility` refused): `AGenCharacterBase::ClientStopCastMontage` stops the throw the client already plays (Art Bible §8.4, misprediction fix).
   - `UGenGA_Projectile : UGenGA_Cast`, which keeps `SpawnProjectile(const FVector&, int32)` and every projectile property.
+  - `UFUNCTION(Client, Reliable) void AGenCharacterBase::ClientStopCastMontage(UAnimMontage* Montage)`.
   - The log category becomes `LogGenCast`. PIE steps now use `log LogGenCast Verbose`.
 
 - [ ] **Step 1: Check for upstream changes.** Run `git log --oneline 7799691..HEAD -- Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.cpp Source/Gen/AbilitySystem/Abilities/GenGA_Projectile.h`. If it lists commits, read their diff and port each change into the matching function below before you continue.
@@ -1945,8 +2127,12 @@ protected:
 	/** Termine le sort. Seul le serveur réplique la fin (voir le commentaire dans le .cpp). */
 	void FinishAbility();
 
-	/** Verrou de lancement (State.CastLocked, tag local sur le serveur et le client) ; retiré à la fin du sort. */
-	void SetCastLock(bool bLocked);
+	/**
+	 * Verrou de lancement (State.CastLocked, tag local sur le serveur et le client) ; retiré à la fin du sort.
+	 * ExpectedDuration : durée prévue du verrou (ex : LeapDuration). Le serveur s'en sert pour ne refuser les sorts
+	 * d'un client distant qu'au début du verrou (UGenAbilitySystemComponent::NoteCastLock).
+	 */
+	void SetCastLock(bool bLocked, float ExpectedDuration = 0.f);
 
 	/** Spec du GE de dégâts (SetByCaller.Damage = Amount). Invalide si rien à infliger. */
 	FGameplayEffectSpecHandle MakeDamageSpec(TSubclassOf<UGameplayEffect> EffectClass, float Amount, UObject* SourceObject) const;
@@ -2019,6 +2205,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation")
 	TObjectPtr<UAnimMontage> CastMontage;
 
+	/**
+	 * Échelle du mouvement racine des montages du sort (ChargeMontage, CastMontage, et LandMontage du bond).
+	 * 1 = celui du clip. 0 quand le déplacement vient d'une Root Motion Source (bond : ApplyRootMotionJumpForce) :
+	 * Art Bible §8.4, un clip à mouvement racine passe AnimRootMotionTranslationScale = 0.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Cast|Animation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CastMontageRootMotionScale = 1.f;
+
 	/** Maintenir la touche nourrit le sort avec la ressource du champion (attribut Resource). */
 	UPROPERTY(EditDefaultsOnly, Category = "Cast|Feeding")
 	bool bFeedable = false;
@@ -2051,6 +2245,12 @@ private:
 
 	/** Lancer d'un autre sort à incantation du joueur : celui-ci remplace l'incantation en cours. */
 	void CancelOtherPendingCasts();
+
+	/**
+	 * Serveur pour un client distant, lancer refusé (visée invalide, CommitAbility refusé) : le client a déjà joué
+	 * son geste. On le coupe chez lui (Art Bible §8.4 : aucune clé de prédiction n'est rejetée à ce stade).
+	 */
+	void StopClientCastMontages();
 
 	/** Serveur qui exécute le sort d'un client distant (ni hôte, ni autonome, ni IA). */
 	bool IsServerForRemoteClient() const;
@@ -2103,7 +2303,8 @@ private:
   - `GEN_ABILITY_LOG` becomes `GEN_CAST_LOG`;
   - `ReleaseShot`/`LaunchShot` become `ReleaseCast`/`LaunchCast`, so any subclass can act on launch;
   - other pending casts are cancelled at activation;
-  - `OnCastInterrupted` asks `IsInterruptedByHardCC()`.
+  - `OnCastInterrupted` asks `IsInterruptedByHardCC()`, and the interrupt watch covers every hard-CC tag;
+  - the montages take `CastMontageRootMotionScale`, and the server stops the client's throw when its own release fails.
 
 ```cpp
 #include "AbilitySystem/Abilities/GenGA_Cast.h"
@@ -2115,12 +2316,14 @@ private:
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "AbilitySystem/Effects/GenGE_Gain.h"
 #include "AbilitySystem/Effects/GenGE_MoveSpeedMultiplier.h"
+#include "AbilitySystem/GenAbilitySystemComponent.h"
 #include "AbilitySystem/GenAttributeSet.h"
 #include "AbilitySystem/GenFeeding.h"
 #include "AbilitySystem/GenTargetData.h"
 #include "AbilitySystem/Tasks/GenAbilityTask_TargetDataUnderCursor.h"
 #include "AbilitySystemComponent.h"
 #include "Actors/GenProjectile.h"
+#include "Animation/AnimMontage.h"
 #include "Character/GenCharacterBase.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -2476,7 +2679,7 @@ void UGenGA_Cast::StartCasting()
 	if (ChargeMontage)
 	{
 		UAbilityTask_PlayMontageAndWait* ChargeTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, ChargeMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false);
+			this, NAME_None, ChargeMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false, CastMontageRootMotionScale);
 		ChargeTask->ReadyForActivation();
 	}
 
@@ -2574,10 +2777,14 @@ void UGenGA_Cast::StartInterruptWatch()
 	}
 	bInterruptWatchStarted = true;
 
-	// Un étourdissement interrompt le nourrissage et l'incantation (la mort annule déjà tous les sorts)
-	UAbilityTask_WaitGameplayTagAdded* StunTask = UAbilityTask_WaitGameplayTagAdded::WaitGameplayTagAdd(this, GenGameplayTags::State_Stunned, nullptr, true);
-	StunTask->Added.AddDynamic(this, &ThisClass::OnCastInterrupted);
-	StunTask->ReadyForActivation();
+	// Un contrôle dur (étourdi, silence, peur, neutralisé) interrompt le nourrissage et l'incantation
+	// (la mort annule déjà tous les sorts). Une tâche par tag : le premier arrivé interrompt.
+	for (const FGameplayTag& HardCCTag : GenGameplayTags::GetHardCCTags())
+	{
+		UAbilityTask_WaitGameplayTagAdded* HardCCTask = UAbilityTask_WaitGameplayTagAdded::WaitGameplayTagAdd(this, HardCCTag, nullptr, true);
+		HardCCTask->Added.AddDynamic(this, &ThisClass::OnCastInterrupted);
+		HardCCTask->ReadyForActivation();
+	}
 }
 
 void UGenGA_Cast::EndCastPresentation()
@@ -2708,6 +2915,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	if (!Avatar || !Hit)
 	{
 		GEN_CAST_LOG(Warning, "Visée invalide (avatar=%d, hit=%d)", Avatar != nullptr, Hit != nullptr);
+		StopClientCastMontages();
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return false;
 	}
@@ -2720,6 +2928,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
 	{
 		GEN_CAST_LOG(Verbose, "CommitAbility a échoué au lancer");
+		StopClientCastMontages();
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return false;
 	}
@@ -2747,11 +2956,29 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 	if (CastMontage)
 	{
 		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, CastMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false);
+			this, NAME_None, CastMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false, CastMontageRootMotionScale);
 		MontageTask->ReadyForActivation();
 	}
 
 	return true;
+}
+
+void UGenGA_Cast::StopClientCastMontages()
+{
+	// Seul le serveur d'un client distant est concerné : un hôte ou une IA n'a rien joué d'avance
+	AGenCharacterBase* Character = IsServerForRemoteClient() ? GetGenCharacterFromActorInfo() : nullptr;
+	if (!Character)
+	{
+		return;
+	}
+
+	for (UAnimMontage* Montage : { ChargeMontage.Get(), CastMontage.Get() })
+	{
+		if (Montage)
+		{
+			Character->ClientStopCastMontage(Montage);
+		}
+	}
 }
 
 void UGenGA_Cast::LaunchCast(const FGenCastRelease& Release)
@@ -2781,7 +3008,7 @@ void UGenGA_Cast::FinishAbility()
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, bReplicateEnd, false);
 }
 
-void UGenGA_Cast::SetCastLock(bool bLocked)
+void UGenGA_Cast::SetCastLock(bool bLocked, float ExpectedDuration)
 {
 	if (bCastLockApplied == bLocked)
 	{
@@ -2794,6 +3021,12 @@ void UGenGA_Cast::SetCastLock(bool bLocked)
 		if (bLocked)
 		{
 			ASC->AddLooseGameplayTag(GenGameplayTags::State_CastLocked);
+
+			// Serveur : fenêtre où le verrou refuse les sorts d'un client distant (GenFeeding::GetCastLockEnforcedUntil)
+			if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC))
+			{
+				GenASC->NoteCastLock(ExpectedDuration);
+			}
 		}
 		else
 		{
@@ -3017,7 +3250,34 @@ void UGenGA_Projectile::SpawnProjectile(const FVector& TargetLocation, int32 Fed
 }
 ```
 
-- [ ] **Step 6: Route the fed report through the base class.** In `GenCharacterBase.cpp`:
+- [ ] **Step 6: Route the fed report through the base class, and add the montage stop.** In `GenCharacterBase.h`, next to `ClientApplyKnockback` (protected), add:
+
+```cpp
+public:
+	/**
+	 * Serveur -> client propriétaire : le serveur a refusé le lancer (visée invalide, CommitAbility refusé) alors que
+	 * le client joue déjà son geste. Coupe Montage s'il joue encore (Art Bible §8.4, mauvaise prédiction).
+	 */
+	UFUNCTION(Client, Reliable)
+	void ClientStopCastMontage(UAnimMontage* Montage);
+
+protected:
+```
+
+  Add `class UAnimMontage;` to the forward declarations. In `GenCharacterBase.cpp`, add `#include "Animation/AnimInstance.h"` and `#include "Animation/AnimMontage.h"`, and append:
+
+```cpp
+void AGenCharacterBase::ClientStopCastMontage_Implementation(UAnimMontage* Montage)
+{
+	UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (Montage && AnimInstance && AnimInstance->Montage_IsPlaying(Montage))
+	{
+		AnimInstance->Montage_Stop(0.25f, Montage);
+	}
+}
+```
+
+  Then, still in `GenCharacterBase.cpp`:
   - replace `#include "AbilitySystem/Abilities/GenGA_Projectile.h"` with `#include "AbilitySystem/Abilities/GenGA_Cast.h"`;
   - in `ServerReportFedResource_Implementation`, replace the inner block with:
 
@@ -3035,7 +3295,8 @@ void UGenGA_Projectile::SpawnProjectile(const FVector& TargetLocation, int32 Fed
   - If the build complains about `C4458` (a declaration hides a class member) in a subclass, rename the subclass's local variable. Don't rename the base members.
 
 - [ ] **Step 8: Blueprint smoke check** (editor open, new binaries, Standalone 1 player).
-  - Compile `GA_Fireball` and `GA_GreatFireball`. Read back `cast_time`, `feedable`, `max_feed` and `explosion_min_feed` on both CDOs. Expected: the Plan 1 values (0.35/False and 0.5/True/5/3).
+  - Compile `GA_Fireball` and `GA_GreatFireball` **without saving them** (`BEL.compile_blueprint` only; no `save_asset`). Compiling only marks them dirty. Save them only if `git lfs locks --verify` shows them locked by you; otherwise leave them dirty and don't save them when the editor asks. Task 10 doesn't modify them.
+  - Read back `cast_time`, `feedable`, `max_feed`, `explosion_min_feed` and `cast_montage_root_motion_scale` on both CDOs. Expected: the Plan 1 values (0.35/False and 0.5/True/5/3) and `1.0`.
   - Fire both in PIE. LMB fires repeatedly; holding RMB for 1 s spends 5 flames.
   - The full regression runs in Task 11.
 
@@ -3043,7 +3304,7 @@ void UGenGA_Projectile::SpawnProjectile(const FVector& TargetLocation, int32 Fed
 
 ```bash
 git add Source/Gen/AbilitySystem/Abilities Source/Gen/Character/GenCharacterBase.h Source/Gen/Character/GenCharacterBase.cpp
-git commit -m "Extract UGenGA_Cast (feeding, cast, aim, release) from UGenGA_Projectile; a new cast replaces the pending one"
+git commit -m "Extract UGenGA_Cast (feeding, cast, aim, release) from UGenGA_Projectile; a new cast replaces the pending one; hard-CC interrupts; client throw stopped on a server-side release failure"
 ```
 
 ---
@@ -3261,6 +3522,7 @@ private:
 #include "Net/UnrealNetwork.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Player/GenPlayerController.h"
+#include "Player/GenPlayerState.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -3394,10 +3656,13 @@ EGenViewerRelation AGenGroundArea::GetLocalViewerRelation() const
 		return EGenViewerRelation::Self;
 	}
 
+	// Équipe du joueur local lue sur son PlayerState : elle reste juste quand il est mort (pas de pion)
+	// ou entre deux possessions. Même chose pour la source : comparée par PlayerState, pas par pion.
 	const APlayerController* LocalController = GetWorld()->GetFirstPlayerController();
-	const AGenCharacterBase* Viewer = LocalController ? Cast<AGenCharacterBase>(LocalController->GetPawn()) : nullptr;
-	const bool bViewerIsSource = Viewer && Viewer == GetInstigator();
-	const uint8 ViewerTeam = Viewer ? Viewer->GetTeamId() : GenNoTeam;
+	const AGenPlayerState* ViewerState = LocalController ? LocalController->GetPlayerState<AGenPlayerState>() : nullptr;
+	const APawn* SourcePawn = GetInstigator();
+	const bool bViewerIsSource = ViewerState && SourcePawn && SourcePawn->GetPlayerState() == ViewerState;
+	const uint8 ViewerTeam = ViewerState ? ViewerState->GetTeamId() : GenNoTeam;
 	return GenAreaRules::GetViewerRelation(bViewerIsSource, ViewerTeam, SourceTeam, GenNoTeam);
 }
 
@@ -3668,9 +3933,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (ClampMin = "0.0", Units = "s"))
 	float ImpactDelay = 0.8f;
 
-	/** Un télégraphe ne descend jamais sous cette durée. */
+	/** Un télégraphe ne descend jamais sous cette durée (guidelines §3.1 : zones retardées 0.6–1.0 s). */
 	UPROPERTY(EditDefaultsOnly, Category = "Area", meta = (ClampMin = "0.0", Units = "s"))
-	float MinTelegraph = 0.5f;
+	float MinTelegraph = 0.6f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Area|Effects")
 	FScalableFloat Damage;
@@ -3789,7 +4054,7 @@ git commit -m "Delayed ground area with team-relative telegraph and aim preview;
 
 ---
 
-### Task 7: Counter ability (Backfire) and Curffe's tags
+### Task 7: Counter ability (Backfire) and Curffe's tags (Review: required)
 
 **Files:**
 - Create: `Source/Gen/AbilitySystem/Abilities/GenGA_Counter.h`, `Source/Gen/AbilitySystem/Abilities/GenGA_Counter.cpp`
@@ -4046,7 +4311,7 @@ git commit -m "Counter stance ability (Backfire) and Curffe's native tags"
 
 ---
 
-### Task 8: Feedable leap and Meteor Leap's ring of Fireballs
+### Task 8: Feedable leap and Meteor Leap's ring of Fireballs (Review: required: leap lock and networking)
 
 **Files:**
 - Create: `Source/Gen/AbilitySystem/Abilities/GenGA_Leap.h`, `Source/Gen/AbilitySystem/Abilities/GenGA_Leap.cpp`
@@ -4063,8 +4328,9 @@ git commit -m "Counter stance ability (Backfire) and Curffe's native tags"
   - `UGenGA_Leap : UGenGA_Cast`:
     - properties `MaxDistance`, `LeapHeight`, `LeapDuration`, `LandingAreaClass`, `LandingRadius`, `LandingDamage`, `LandingEnergyOnHit`, `LandingKnockback`, `TrailCueTag`, `ImpactCueTag` and `LandMontage`;
     - virtual `OnLeapLanded(const FGenCastRelease&, const FVector& LandingLocation)`;
-    - not interrupted by a stun while airborne;
-    - `State.CastLocked` in flight.
+    - not interrupted by a hard CC while airborne;
+    - `State.CastLocked` in flight, set with `SetCastLock(true, LeapDuration)` so the server enforces it only during its first `LeapDuration − CastTimeTolerance` (Task 3);
+    - `LandMontage` plays with `CastMontageRootMotionScale`, like the cast montages (0 on `GA_FlameLeap`: the jump force moves the character, not the clip).
   - `UCurffeGA_MeteorLeap : UGenGA_Leap`:
     - properties `RingProjectileClass`, `RingDamage`, `RingEnergyOnHit` and `RingSpawnOffset`;
     - on landing (server), `Release.Fed` Fireballs fly out in an even ring, sharing one salvo.
@@ -4182,7 +4448,8 @@ void UGenGA_Leap::OnCastLaunched(const FGenCastRelease& Release)
 	const float Distance = FVector::Dist2D(Start, Target);
 
 	bAirborne = true;
-	SetCastLock(true);
+	// Le serveur ne refuse les sorts du client que pendant LeapDuration - tolérance : son vol finit ~½ RTT après celui du client
+	SetCastLock(true, LeapDuration);
 
 	if (TrailCueTag.IsValid())
 	{
@@ -4222,8 +4489,9 @@ void UGenGA_Leap::OnLeapLanded(const FGenCastRelease& Release, const FVector& La
 {
 	if (LandMontage)
 	{
+		// Même échelle de mouvement racine que les montages du sort (0 pour un bond : c'est la Root Motion Source qui déplace)
 		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, LandMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false);
+			this, NAME_None, LandMontage, 1.f, NAME_None, /*bStopWhenAbilityEnds*/ false, CastMontageRootMotionScale);
 		MontageTask->ReadyForActivation();
 	}
 
@@ -4352,11 +4620,9 @@ git commit -m "Feedable leap with landing area; Meteor Leap bursts fed flames in
 
 ### Task 9: Status visuals (one placeholder shape per state tag)
 
-The Art Bible §7.6 gives each state one shape motif. Until a GameplayCue library exists, a tag-driven component draws engine shapes with a translucent unlit material on every client:
-- `State.Countering`: a stance shell;
-- `State.Stunned`: a ring above the head.
-
-Plan 3 adds more entries.
+The Art Bible §7.6 gives each state one **unique shape** motif, the same for everyone, never just a hue; the shell motif belongs to `State.Shielded`. Until a GameplayCue status library exists, a tag-driven component draws engine shapes with an unlit translucent material on every client. It can also flash a shape when it appears and swap the body's material while a state lasts (Plan 3: `State.CCImmune` halo with its ring flash, `State.Untouchable` ghost dither). This plan configures two states (Task 10 Step 9):
+- `State.Countering`: a thin rim-only band around the body at low chroma. **Placeholder:** §7.6 wants a frontal arc that shows what the stance catches, but the counter is omnidirectional today (`ResolveIncomingHit` ignores the direction), so the visual stays omnidirectional. See Open points (counter directionality).
+- `State.Stunned`: a disc above the head in the stun hue.
 
 **Files:**
 - Create: `Source/Gen/Character/GenStatusVisualsComponent.h`, `Source/Gen/Character/GenStatusVisualsComponent.cpp`
@@ -4366,10 +4632,10 @@ Plan 3 adds more entries.
 **Interfaces:**
 - Consumes: `UGenAbilitySystemComponent::ApplyHardCC` (Task 2, test only).
 - Produces:
-  - `USTRUCT FGenStatusVisual { FGameplayTag Tag; UStaticMesh* Mesh; UMaterialInterface* Material; FLinearColor Colour; float Opacity; FVector Offset; FVector Scale; bool bHideOwnerMesh; }`
-  - `UGenStatusVisualsComponent::Bind(UAbilitySystemComponent*, const TArray<FGenStatusVisual>&)`, `Unbind()` and `IsStatusShown(FGameplayTag) const` (UFUNCTION)
+  - `USTRUCT FGenStatusVisual { FGameplayTag Tag; UStaticMesh* Mesh; UMaterialInterface* Material; FLinearColor Colour; float Opacity; bool bRimOnly; float RimPower; float AppearFlashDuration; FVector Offset; FVector Scale; UMaterialInterface* OwnerMeshMaterial; }` (Python: `tag`, `mesh`, `material`, `colour`, `opacity`, `rim_only`, `rim_power`, `appear_flash_duration`, `offset`, `scale`, `owner_mesh_material`)
+  - `UGenStatusVisualsComponent::Bind(UAbilitySystemComponent*, const TArray<FGenStatusVisual>&)`, `Unbind()`, and the UFUNCTIONs `IsStatusShown(FGameplayTag) const` and `IsStatusFlashing(FGameplayTag) const`
   - `AGenCharacterBase::StatusVisuals` (component) and `AGenCharacterBase::StatusVisualConfig` (`TArray<FGenStatusVisual>`, EditDefaultsOnly; Python name `status_visual_config`)
-  - The material parameters it sets: `Colour` (vector) and `Opacity` (scalar).
+  - The material parameters it sets: `Colour` (vector), `Opacity`, `RimOnly`, `RimPower` and `Flash` (scalars). `M_VFX_StatusShape` (Task 10 Step 4) reads all five.
 
 - [ ] **Step 1: Write the failing test.** Append this to `GenCombatWorldTests.cpp` before `#endif`, and add `#include "Character/GenStatusVisualsComponent.h"`:
 
@@ -4393,12 +4659,19 @@ bool FGenStatusVisualTest::RunTest(const FString& Parameters)
 
 	FGenStatusVisual Stunned;
 	Stunned.Tag = GenGameplayTags::State_Stunned;
+	Stunned.AppearFlashDuration = 0.2f;
 	Visuals->Bind(ASC, { Stunned });
 
 	TestFalse(TEXT("caché au départ"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
 	ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr);
 	TestTrue(TEXT("affiché pendant l'étourdissement"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
-	TestWorld.Advance(1.1f);
+	TestTrue(TEXT("flash d'apparition"), Visuals->IsStatusFlashing(GenGameplayTags::State_Stunned));
+
+	TestWorld.Advance(0.3f);
+	TestFalse(TEXT("flash terminé"), Visuals->IsStatusFlashing(GenGameplayTags::State_Stunned));
+	TestTrue(TEXT("forme toujours là après le flash"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
+
+	TestWorld.Advance(0.8f);
 	TestFalse(TEXT("caché à la fin"), Visuals->IsStatusShown(GenGameplayTags::State_Stunned));
 
 	Visuals->Unbind();
@@ -4415,15 +4688,20 @@ bool FGenStatusVisualTest::RunTest(const FString& Parameters)
 
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
+#include "Engine/TimerHandle.h"
 #include "GameplayTagContainer.h"
 #include "GenStatusVisualsComponent.generated.h"
 
 class UAbilitySystemComponent;
+class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UStaticMesh;
 class UStaticMeshComponent;
 
-/** Forme provisoire affichée tant qu'un état (tag) est actif. Art Bible §7.6 : une forme par état, la même pour tous. */
+/**
+ * Forme provisoire affichée tant qu'un état (tag) est actif. Art Bible §7.6 : une forme unique par état,
+ * la même pour tous, jamais une simple teinte ; la coque est réservée à State.Shielded.
+ */
 USTRUCT(BlueprintType)
 struct FGenStatusVisual
 {
@@ -4432,10 +4710,11 @@ struct FGenStatusVisual
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status", meta = (Categories = "State"))
 	FGameplayTag Tag;
 
+	/** Forme dessinée. Vide = aucune (ex : un état qui ne fait que changer le matériau du corps). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	TObjectPtr<UStaticMesh> Mesh;
 
-	/** Ex : M_VFX_StatusShape (lit Colour et Opacity), ou M_ST_FireOrb tel quel. */
+	/** Ex : M_VFX_StatusShape (lit Colour, Opacity, RimOnly, RimPower et Flash), ou M_ST_FireOrb tel quel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	TObjectPtr<UMaterialInterface> Material;
 
@@ -4445,6 +4724,18 @@ struct FGenStatusVisual
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float Opacity = 0.5f;
 
+	/** Seulement le contour de la forme (Fresnel) : une bande ou un halo plutôt qu'un volume plein. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
+	bool bRimOnly = false;
+
+	/** Finesse du contour (exposant du Fresnel) quand bRimOnly. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status", meta = (ClampMin = "0.5", EditCondition = "bRimOnly"))
+	float RimPower = 3.f;
+
+	/** Flash à l'apparition : paramètre Flash du matériau à 1 pendant cette durée. 0 = aucun (ex : anneau blanc de la résilience). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status", meta = (ClampMin = "0.0", Units = "s"))
+	float AppearFlashDuration = 0.f;
+
 	/** Position par rapport au centre du personnage (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	FVector Offset = FVector::ZeroVector;
@@ -4452,9 +4743,12 @@ struct FGenStatusVisual
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
 	FVector Scale = FVector::OneVector;
 
-	/** Cache le corps du personnage tant que l'état est actif (ex : forme de feu de Flamme vivante). */
+	/**
+	 * Matériau imposé à toutes les sections du corps tant que l'état est actif, puis rendu. Ex : intouchable,
+	 * corps tramé « fantôme » (masqué, sans translucidité) ; le contour et l'anneau d'équipe restent (Art Bible §7.6).
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Status")
-	bool bHideOwnerMesh = false;
+	TObjectPtr<UMaterialInterface> OwnerMeshMaterial;
 };
 
 /**
@@ -4474,9 +4768,13 @@ public:
 	void Bind(UAbilitySystemComponent* InASC, const TArray<FGenStatusVisual>& InVisuals);
 	void Unbind();
 
-	/** Forme de l'état Tag affichée (lu par les tests). */
+	/** Forme de l'état Tag affichée (lu par les tests et le PIE). */
 	UFUNCTION(BlueprintPure, Category = "Gen|Status")
 	bool IsStatusShown(FGameplayTag Tag) const;
+
+	/** Flash d'apparition de l'état Tag en cours (lu par les tests et le PIE). */
+	UFUNCTION(BlueprintPure, Category = "Gen|Status")
+	bool IsStatusFlashing(FGameplayTag Tag) const;
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -4484,6 +4782,7 @@ protected:
 private:
 	void OnTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void SetShown(int32 Index, bool bShown);
+	void SetFlash(int32 Index, bool bFlash);
 	void RefreshOwnerMesh();
 
 	TArray<FGenStatusVisual> Visuals;
@@ -4491,7 +4790,19 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> Shapes;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> ShapeMIDs;
+
+	/** Matériaux d'origine du corps, gardés tant qu'un OwnerMeshMaterial est imposé. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInterface>> OriginalOwnerMaterials;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AppliedOwnerMaterial;
+
 	TArray<bool> Shown;
+	TArray<bool> Flashing;
+	TArray<FTimerHandle> FlashTimers;
 	TArray<FDelegateHandle> TagHandles;
 	TWeakObjectPtr<UAbilitySystemComponent> BoundASC;
 };
@@ -4505,8 +4816,10 @@ private:
 #include "AbilitySystemComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "TimerManager.h"
 
 UGenStatusVisualsComponent::UGenStatusVisualsComponent()
 {
@@ -4529,25 +4842,36 @@ void UGenStatusVisualsComponent::Bind(UAbilitySystemComponent* InASC, const TArr
 	{
 		const FGenStatusVisual& Visual = Visuals[Index];
 
-		UStaticMeshComponent* Shape = NewObject<UStaticMeshComponent>(GetOwner());
-		Shape->SetStaticMesh(Visual.Mesh);
-		Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Shape->SetCastShadow(false);
-		Shape->SetupAttachment(this);
-		Shape->SetRelativeLocation(Visual.Offset);
-		Shape->SetRelativeScale3D(Visual.Scale);
-		Shape->SetVisibility(false);
-		Shape->RegisterComponent();
-
-		if (Visual.Material)
+		UStaticMeshComponent* Shape = nullptr;
+		UMaterialInstanceDynamic* MID = nullptr;
+		if (Visual.Mesh)
 		{
-			UMaterialInstanceDynamic* MID = Shape->CreateDynamicMaterialInstance(0, Visual.Material);
-			MID->SetVectorParameterValue(TEXT("Colour"), Visual.Colour);
-			MID->SetScalarParameterValue(TEXT("Opacity"), Visual.Opacity);
+			Shape = NewObject<UStaticMeshComponent>(GetOwner());
+			Shape->SetStaticMesh(Visual.Mesh);
+			Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Shape->SetCastShadow(false);
+			Shape->SetupAttachment(this);
+			Shape->SetRelativeLocation(Visual.Offset);
+			Shape->SetRelativeScale3D(Visual.Scale);
+			Shape->SetVisibility(false);
+			Shape->RegisterComponent();
+
+			if (Visual.Material)
+			{
+				MID = Shape->CreateDynamicMaterialInstance(0, Visual.Material);
+				MID->SetVectorParameterValue(TEXT("Colour"), Visual.Colour);
+				MID->SetScalarParameterValue(TEXT("Opacity"), Visual.Opacity);
+				MID->SetScalarParameterValue(TEXT("RimOnly"), Visual.bRimOnly ? 1.f : 0.f);
+				MID->SetScalarParameterValue(TEXT("RimPower"), Visual.RimPower);
+				MID->SetScalarParameterValue(TEXT("Flash"), 0.f);
+			}
 		}
 
 		Shapes.Add(Shape);
+		ShapeMIDs.Add(MID);
 		Shown.Add(false);
+		Flashing.Add(false);
+		FlashTimers.AddDefaulted();
 		TagHandles.Add(Visual.Tag.IsValid()
 			? InASC->RegisterGameplayTagEvent(Visual.Tag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::OnTagChanged)
 			: FDelegateHandle());
@@ -4571,6 +4895,14 @@ void UGenStatusVisualsComponent::Unbind()
 		}
 	}
 
+	if (UWorld* World = GetWorld())
+	{
+		for (FTimerHandle& Timer : FlashTimers)
+		{
+			World->GetTimerManager().ClearTimer(Timer);
+		}
+	}
+
 	for (UStaticMeshComponent* Shape : Shapes)
 	{
 		if (Shape)
@@ -4580,10 +4912,15 @@ void UGenStatusVisualsComponent::Unbind()
 	}
 
 	Shapes.Reset();
+	ShapeMIDs.Reset();
 	Shown.Reset();
+	Flashing.Reset();
+	FlashTimers.Reset();
 	TagHandles.Reset();
 	Visuals.Reset();
 	BoundASC.Reset();
+
+	// Plus aucun état : le corps retrouve ses matériaux
 	RefreshOwnerMesh();
 }
 
@@ -4605,6 +4942,18 @@ bool UGenStatusVisualsComponent::IsStatusShown(FGameplayTag Tag) const
 	return false;
 }
 
+bool UGenStatusVisualsComponent::IsStatusFlashing(FGameplayTag Tag) const
+{
+	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
+	{
+		if (Visuals[Index].Tag == Tag && Flashing[Index])
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void UGenStatusVisualsComponent::OnTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
 	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
@@ -4619,30 +4968,93 @@ void UGenStatusVisualsComponent::OnTagChanged(const FGameplayTag Tag, int32 NewC
 
 void UGenStatusVisualsComponent::SetShown(int32 Index, bool bShown)
 {
+	const bool bWasShown = Shown[Index];
 	Shown[Index] = bShown;
 	if (Shapes[Index])
 	{
 		Shapes[Index]->SetVisibility(bShown);
 	}
+
+	UWorld* World = GetWorld();
+	if (bShown && !bWasShown && Visuals[Index].AppearFlashDuration > 0.f)
+	{
+		// Flash d'apparition : seulement sur le front montant, puis la forme reste à son opacité normale
+		SetFlash(Index, true);
+		if (World)
+		{
+			World->GetTimerManager().SetTimer(FlashTimers[Index], FTimerDelegate::CreateWeakLambda(this, [this, Index]()
+			{
+				if (Flashing.IsValidIndex(Index))
+				{
+					SetFlash(Index, false);
+				}
+			}), Visuals[Index].AppearFlashDuration, false);
+		}
+	}
+	else if (!bShown)
+	{
+		if (World)
+		{
+			World->GetTimerManager().ClearTimer(FlashTimers[Index]);
+		}
+		SetFlash(Index, false);
+	}
+}
+
+void UGenStatusVisualsComponent::SetFlash(int32 Index, bool bFlash)
+{
+	Flashing[Index] = bFlash;
+	if (ShapeMIDs[Index])
+	{
+		ShapeMIDs[Index]->SetScalarParameterValue(TEXT("Flash"), bFlash ? 1.f : 0.f);
+	}
 }
 
 void UGenStatusVisualsComponent::RefreshOwnerMesh()
 {
-	bool bHide = false;
+	// Le dernier état affiché qui impose un matériau gagne (en pratique un seul : intouchable)
+	UMaterialInterface* Override = nullptr;
 	for (int32 Index = 0; Index < Visuals.Num(); ++Index)
 	{
-		bHide |= Shown[Index] && Visuals[Index].bHideOwnerMesh;
+		if (Shown[Index] && Visuals[Index].OwnerMeshMaterial)
+		{
+			Override = Visuals[Index].OwnerMeshMaterial;
+		}
 	}
 
-	if (const ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
+	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+	if (!Mesh || Override == AppliedOwnerMaterial)
 	{
-		Character->GetMesh()->SetVisibility(!bHide);
+		return;
+	}
+
+	// Première substitution : on garde les matériaux d'origine pour les rendre à la fin de l'état
+	if (!AppliedOwnerMaterial)
+	{
+		OriginalOwnerMaterials.Reset();
+		for (int32 Slot = 0; Slot < Mesh->GetNumMaterials(); ++Slot)
+		{
+			OriginalOwnerMaterials.Add(Mesh->GetMaterial(Slot));
+		}
+	}
+
+	for (int32 Slot = 0; Slot < Mesh->GetNumMaterials(); ++Slot)
+	{
+		UMaterialInterface* Material = Override ? Override : (OriginalOwnerMaterials.IsValidIndex(Slot) ? OriginalOwnerMaterials[Slot].Get() : nullptr);
+		Mesh->SetMaterial(Slot, Material);
+	}
+
+	AppliedOwnerMaterial = Override;
+	if (!Override)
+	{
+		OriginalOwnerMaterials.Reset();
 	}
 }
 ```
 
 - [ ] **Step 5: Wire it into `AGenCharacterBase`.**
-  - In `GenCharacterBase.h`, add `#include "Character/GenStatusVisualsComponent.h"` after the other includes.
+  - In `GenCharacterBase.h`, add `#include "Character/GenStatusVisualsComponent.h"` right after `#include "AbilitySystem/GenHitRules.h"` (added in Task 3), so it stays **before** `#include "GenCharacterBase.generated.h"`, which must remain the last include.
   - In the `protected:` section, after `StartupEffects`, add:
 
 ```cpp
@@ -4679,7 +5091,7 @@ void UGenStatusVisualsComponent::RefreshOwnerMesh()
 
 ```bash
 git add Source/Gen/Character Source/Gen/Tests/GenCombatWorldTests.cpp
-git commit -m "Tag-driven status visuals component on every character"
+git commit -m "Tag-driven status visuals component on every character (appear flash, body material override)"
 ```
 
 ---
@@ -4703,23 +5115,37 @@ The editor must be open with the new binaries. Load the VibeUE skills first, thr
   - `Content/Gen/Champions/Curffe/Abilities/GA_FlameLeap`, reparented to `CurffeGA_MeteorLeap`, with its graph cleared;
   - `Content/Gen/Champions/Curffe/BP_Curffe`;
   - `Content/Gen/Characters/BP_Champion` (status visuals).
+- Create: `Content/Gen/UI/Textures/Icons/Abilities/T_UI_Ability_Curffe_1` and `T_UI_Ability_Curffe_2` (Step 12).
 - Check only, and fix if needed: `Content/Gen/Input/DA_InputConfig`, `Content/Gen/Input/IMC_Arena`.
 
-The Art Bible owns `MPC_TeamColours` and `M_VFX_Telegraph` (hot shared files, §3.9). If another branch has already created them by the time you run this task, reuse them and skip Step 2 or Step 3.
+The Art Bible owns `MPC_TeamColours`, `DA_TeamColours`, `M_VFX_Telegraph` and every master under `Content/Gen/Rendering/Masters/` (hot shared files, §3.9). Two people work on the project, so these are announced before they are created (Step 1). If another branch has already created them by the time you run this task, reuse them and skip Step 2, 3 or 4. `DA_TeamColours` (the colour presets) is **not** created here: the MPC holds the Default preset, and the presets are a later UI task (see Open points).
 
-- [ ] **Step 1: Lock the existing assets you modify.**
+- [ ] **Step 1: Announce the shared files, then lock the existing assets you modify.**
+  - Look for the shared files on the other branches first:
 
 ```bash
 git fetch origin
+git ls-tree -r --name-only origin/main -- Content/Gen/Rendering
+git ls-tree -r --name-only origin/docs/art-bible -- Content/Gen/Rendering
+git log --oneline HEAD..ui-ability-bar -- Content
 git diff --stat HEAD...origin/main -- Content
-git lfs locks
-git lfs lock Content/Gen/Champions/Curffe/Abilities/GA_FlameLeap.uasset
-git lfs lock Content/Gen/Champions/Curffe/BP_Curffe.uasset
-git lfs lock Content/Gen/Characters/BP_Champion.uasset
 ```
 
-  - If `git diff` lists `GA_FlameLeap`, `BP_Curffe` or `BP_Champion` changed on `main` (by `ui-ability-bar`, for example), stop and ask the user about the merge order.
-  - `BP_Champion` may already be locked by you from Plan 1 (lock 55459113). That's fine.
+  - **Tell the user** before Step 2, in one message: "I'm about to create `Content/Gen/Rendering/MPC_TeamColours`, `Content/Gen/Rendering/Masters/M_VFX_Telegraph` and `Content/Gen/Rendering/Masters/M_VFX_StatusShape` (Art Bible hot shared files) on `curffe-plan2`. Is anyone else creating them?" Wait for the go-ahead. If the listing above shows that one already exists on another branch, say so and ask whether to merge that branch first.
+  - Then lock the existing assets this task modifies, skipping the ones you already own:
+
+```bash
+git lfs locks --verify
+mine=$(git lfs locks --verify | awk '$1 == "O" { print $2 }')
+for f in Content/Gen/Champions/Curffe/Abilities/GA_FlameLeap.uasset Content/Gen/Champions/Curffe/BP_Curffe.uasset Content/Gen/Characters/BP_Champion.uasset; do
+  if printf '%s\n' "$mine" | grep -qxF "$f"; then echo "déjà à moi : $f"; continue; fi
+  git lfs lock "$f" || { echo "STOP : $f est verrouillé par quelqu'un d'autre"; break; }
+done
+```
+
+  - If a lock fails because someone else holds it, stop and tell the user. Never use `--force`.
+  - If `git diff` or `git log` lists `GA_FlameLeap`, `BP_Curffe` or `BP_Champion`, stop and ask the user about the merge order.
+  - `BP_Champion` may already be locked by you from Plan 1 (lock 55459113): the loop skips it.
 
 - [ ] **Step 2: Create the team-colour MPC** (`execute_python_code`, `auto_save: false`).
 
@@ -4734,24 +5160,36 @@ def vparam(name, rgb):
     p.set_editor_property("default_value", unreal.LinearColor(rgb[0], rgb[1], rgb[2], 1.0))
     return p
 
+def sparam(name, value):
+    p = unreal.CollectionScalarParameter()
+    p.set_editor_property("parameter_name", name)
+    p.set_editor_property("default_value", value)
+    return p
+
 MPC = "/Game/Gen/Rendering/MPC_TeamColours"
 if EAL.does_asset_exist(MPC):
     mpc = unreal.load_asset(MPC)
-    print("MPC existant :", [str(p.get_editor_property("parameter_name")) for p in mpc.get_editor_property("vector_parameters")])
+    print("MPC existant :", [str(p.get_editor_property("parameter_name")) for p in mpc.get_editor_property("vector_parameters")],
+          [str(p.get_editor_property("parameter_name")) for p in mpc.get_editor_property("scalar_parameters")])
 else:
     mpc = tools.create_asset("MPC_TeamColours", "/Game/Gen/Rendering", unreal.MaterialParameterCollection, unreal.MaterialParameterCollectionFactoryNew())
-    # Relation (Art Bible §4.3 ; valeurs linéaires de UI_Guidelines) + liseré sombre (line.outline)
+    # Relation (Art Bible §4.3 ; valeurs linéaires de UI_Guidelines §2.3) + liserés : sombre (line.outline #070705)
+    # et clair (line.keylineLight #FFFFFF), UI §2.1
     mpc.set_editor_property("vector_parameters", [
         vparam("Self", (0.888, 0.888, 0.888)), vparam("Ally", (0.093, 0.456, 0.815)),
         vparam("Enemy", (0.665, 0.112, 0.0)), vparam("Neutral", (0.485, 0.381, 0.209)),
-        vparam("Keyline", (0.002, 0.002, 0.003))])
+        vparam("Keyline", (0.002, 0.002, 0.002)), vparam("KeylineLight", (1.0, 1.0, 1.0))])
+    # Polarité du liseré, réglée par arène (Art Bible §4.3, UI §8.6) : 0 sombre, 1 clair, 2 les deux
+    mpc.set_editor_property("scalar_parameters", [sparam("KeylinePolarity", 0.0)])
     print("MPC", EAL.save_asset(MPC, only_if_is_dirty=False))
 ```
 
-  Expected: `MPC True`, or the list of an existing MPC. If an existing MPC lacks one of the five names, add it and keep the existing values.
+  - Expected: `MPC True`, or the lists of an existing MPC.
+  - If an existing MPC lacks one of the six vector names or `KeylinePolarity`, add the missing ones and keep the existing values (the MPC is a hot shared file: tell the user what you added).
+  - Check the linear values against UI_Guidelines §2.1 and §2.3 with `unreal.GenUILibrary.hex_to_linear` (`#F2F2F2`, `#56B4E9`, `#D55E00`, `#B9A67E`, `#070705`, `#FFFFFF`); the guide wins if they differ.
 
 - [ ] **Step 3: Create `M_VFX_Telegraph`.**
-  - It is unlit and translucent. The border is the hitbox radius, 2 px wide (through `fwidth`), with a 1 px keyline.
+  - It is unlit and translucent. The border is the hitbox radius, 2 px wide (through `fwidth`), with a 1 px keyline inside it. `KeylinePolarity` (MPC) picks the keyline: 0 dark (`Keyline`), 1 light (`KeylineLight`), 2 both (a light then a dark 1 px keyline).
   - The fill is `FillAlpha` inside the growing timer disc and 75 % of it outside. An enemy viewer sees static stripes.
   - Two Custom nodes share the same HLSL: one returns the colour, the other the opacity.
 
@@ -4773,6 +5211,8 @@ float Px = max(fwidth(R), 1e-5);
 float BorderW = BorderWidthPx * Px;
 float KeyW = KeylineWidthPx * Px;
 float3 Rel = RelationIndex < 1.5 ? SelfColour.rgb : (RelationIndex < 2.5 ? AllyColour.rgb : (RelationIndex < 3.5 ? EnemyColour.rgb : NeutralColour.rgb));
+float3 FirstKey = KeylinePolarity < 0.5 ? KeylineColour.rgb : KeylineLightColour.rgb;
+float SecondKeyW = KeylinePolarity > 1.5 ? KeyW : 0.0;
 float4 Result = float4(0, 0, 0, 0);
 if (R <= 1.0)
 {
@@ -4781,6 +5221,10 @@ if (R <= 1.0)
         Result = float4(Rel, BorderAlpha);
     }
     else if (R > 1.0 - BorderW - KeyW)
+    {
+        Result = float4(FirstKey, BorderAlpha);
+    }
+    else if (R > 1.0 - BorderW - KeyW - SecondKeyW)
     {
         Result = float4(KeylineColour.rgb, BorderAlpha);
     }
@@ -4793,7 +5237,7 @@ if (R <= 1.0)
 }
 """
 INPUTS = ["UV", "RelationIndex", "Fill", "FillAlpha", "BorderAlpha", "EnemyPattern", "BorderWidthPx", "KeylineWidthPx",
-          "SelfColour", "AllyColour", "EnemyColour", "NeutralColour", "KeylineColour"]
+          "SelfColour", "AllyColour", "EnemyColour", "NeutralColour", "KeylineColour", "KeylineLightColour", "KeylinePolarity"]
 col = MNS.create_custom_expression(MAT, BODY + "return Result.rgb;", "CMOT_Float3", "TelegraphColour", ",".join(INPUTS), -300, -150)
 alp = MNS.create_custom_expression(MAT, BODY + "return Result.a;", "CMOT_Float1", "TelegraphAlpha", ",".join(INPUTS), -300, 150)
 
@@ -4803,7 +5247,8 @@ for i, (name, default) in enumerate([("RelationIndex", "2"), ("Fill", "0"), ("Fi
                                      ("EnemyPattern", "0"), ("BorderWidthPx", "2"), ("KeylineWidthPx", "1")]):
     sources[name] = MNS.create_parameter(MAT, "Scalar", name, "Telegraph", default, -800, -400 + i * 80)
 for i, (inp, mpc_name) in enumerate([("SelfColour", "Self"), ("AllyColour", "Ally"), ("EnemyColour", "Enemy"),
-                                     ("NeutralColour", "Neutral"), ("KeylineColour", "Keyline")]):
+                                     ("NeutralColour", "Neutral"), ("KeylineColour", "Keyline"),
+                                     ("KeylineLightColour", "KeylineLight"), ("KeylinePolarity", "KeylinePolarity")]):
     sources[inp] = MNS.create_collection_parameter(MAT, MPC, mpc_name, -800, 200 + i * 80)
 
 src, outs, tgt, ins = [], [], [], []
@@ -4818,10 +5263,11 @@ print("diag", MNS.get_material_diagnostics(MAT))
 print("save", unreal.EditorAssetLibrary.save_asset(MAT, only_if_is_dirty=False))
 ```
 
-  - Expected: `connexions : 26 / 26`, `emissive True`, `opacity True`, `compile True`, no error in `diag`, `save True`.
+  - Expected: `connexions : 30 / 30`, `emissive True`, `opacity True`, `compile True`, no error in `diag`, `save True`.
+  - Preview check: with `KeylinePolarity` set to 0, 1 and 2 in turn on the MPC (don't save those changes), the keyline is dark, light, then light + dark. Put the MPC back to 0.
   - If a class name is refused (`TextureCoordinate`), list the valid names with `MNS.discover_types(...)` and retry.
 
-- [ ] **Step 4: Create `M_VFX_StatusShape`** (unlit, translucent, two-sided; `Colour` drives emissive and `Opacity` drives opacity).
+- [ ] **Step 4: Create `M_VFX_StatusShape`** (unlit, translucent, two-sided). `Colour` drives emissive. The opacity comes from a Custom node: `Opacity`, or `Flash` while the appear flash lasts, times a Fresnel rim when `RimOnly` is 1 (a band or halo instead of a filled volume).
 
 ```python
 import unreal
@@ -4832,13 +5278,27 @@ m = tools.create_asset("M_VFX_StatusShape", "/Game/Gen/Rendering/Masters", unrea
 m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
 m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
 m.set_editor_property("two_sided", True)
-c = MNS.create_parameter(SM, "Vector", "Colour", "Status", "1,1,1,1", -400, 0)
-o = MNS.create_parameter(SM, "Scalar", "Opacity", "Status", "0.5", -400, 200)
-print(MNS.connect_expression_to_output(SM, c.id, "", "EmissiveColor"), MNS.connect_expression_to_output(SM, o.id, "", "Opacity"))
-print(unreal.MaterialService.compile_material(SM), unreal.EditorAssetLibrary.save_asset(SM, only_if_is_dirty=False))
+
+BODY = r"""
+float Fres = pow(saturate(1.0 - abs(dot(normalize(N), normalize(V)))), max(RimPower, 0.5));
+float Shape = lerp(1.0, Fres, RimOnly);
+return saturate(max(Opacity, Flash) * Shape);
+"""
+INPUTS = ["N", "V", "Opacity", "RimOnly", "RimPower", "Flash"]
+alp = MNS.create_custom_expression(SM, BODY, "CMOT_Float1", "StatusAlpha", ",".join(INPUTS), -300, 150)
+n, v = MNS.batch_create_expressions(SM, ["VertexNormalWS", "CameraVectorWS"], [-800, -800], [0, 80])
+sources = {"N": n, "V": v}
+for i, (name, default) in enumerate([("Opacity", "0.5"), ("RimOnly", "0"), ("RimPower", "3"), ("Flash", "0")]):
+    sources[name] = MNS.create_parameter(SM, "Scalar", name, "Status", default, -800, 200 + i * 80)
+c = MNS.create_parameter(SM, "Vector", "Colour", "Status", "1,1,1,1", -400, -150)
+print("connexions :", MNS.batch_connect_expressions(SM, [sources[k].id for k in INPUTS], [""] * len(INPUTS), [alp.id] * len(INPUTS), INPUTS), "/", len(INPUTS))
+print(MNS.connect_expression_to_output(SM, c.id, "", "EmissiveColor"), MNS.connect_expression_to_output(SM, alp.id, "", "Opacity"))
+print(unreal.MaterialService.compile_material(SM), MNS.get_material_diagnostics(SM))
+print(unreal.EditorAssetLibrary.save_asset(SM, only_if_is_dirty=False))
 ```
 
-  Expected: `True True` twice.
+  - Expected: `connexions : 6 / 6`, `True True`, `True` with no error in the diagnostics, then `True`.
+  - If `VertexNormalWS` or `CameraVectorWS` is refused, list the valid class names with `MNS.discover_types(...)` and retry.
 
 - [ ] **Step 5: Create the area Blueprints.**
 
@@ -4930,7 +5390,7 @@ setall(cdo(fp), {
     "cast_fx": unreal.load_asset("/Game/Gen/VFX/Stylized/NS_ST_GreatFireball_Cast"),
     "area_class": BEL.generated_class(unreal.load_asset("/Game/Gen/Champions/Curffe/Areas/BP_Area_FlamePillar")),
     "range": 900.0, "radius": 200.0, "radius_at_max_feed": 350.0,
-    "impact_delay": 0.8, "min_telegraph": 0.5,
+    "impact_delay": 0.8, "min_telegraph": 0.6,
     "damage": unreal.ScalableFloat(value=12.0), "stun_duration": 1.0, "energy_on_hit": 8.0,
     "cooldown_duration": unreal.ScalableFloat(value=12.0),
     "cooldown_tags": GTS.request_tag_container(["Cooldown.Ability.FlamePillar"]),
@@ -4948,17 +5408,23 @@ print("relu :", d.get_editor_property("radius_at_max_feed"), d.get_editor_proper
 - [ ] **Step 8: Turn `GA_FlameLeap` into Meteor Leap.**
   - The asset stays where it is, so `BP_Curffe`'s reference holds. Its old Blueprint graph is deleted, because the behaviour is now in C++.
   - Its member variables (`LeapDuration`, `LeapHeight`...) are removed **before** reparenting, because they would collide with the C++ properties.
-  - Print the old values first so you can note them in the commit message.
+  - **First record what the old asset does**: its tag containers, policies and icon, its variables, and every node of its graphs, with the pin defaults of the montage, root-motion and GameplayCue nodes. Keep the whole printout for the commit message and the report.
 
 ```python
 import unreal
 BEL = unreal.BlueprintEditorLibrary
 BS = unreal.BlueprintService
-EAL = unreal.EditorAssetLibrary
 P = "/Game/Gen/Champions/Curffe/Abilities/GA_FlameLeap"
 bp = unreal.load_asset(P)
 old = unreal.get_default_object(BEL.generated_class(bp))
 print("parent :", BS.get_parent_class(P))
+for prop in ["ability_tags", "activation_owned_tags", "block_abilities_with_tag", "cancel_abilities_with_tag",
+             "activation_blocked_tags", "activation_required_tags", "instancing_policy", "net_execution_policy",
+             "input_tag", "display_name", "cooldown_tags", "cooldown_duration", "icon"]:
+    try:
+        print(" ", prop, "=", old.get_editor_property(prop))
+    except Exception as e:
+        print(" ", prop, "?", e)
 print("fonctions :", [f.function_name for f in BS.list_functions(P)])
 variables = [v.variable_name for v in BS.list_variables(P)]
 print("variables :", variables)
@@ -4967,7 +5433,20 @@ for v in variables:
         print(" ", v, "=", old.get_editor_property(v))
     except Exception as e:
         print(" ", v, "?", e)
+# Ce que faisait le graphe : chaque nœud, et les valeurs par défaut des broches des nœuds de montage,
+# de mouvement racine et de GameplayCue (échelle du mouvement racine, distance, hauteur, durée, tags)
+KEYS = ("Montage", "RootMotion", "Root Motion", "Jump", "GameplayCue", "Gameplay Cue", "Effect")
+for g in BS.list_graphs(P):
+    for node in BS.get_nodes_in_graph(P, g.graph_name, 0, "", True):
+        print(g.graph_name, "|", node.node_type, "|", node.node_title)
+        if any(k in node.node_title for k in KEYS):
+            for pin in node.pins:
+                if pin.is_input and not pin.is_connected and (pin.default_value or pin.default_object):
+                    print("     ", pin.pin_name, "=", pin.default_value or pin.default_object)
 ```
+
+  - Note in particular the `AnimRootMotionTranslationScale` pins of the montage nodes (the reason for `cast_montage_root_motion_scale = 0` below), the jump force's distance, height and duration, and the cue tags.
+  - If the dump shows behaviour that `UCurffeGA_MeteorLeap` does not cover (anything beyond the two montages, the jump force, the trail and impact cues and the landing damage), stop and report it before clearing the graph.
 
   Then clear the graph and reparent it:
 
@@ -4992,7 +5471,9 @@ print("compile reparenté :", BEL.compile_blueprint(bp), "parent :", BS.get_pare
 
   Expected: the parent is `CurffeGA_MeteorLeap`, with no functions, no variables and an empty `EventGraph`.
   - If `list_functions` lists engine overrides that cannot be removed, leave them. They are empty once the graph is cleared.
-  - Then configure it:
+  - Then configure it. The tag containers and policies are set **explicitly**, because the old Blueprint may have overridden them:
+    - Block and Cancel stay empty: the spec asks for neither, and the generic "a new cast replaces the pending one" rule (`UGenGA_Cast::CancelOtherPendingCasts`) must stay the only one that cancels a pending cast. A leftover `cancel_abilities_with_tag` would also cut a Fireball that has already gone off.
+    - The blocked tags are the C++ defaults (`State.Dead`, `State.Stunned`); the other hard CC and `State.CastLocked` are refused in code (Task 3).
 
 ```python
 import unreal
@@ -5008,6 +5489,8 @@ for k, v in {
     "feedable": True, "feed_interval": 0.2, "max_feed": 5, "cast_time": 0.1, "cast_move_speed_multiplier": 0.5,
     "cast_montage": unreal.load_asset("/Game/Gen/Champions/Curffe/Animations/AM_FlameLeap"),
     "land_montage": unreal.load_asset("/Game/Gen/Champions/Curffe/Animations/AM_FlameLeap_Land"),
+    # Le bond est déplacé par ApplyRootMotionJumpForce : les clips ne déplacent rien (Art Bible §8.4)
+    "cast_montage_root_motion_scale": 0.0,
     "max_distance": 700.0, "leap_height": 200.0, "leap_duration": 0.45,
     "landing_area_class": BEL.generated_class(unreal.load_asset("/Game/Gen/Champions/Curffe/Areas/BP_Area_FireBurst")),
     "landing_radius": 150.0, "landing_damage": 8.0, "landing_energy_on_hit": 2.0,
@@ -5019,13 +5502,25 @@ for k, v in {
     "ability_tags": GTS.request_tag_container(["Ability.FlameLeap"]),
     # Le Blueprint avait remplacé ces tags : on remet State.Casting (porté par toutes les incantations)
     "activation_owned_tags": GTS.request_tag_container(["State.Casting", "State.Leaping"]),
+    # Conteneurs et politiques posés explicitement (voir ci-dessus)
+    "block_abilities_with_tag": unreal.GameplayTagContainer(),
+    "cancel_abilities_with_tag": unreal.GameplayTagContainer(),
+    "activation_blocked_tags": GTS.request_tag_container(["State.Dead", "State.Stunned"]),
+    "activation_required_tags": unreal.GameplayTagContainer(),
+    "instancing_policy": unreal.GameplayAbilityInstancingPolicy.INSTANCED_PER_ACTOR,
+    "net_execution_policy": unreal.GameplayAbilityNetExecutionPolicy.LOCAL_PREDICTED,
 }.items():
     d.set_editor_property(k, v)
 print(BEL.compile_blueprint(bp), EAL.save_asset(P, only_if_is_dirty=False))
-print("relu :", d.get_editor_property("max_feed"), d.get_editor_property("ring_damage"), d.get_editor_property("activation_owned_tags"))
+d = unreal.get_default_object(BEL.generated_class(unreal.load_asset(P)))
+for k in ["max_feed", "ring_damage", "cast_montage_root_motion_scale", "activation_owned_tags", "block_abilities_with_tag",
+          "cancel_abilities_with_tag", "activation_blocked_tags", "activation_required_tags", "instancing_policy", "net_execution_policy", "icon"]:
+    print("relu", k, ":", d.get_editor_property(k))
 ```
 
-  Expected: `True True`, then `relu : 5 8.0` followed by both tags.
+  - Expected: `True True`, then `max_feed` 5, `ring_damage` 8.0, `cast_montage_root_motion_scale` 0.0, both owned tags, empty block and cancel containers, `State.Dead` and `State.Stunned` blocked, no required tag, `INSTANCED_PER_ACTOR` and `LOCAL_PREDICTED`.
+  - **`icon` must survive the reparent:** it reads `T_UI_Ability_Curffe_Mobility`, the value printed before. If it is empty, set it back with `d.set_editor_property("icon", unreal.load_asset("/Game/Gen/UI/Textures/Icons/Abilities/T_UI_Ability_Curffe_Mobility"))`, compile, save and read it again.
+  - If an enum name is refused, read the valid names with `discover_python_class` on `GameplayAbilityInstancingPolicy` or `GameplayAbilityNetExecutionPolicy`.
 
 - [ ] **Step 9: Status visuals on `BP_Champion`** (generic: every champion shows them).
 
@@ -5038,26 +5533,33 @@ P = "/Game/Gen/Characters/BP_Champion"
 bp = unreal.load_asset(P)
 d = unreal.get_default_object(BEL.generated_class(bp))
 shape = unreal.load_asset("/Game/Gen/Rendering/Masters/M_VFX_StatusShape")
-def visual(tag, mesh, colour, opacity, offset, scale):
+hex_lin = unreal.GenUILibrary.hex_to_linear
+def visual(tag, mesh, hex_colour, opacity, offset, scale, rim_only=False, rim_power=3.0, flash=0.0):
     v = unreal.GenStatusVisual()
     v.set_editor_property("tag", GTS.request_tag(tag))
     v.set_editor_property("mesh", unreal.load_asset(mesh))
     v.set_editor_property("material", shape)
-    v.set_editor_property("colour", unreal.LinearColor(*colour, 1.0))
+    v.set_editor_property("colour", hex_lin(hex_colour, 1.0))
     v.set_editor_property("opacity", opacity)
+    v.set_editor_property("rim_only", rim_only)
+    v.set_editor_property("rim_power", rim_power)
+    v.set_editor_property("appear_flash_duration", flash)
     v.set_editor_property("offset", unreal.Vector(*offset))
     v.set_editor_property("scale", unreal.Vector(*scale))
     return v
 d.set_editor_property("status_visual_config", [
-    # Posture de contre : coque ambre (corps du feu #F5B82E) autour du personnage
-    visual("State.Countering", "/Engine/BasicShapes/Sphere", (0.913, 0.480, 0.027), 0.35, (0, 0, 0), (1.6, 1.6, 2.2)),
-    # Étourdi : anneau au-dessus de la tête (#FFE07A, Art Bible §7.6)
-    visual("State.Stunned", "/Engine/BasicShapes/Cylinder", (1.0, 0.745, 0.194), 0.8, (0, 0, 120), (0.6, 0.6, 0.05)),
+    # Posture de contre (PROVISOIRE) : bande fine autour du corps, cœur du feu #FFF0C2 (faible chroma, sans teinte
+    # d'équipe). Art Bible §7.6 veut un arc frontal ; le contre est omnidirectionnel pour l'instant (voir Open points).
+    # Jamais une coque pleine : c'est le motif de State.Shielded.
+    visual("State.Countering", "/Engine/BasicShapes/Cylinder", "#FFF0C2", 0.7, (0, 0, 0), (1.4, 1.4, 1.2), rim_only=True, rim_power=4.0),
+    # Étourdi : disque au-dessus de la tête (#FFE07A, Art Bible §7.6)
+    visual("State.Stunned", "/Engine/BasicShapes/Cylinder", "#FFE07A", 0.8, (0, 0, 120), (0.6, 0.6, 0.05)),
 ])
 print(BEL.compile_blueprint(bp), EAL.save_asset(P, only_if_is_dirty=False), len(d.get_editor_property("status_visual_config")))
 ```
 
   - Expected: `True True 2`.
+  - Capture both shapes at the gameplay camera (`capture_image source=game`): the countering band reads as a thin ring around the body, distinct from the stun disc above the head. If the band is too faint, raise `opacity` or lower `rim_power`, don't fill it.
   - Read the value back on `BP_Curffe`'s CDO. It inherits the list unless `BP_Curffe` overrides it. If `BP_Curffe` shows an empty list, set the same list on it.
 
 - [ ] **Step 10: Give BP_Curffe its new spells.**
@@ -5091,21 +5593,49 @@ print([(m.action_name, m.key_name) for m in unreal.InputService.get_mappings("/G
   - If a field name differs, read the struct with `discover_python_class`.
   - If a mapping is missing: lock the asset (`git lfs lock`), add it (`InputService.add_key_mapping`, or append to `ability_input_actions`), save, and include it in the commit.
 
-- [ ] **Step 12: Icons.**
-  - If `UGenGameplayAbility` has an `icon` property (that is, `ui-ability-bar` has been merged) and `Content/Python/gen_ui_icons.py` exists: add entries for `Curffe_1` (Backfire) and `Curffe_2` (Flame Pillar) following that script's pattern, generate them, and set `icon` on `GA_Backfire` and `GA_FlamePillar`.
-  - `GA_FlameLeap` keeps its icon.
-  - Otherwise, skip this step and list it as pending in the report.
+- [ ] **Step 12: Icons** (UI_Guidelines §2.11; the `icon` property and `Content/Python/gen_ui_icons.py` exist since the `ui-ability-bar` merge).
+  - In `gen_ui_icons.py`, add `icon_backfire()` and `icon_flame_pillar()` in the script's style (256 px, flat bands, top-left light, the fire palette on the `#20160F` disc, no text), and add them to the `icons` dict in `main()` as `T_UI_Ability_Curffe_1` (Backfire) and `T_UI_Ability_Curffe_2` (Flame Pillar). Give each a silhouette none of the three existing icons has:
+    - Backfire: a raised guard (a curved shield-like arc facing up-right) with a small fireball breaking on it;
+    - Flame Pillar: a tall vertical flame column rising from a ground ellipse.
+  - Generate them with the system Python (the engine Python has no Pillow): `python Content/Python/gen_ui_icons.py`. It writes `Saved/UIIcons/` and runs `run_checks`.
+  - **`run_checks` must still pass:** read `Saved/UIIcons/checks/checks.txt` and the contact sheet. Every pair of the five icons has a silhouette IoU at 32 px of **≤ 0.45** (the current worst pair, Primary/Secondary, is 0.41), and each new icon still reads in the greyscale and 2 px blur cells. If a pair fails, change the new icon's shape and regenerate.
+  - Import them into **`/Game/Gen/UI/Textures/Icons/Abilities/`** (`Content/Gen/UI/Textures/Icons/Abilities/`), with the same settings as the existing icons: compression **UserInterface2D** (`TC_EDITOR_ICON`), **no mips**, texture group **UI**, **sRGB on**:
+
+```python
+import unreal, os
+EAL = unreal.EditorAssetLibrary
+BEL = unreal.BlueprintEditorLibrary
+SRC = os.path.join(unreal.Paths.project_dir(), "Saved", "UIIcons")
+DST = "/Game/Gen/UI/Textures/Icons/Abilities"
+AB = "/Game/Gen/Champions/Curffe/Abilities/"
+for name, ability in [("T_UI_Ability_Curffe_1", "GA_Backfire"), ("T_UI_Ability_Curffe_2", "GA_FlamePillar")]:
+    path, err = unreal.AssetDiscoveryService.import_asset(os.path.join(SRC, name + ".png"), DST, name)
+    tex = unreal.load_asset(DST + "/" + name)
+    tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_EDITOR_ICON)
+    tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+    tex.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_UI)
+    tex.set_editor_property("srgb", True)
+    print(name, path, err, EAL.save_asset(DST + "/" + name, only_if_is_dirty=False))
+    bp = unreal.load_asset(AB + ability)
+    d = unreal.get_default_object(BEL.generated_class(bp))
+    d.set_editor_property("icon", tex)
+    BEL.compile_blueprint(bp)
+    print(ability, EAL.save_asset(AB + ability, only_if_is_dirty=False), d.get_editor_property("icon"))
+```
+
+  - Expected: two imports with an empty error and `True`, then each ability saved with its icon.
+  - `GA_FlameLeap` keeps `T_UI_Ability_Curffe_Mobility` (checked in Step 8).
 
 - [ ] **Step 13: Smoke test** (Standalone, 1 player, `log LogGenCast Verbose`).
-  - **A key:** an amber shell for 1.2 s, the speed drops to 275, and `Cooldown.Ability.Backfire` is applied.
+  - **A key:** a pale band around the body for 1.2 s, the speed drops to 275, and `Cooldown.Ability.Backfire` is applied.
   - **Hold E:** the aim circle follows the cursor and grows; on release the telegraph lasts 0.8 s, then the impact. Capture it with `capture_image source=game`.
   - **Space:** the leap goes about 7 m. Fed 5 times, it lands with a 5-pointed star of Fireballs.
 
-- [ ] **Step 14: Commit** (no push, no unlock; the locks stay held until the branch merges, as the Plan 1 ledger rules).
+- [ ] **Step 14: Commit** (no push, no unlock; the locks stay held until the branch merges, as the Plan 1 ledger rules). Tell the user that the hot shared files under `Content/Gen/Rendering` now exist on `curffe-plan2` and are not pushed yet.
 
 ```bash
-git add Content/Gen/Rendering Content/Gen/Champions/Curffe Content/Gen/Characters/BP_Champion.uasset
-git commit -m "Telegraph and status materials, area Blueprints, Backfire, Flame Pillar, Meteor Leap assets"
+git add Content/Gen/Rendering Content/Gen/Champions/Curffe Content/Gen/Characters/BP_Champion.uasset Content/Gen/UI/Textures/Icons/Abilities Content/Python/gen_ui_icons.py
+git commit -m "Telegraph and status materials, area Blueprints, Backfire, Flame Pillar, Meteor Leap assets, two ability icons"
 ```
 
 ---
@@ -5150,12 +5680,65 @@ def status_shown(viewer_index, subject_index, tag_name):
     p = client_pawn(viewer_index, subject_index)
     comp = p.get_editor_property("status_visuals") if p else None
     return bool(comp) and comp.is_status_shown(unreal.GameplayTagService.request_tag(tag_name))
+
+
+def set_pkt_lag(ms):
+    """Latence émulée sur les envois de chaque client (0 = coupée)."""
+    _, clients = worlds()
+    for w in clients:
+        unreal.SystemLibrary.execute_console_command(w, "NetEmulation.PktLag %d" % ms)
+
+
+def server_loose_tag(client_index, tag_name, add=True):
+    """Serveur seulement (tag libre non répliqué) : ex. une recharge que le client ne voit pas => CommitAbility refusé côté serveur."""
+    tags = unreal.GameplayTagService.request_tag_container([tag_name])
+    pawn = server_pawn_for(client_index)
+    if add:
+        return unreal.AbilitySystemLibrary.add_loose_gameplay_tags(pawn, tags, False)
+    return unreal.AbilitySystemLibrary.remove_loose_gameplay_tags(pawn, tags, False)
+
+
+def client_montage_playing(client_index, montage_path):
+    """Le client joue-t-il encore ce montage sur son propre pion ?"""
+    p = client_pawn(client_index, client_index)
+    mesh = p.get_editor_property("mesh") if p else None
+    anim = mesh.get_anim_instance() if mesh else None
+    return bool(anim) and anim.montage_is_playing(unreal.load_asset(montage_path))
+
+
+def client_walls(viewer_index):
+    """Cubes de test (spawn_wall) vus par un client : [(nom, x, y)]. Vide = le mur n'arrive pas chez lui."""
+    _, clients = worlds()
+    result = []
+    for a in unreal.GameplayStatics.get_all_actors_of_class(clients[viewer_index - 1], unreal.StaticMeshActor):
+        mesh = a.static_mesh_component.static_mesh
+        if mesh and mesh.get_name() == "Cube":
+            loc = a.get_actor_location()
+            result.append((a.get_name(), round(loc.x), round(loc.y)))
+    return result
 ```
 
+  Then make the test walls reach the clients. In the existing `spawn_wall`, the cube's mesh is set **after** the spawn, and the component isn't replicated, so the clients get an empty actor. Replace its `if res.get("success"):` block with:
+
+```python
+    if res.get("success"):
+        actor = unreal.find_object(None, res["actor_path"])
+        smc = actor.static_mesh_component
+        smc.set_mobility(unreal.ComponentMobility.MOVABLE)
+        smc.set_static_mesh(unreal.load_object(None, "/Engine/BasicShapes/Cube.Cube"))
+        # Mesh posé après l'apparition : le composant doit être répliqué pour que les clients le reçoivent (StaticMesh est répliqué)
+        smc.set_is_replicated(True)
+        actor.set_replicates(True)
+```
+
+  and its docstring with `"""Serveur : cube statique (bloque projectiles et personnages), répliqué avec son mesh."""`. In Step 3, check `client_walls(1)` right after the first `spawn_wall`. If it is empty, the clients still don't receive the wall: client captures in V10 and V17 won't show it. Then judge those rows from the server (hp, `areas(0)`, logs) and say so in the report.
+
 - [ ] **Step 2: Set up the session.**
+  - Read the latency baseline first (Global Constraints): `C:/Users/Samy D/Documents/Unreal Projects/Gen/.superpowers/sdd/Plan-AbilityBar/task-9-combined-report.md`. Note any Plan 1 latency issue it lists; this task doesn't rerun those rows.
   - `EngineSettingsService.set_pie_settings("Client", 3, True)` and `PerformanceService.set_background_throttling(False)`.
   - `StartPIE` with a 3 s warm-up.
   - Turn on verbose logs: `log LogGenCast Verbose`, `log LogGenProjectile Verbose`, `log LogGenGroundArea Verbose`, `log LogGenCounter Verbose`, `log LogGenLeap Verbose`, `log LogCurffeMeteorLeap Verbose`.
+  - Flame counts: the Hearth regenerates on its own, so set the exact count in the **same call** as the row's trigger (`gain(i, flames=N - state(i)["flames"])`) and accept **+1** when a passive tick falls inside the row.
   - Confirm the teams: `state(1)["team"] == state(3)["team"] != state(2)["team"]`.
   - Use the Plan 1 frame of reference, which keeps clear of the level's dummies: c1 at (-700,-1250) and **+X** forward. Use `watch_start()` and `time_dilation()` the same way.
 
@@ -5168,26 +5751,37 @@ def status_shown(viewer_index, subject_index, tag_name):
 | # | Scenario | Setup (relative to c1) | Expected |
 |---|---|---|---|
 | V1 | **Regression after the refactor** | Plan 1 V3, V4 and V5, unchanged | Same results as Plan 1: fed 3 gives −32 and +9 energy; a cancel restores the flames with no cooldown; held LMB plus RMB is not cancelled. `[CLIENT]` and `[SERVEUR]` logs now come from `LogGenCast` |
-| V2 | **Backfire blocks a Fireball** | c2 (enemy) at +600, flames set to 1 (`gain(2, flames=-4)`). Client 2 taps `IA_Ability_1`; 0.2 s later c1 fires a Fireball at c2 | c2's hp is unchanged and the log says `coup direct bloqué par un contre`. c2 flames 1→3 and energy +10. c1 gains **nothing**. `status_shown(1, 2, "State.Countering")` and `status_shown(3, 2, …)` are true during the window. c2's speed is 275, then 550 after 1.2 s. `Cooldown.Ability.Backfire` lasts 10 s |
+| V2 | **Backfire blocks a Fireball** | c2 (enemy) at +600. In the same call: c2's flames set to exactly 1 (`gain(2, flames=1 - state(2)["flames"])`) and client 2 taps `IA_Ability_1`; 0.2 s later c1 fires a Fireball at c2 | c2's hp is unchanged and the log says `coup direct bloqué par un contre`. c2 flames 1→3 (4 if a passive regen tick falls in the row) and energy +10. c1 gains **nothing**. `status_shown(1, 2, "State.Countering")` and `status_shown(3, 2, …)` are true during the window. c2's speed is 275, then 550 after 1.2 s. `Cooldown.Ability.Backfire` lasts 10 s |
 | V3 | **Countered Great Fireball with splash** | c2 countering at +600. Enemy dummy (team 1) at (+600,+120). c1 holds RMB 1.2 s (5 flames) at c2 | c2 takes **no damage and no knockback**. The dummy takes −44 and is knocked back. c1 energy +11. Repeat without the dummy: c1's energy is unchanged |
-| V4 | **Two blocks, energy once** | c2 flames 0, countering. c1 and c3 each fire a Fireball inside the window | c2 flames 0→4, energy **+10 only once** |
+| V4 | **Two blocks, energy once** | In the same call: c2's flames set to 0 (`gain(2, flames=-state(2)["flames"])`) and client 2 taps Backfire. c1 and c3 each fire a Fireball inside the window | c2 flames 0→4 (5 if a passive regen tick falls in the row), energy **+10 only once** |
 | V5 | **Areas go through the counter** | c1 casts Flame Pillar (tap E) at c2 at +600. Client 2 taps Backfire when the telegraph appears | At impact: c2 −12 and stunned 1 s. `State.Countering` is removed as the stun lands (log: Backfire `Fin (annulé=1)`). c2 gains no flames. c1 energy +8 |
 | V6 | **Backfire window and other spells** | (a) c2 counters, then taps LMB 0.3 s later. (b) c2 holds LMB (`hold(IA_Ability_Primary, 3)`), then taps Backfire | (a) `State.Countering` disappears at the LMB press (`posture terminée par GA_Fireball`) and the cooldown stays. (b) The window lasts the full 1.2 s (auto-repeat does not end it); LMB fire resumes afterwards |
 | V7 | **Flame Pillar basics** | c1 taps E aimed at c2 (+600) | During the 0.8 s telegraph, `areas(2)` shows 1 area of radius 200, not yet triggered. Capture: the border matches the radius (collision debug `show Collision`), the enemy hatching is visible, and the impact flash matches the radius (calibrate `impact_fx_reference_radius` if not). After impact: c2 −12, `State.Stunned` 1 s, speed 0. Client 2 taps LMB during the stun and **no `Activé` log** follows. c1 energy +8 and `Cooldown.Ability.FlamePillar` 12 s |
 | V8 | **Feeding, allies, edge of the radius** | c1 holds E 1.2 s (5 flames) aimed at (+600,0). Ally c3 at (+600,+200). Enemy dummies at (+600,+330) and (+600,+420) | Radius 350 (`areas(0)`). **Ally c3 untouched.** The dummy at +330 is hit (−12, stunned) and the dummy at +420 is not (350 + 42 < 420). While feeding, client 1's preview radius grows (capture). Flames 5→0 |
 | V9 | **The caster dies before impact** | c1 at 5 hp casts a pillar on an enemy dummy, with c3 (ally) also in the radius. c2 kills c1 with a Fireball during the telegraph | The pillar still lands: the dummy is hit and **c3 is not**. No error in the log |
-| V10 | **Walls and partial cover** | Pillar at (+600,0), radius 200. Wall `spawn_wall(+600,+100, (2,0.2,2))` between the centre and dummy A at (+600,+170). Dummy B at (+700,+150), partly past the end of the wall | A is untouched (the wall protects it). B is hit (part of its capsule is visible). Repeat with a pillar fed 3 at the same spot |
+| V10 | **Walls and partial cover** | Pillar at (+600,0), radius 200. Wall `spawn_wall(+600,+100, (2,0.2,2))` between the centre and dummy A at (+600,+170). Dummy B at (+700,+150), partly past the end of the wall. Check `client_walls(1)` | A is untouched (the wall protects it). B is hit (part of its capsule is visible). Repeat with a pillar fed 3 at the same spot. If `client_walls(1)` is empty, the client captures show no wall: judge from the server |
 | V11 | **Range clamp** | c1 aims at +1500 and taps E | The log `Zone … en` shows a centre at about +900 from c1. The preview stopped at 9 m |
 | V12 | **A pillar cast interrupted by a stun** | c1 holds E (feeding). c2's pillar lands on c1 during the feed | c1's pillar: `Fin (annulé=1)`, flames back to 5 (not spent), no `Cooldown.Ability.FlamePillar`, the preview is gone (`areas(1)` empty) |
 | V13 | **Meteor Leap, unfed and fed** | (a) Tap Space aimed at +1500, with a dummy at the expected landing point (+700). (b) Hold Space 1.2 s aimed at +600, with dummies 300 cm from the landing point along the 5 star directions and one dummy 60 cm from it | (a) c1 moves 650–720 cm along an arc. The dummy takes −8 and c1 gets +2 energy. Flight takes about 0.45 s. The trail and impact cues are visible. `Cooldown.Ability.FlameLeap` lasts 10 s. (b) The log says `anneau de 5 boule(s)`. Each star dummy takes −8. The dummy at 60 cm takes 8 (landing) + **at most 8** (one ring Fireball). Flames 5→0 |
 | V14 | **Stun at take-off or in flight** | (a) c2's pillar lands on c1 while c1 is feeding the leap. (b) It lands while c1 is airborne | (a) The leap is cancelled with no cooldown and no flames spent. (b) The log says `phase non interruptible : ignoré`; c1 lands normally, then stays stunned for the rest of the second |
-| V15 | **Two feedable spells in a row** | c1 holds RMB 0.45 s (2 fed), then holds Space without releasing RMB | The Great Fireball ends with `Fin (annulé=1)` and its 2 flames are not spent. The leap feeds from 0. `client_view` on client 2 shows c1's `fed` following the leap (never stuck at 2) |
+| V15 | **Two feedable spells in a row** | c1 holds RMB 0.45 s (2 fed), then holds Space without releasing RMB | The Great Fireball ends with `Fin (annulé=1)` and its 2 flames are not spent. The leap feeds from 0. On client 2, `client_pawn(2, 1).get_fed_resource()` follows the leap (never stuck at 2) |
 | V16 | **Ring versus counter** | c2 counters 250 cm from the landing point, fed 3 | The ring Fireball that reaches c2 is blocked: c2 +2 flames and +10 energy |
-| V17 | **Ring at a wall** | Wall 40 cm in front of the landing point (along the leap direction); dummy behind it; fed 1 | The single Fireball explodes on the wall at spawn and the dummy behind it is untouched |
-| V18 | **Death during the window** | c2 counters at 10 hp; c1 kills c2 with a pillar | After respawn: no `State.Countering` or `State.Stunned` (`inspect_tags`), speed 550, no shell (`status_shown`) |
+| V17 | **Ring at a wall** | Wall 40 cm in front of the landing point (along the leap direction); dummy behind it; fed 1 | The single Fireball explodes on the wall at spawn and the dummy behind it is untouched (judge from the server if `client_walls(1)` is empty) |
+| V18 | **Death during the window** | c2 counters at 10 hp; c1 kills c2 with a pillar | After respawn: no `State.Countering` or `State.Stunned` (`inspect_tags`), speed 550, no countering band (`status_shown`) |
+| V19 | **Leap, then immediate LMB** (Review Focus 6) | `log LogAbilitySystem Verbose` for this row only. In one call: client 1 taps Space aimed at +600 (unfed) and holds LMB (`hold("IA_Ability_Primary", 1.5, 1)`) | No `GA_Fireball` `Activé` on either side during the flight (`State.CastLocked`). The first `[CLIENT] … GA_Fireball … Activé` comes right after the landing; the server logs `[SERVEUR] … Activé` for the same shot and spawns its projectile (`Projectile … créé`). No activation failure for it in `LogAbilitySystem`. The landing area and `Cooldown.Ability.FlameLeap` are there as in V13 |
+| V20 | **Server-only release failure** (Art Bible §8.4) | `time_dilation(0.25)`. In one call: client 1 taps RMB (unfed Great Fireball, 0.5 s cast) and `server_loose_tag(1, "Cooldown.Ability.GreatFireball")`. Afterwards `server_loose_tag(1, "Cooldown.Ability.GreatFireball", False)` | The server logs `CommitAbility a échoué au lancer`. `client_montage_playing(1, "/Game/Gen/Champions/Curffe/Animations/AM_GreatFireball")` is True just before that log and False within one RTT after it (`ClientStopCastMontage`). No projectile anywhere, and on the server no cooldown GE and no flame spent |
+
+- [ ] **Step 3b: Latency reruns.** Plan 1's own latency rows are the baseline (Step 2); here only this plan's risky rows run again under emulated latency.
+  - `set_pkt_lag(120)` (any value from 100 to 150 ms), then rerun **V2, V5, V13, V15 and V19**.
+  - Expected: the same results as without latency, plus:
+    - no `Nourrissage corrigé` and no refused activation in the logs;
+    - V2 and V5: the band and the stun show on clients 1 and 3 within about one RTT of the server's tag change;
+    - V13: the take-off, the arc and the landing area are where the client predicted them (no visible correction with `p.NetShowCorrections 1`);
+    - V19: the Fireball pressed at landing is accepted by the server (this is the case the server window exists for).
+  - `set_pkt_lag(0)` afterwards.
 
 - [ ] **Step 4: Clean up.**
-  - `watch_stop()`, `PIEActorService.destroy_all()`, then `StopPIE`.
+  - `set_pkt_lag(0)`, `watch_stop()`, `PIEActorService.destroy_all()`, then `StopPIE`.
   - Restore the PIE settings to Standalone with 1 client and turn background throttling back on.
   - Set every log category back to `Log`.
 
@@ -5197,7 +5791,7 @@ def status_shown(viewer_index, subject_index, tag_name):
 
 ```bash
 git add Content/Python/gen_pie_tools.py
-git commit -m "PIE helpers for counter, area and leap verification"
+git commit -m "PIE helpers for counter, area, leap and latency verification; replicated test walls"
 ```
 
   In the report, list the VibeUE skills and services you used (CLAUDE.md rule 4).
@@ -5207,5 +5801,21 @@ git commit -m "PIE helpers for counter, area and leap verification"
 ## Open points for later plans
 
 - **Plan 3** (power spells) builds on `UGenGA_Cast`, `AGenGroundArea` and `ApplyHardCC`: Untouchable, Living Flame, Combustion, Resilience, energy costs and the cancel key.
-- Audio is not covered here: the Backfire stance's sound cue (guidelines §3.4) and the pillar's wind-up sound (Art Bible §7.3). No sound assets exist yet.
 - The status shapes, the block burst and the impact effects are placeholders until the VFX pass (Art Bible §7.4, §7.6).
+
+**Spec gaps (questions for the user; this plan doesn't invent answers):**
+- **Backfire's sound cue.** Guidelines §3.4 and Art Bible §7.6 pair the stance with a sound cue; the spec doesn't describe it and no sound assets exist yet. The pillar's wind-up sound (Art Bible §7.3) is in the same state.
+- **The trigger rule in the tooltip.** Guidelines §3.4 want a counter's tooltip to state what triggers it (projectiles and melee, not ground areas). The spec gives no tooltip text, and the ability bar shows only `DisplayName` today.
+- **Enemy state words.** The overhead stack (UI_Guidelines §4.4, §4.6) shows a state word under enemies (for example STUNNED or COUNTER). The spec doesn't give the words or say which states get one.
+- **Counter directionality.** Art Bible §7.6 draws `State.Countering` as a **frontal arc** that shows what it catches. The spec doesn't say whether Backfire blocks hits from behind. The code is omnidirectional today (`ResolveIncomingHit` ignores the direction), so the placeholder band stays omnidirectional. Decide before the VFX pass; a frontal counter needs an angle test in `ResolveIncomingHit`.
+- **Should enemies see Flame Pillar's telegraph grow?** Today the growing circle is the caster's local preview only; enemies see the final radius when the spell goes off (0.8 s before impact). Art Bible §7.5 says the fed spell's own cue grows, but doesn't say for whom.
+
+**Art Bible and UI follow-ups:**
+- **`DA_TeamColours`** (presets: Default and the colour-blind and high-contrast ones, Art Bible §4.3) isn't created here. `MPC_TeamColours` holds the Default preset, `KeylineLight` and `KeylinePolarity`; the subsystem that pushes a preset and the arena's polarity into the MPC is a later UI task.
+- **`KeylinePolarity`** is per arena. The only arena's floor band hasn't been measured, so the MPC defaults to 0 (dark keyline). Measure it (Art Bible §4.3) and set the value.
+
+**Playtest and cheat notes:**
+- **The server's counter window starts when the client's aim arrives**, about ½ RTT after the client's own window. At 100 ms RTT, a projectile that reaches the counterer in the first ~50 ms of his window on his screen is still a hit on the server. Watch for "my counter didn't block" reports.
+- **Cast time not enforced for 0.1 s casts (cheat only).** Backfire's (and the unfed leap's) `CastTime` of 0.1 s equals `GenFeeding::CastTimeTolerance`, so the server's cast-time check can't tell an honest client from one that skips the cast. A modified client could counter instantly. Honest clients are unaffected.
+- **The server's cast-lock window** refuses a cast that reaches the server more than `CastTimeTolerance` before the end of its own leap lock. With more than ~100 ms of jitter between the aim RPC and the next activation, an honest Fireball pressed right at landing can be refused (it costs nothing). Watch V19 under real network conditions.
+- **Band flicker when Backfire is cancelled early.** The window GE is predicted. When the client ends the stance early (another spell, a stun), it removes its predicted copy at once (or fails to, if the server's copy has already replaced it), while the server's copy stays replicated until the server processes the same cancel. The band can linger or reappear for about one RTT. Not fixed here: it is cosmetic and short. A fix would remove the visual locally on the end event instead of waiting for the tag.
