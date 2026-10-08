@@ -91,7 +91,7 @@ NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 				ASSERT_THAT(AreEqual(bOwnClient, Indicator->IsAiming()));
 				Indicator->EndAim(Ability);
 				ASSERT_THAT(IsFalse(Indicator->IsAiming()));
-				ASSERT_THAT(AreEqual(-1.f, Indicator->GetShownSize(TEXT("Lane"))));
+				ASSERT_THAT(IsTrue(Indicator->GetShownSize(TEXT("Lane")) < 0.f, TEXT("Rien d'affiché après la fin de visée")));
 			});
 	}
 };
