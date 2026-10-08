@@ -54,9 +54,16 @@ bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Ha
 		return true;
 	}
 
-	// Contrôle dur (répliqué par le serveur) : refusé partout
+	// Contrôle dur (répliqué par le serveur) : refusé partout. Le tag du contrôle est rendu comme raison
+	// de l'échec (AbilityFailedCallbacks, interface)
 	if (ASC->HasAnyMatchingGameplayTags(GenGameplayTags::GetHardCCTags()))
 	{
+		if (OptionalRelevantTags)
+		{
+			FGameplayTagContainer OwnedTags;
+			ASC->GetOwnedGameplayTags(OwnedTags);
+			OptionalRelevantTags->AppendTags(OwnedTags.Filter(GenGameplayTags::GetHardCCTags()));
+		}
 		return false;
 	}
 
@@ -65,9 +72,17 @@ bool UGenGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Ha
 	// (sinon un sort lancé juste après l'atterrissage du client arriverait sous le verrou du serveur)
 	const bool bLocked = ASC->HasMatchingGameplayTag(GenGameplayTags::State_CastLocked);
 	const UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC);
-	const float EnforcedUntil = GenASC ? GenASC->GetCastLockEnforcedUntil() : -1.f;
-	const float Now = ASC->GetWorld() ? ASC->GetWorld()->GetTimeSeconds() : 0.f;
-	return !GenFeeding::IsRefusedByCastLock(bLocked, ActorInfo->IsLocallyControlled(), Now, EnforcedUntil);
+	const double EnforcedUntil = GenASC ? GenASC->GetCastLockEnforcedUntil() : -1.0;
+	const double Now = ASC->GetWorld() ? ASC->GetWorld()->GetTimeSeconds() : 0.0;
+	if (GenFeeding::IsRefusedByCastLock(bLocked, ActorInfo->IsLocallyControlled(), Now, EnforcedUntil))
+	{
+		if (OptionalRelevantTags)
+		{
+			OptionalRelevantTags->AddTag(GenGameplayTags::State_CastLocked);
+		}
+		return false;
+	}
+	return true;
 }
 
 void UGenGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const

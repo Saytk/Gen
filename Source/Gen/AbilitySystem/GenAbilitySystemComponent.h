@@ -53,14 +53,20 @@ public:
 	void RemoveTimedStates();
 
 	/**
-	 * Serveur : un verrou de lancement (State.CastLocked) de LockDuration s vient d'être posé (ex : bond en vol).
-	 * Les activations d'un client distant ne sont refusées que pendant LockDuration - CastTimeTolerance
+	 * Serveur : un verrou de lancement (State.CastLocked) vient d'être posé (ex : bond en vol). MinLockDuration =
+	 * sa durée la PLUS COURTE possible (bond : son atterrissage le plus précoce, pas sa durée nominale).
+	 * Les activations d'un client distant ne sont refusées que pendant MinLockDuration - CastTimeTolerance
 	 * (GenFeeding::GetCastLockEnforcedUntil) : le verrou du serveur finit ~½ RTT après celui du client.
+	 * Toujours appelé avec le tag (UGenGA_Cast::SetCastLock) : sans lui la fenêtre reste fermée et le serveur ne
+	 * refuse rien (choix sûr : un client honnête n'est jamais refusé ; seul le côté qui prédit fait respecter le verrou).
 	 */
-	void NoteCastLock(float LockDuration);
+	void NoteCastLock(float MinLockDuration);
 
 	/** Serveur : fin (temps du monde) de la fenêtre où le verrou refuse les activations d'un client distant. */
-	float GetCastLockEnforcedUntil() const { return CastLockEnforcedUntil; }
+	double GetCastLockEnforcedUntil() const { return CastLockEnforcedUntil; }
+
+	/** Toutes les machines : retire State.CastLocked et ferme la fenêtre (mort : un verrou oublié bloquerait tout après le respawn). */
+	void ClearCastLock();
 
 protected:
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
@@ -71,5 +77,5 @@ protected:
 	TArray<FGameplayAbilitySpecHandle> InputHeldSpecHandles;
 
 	/** Serveur : fin de la fenêtre où State.CastLocked refuse les activations d'un client distant. */
-	float CastLockEnforcedUntil = -1.f;
+	double CastLockEnforcedUntil = -1.0;
 };

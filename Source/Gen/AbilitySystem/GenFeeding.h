@@ -109,15 +109,18 @@ namespace GenFeeding
 	 * Verrou de lancement (State.CastLocked, ex : bond en vol) : jusqu'à quand le serveur le fait respecter
 	 * à un client distant. Chaque machine pose le verrou à SON départ et le retire à SON atterrissage ; celui
 	 * du serveur commence ~½ RTT après celui du client et finit d'autant plus tard. Le serveur ne refuse donc
-	 * que pendant LockDuration - Tolerance : un client honnête n'est jamais refusé, un tricheur gagne au plus Tolerance.
+	 * que pendant MinLockDuration - Tolerance : un client honnête n'est jamais refusé, un tricheur gagne au plus Tolerance.
+	 * MinLockDuration = la durée la PLUS COURTE possible du verrou : un bond qui se pose tôt (marche, rebord)
+	 * libère le client avant sa durée nominale (Gen.Feeding.CastLockRule, cas de l'atterrissage précoce).
+	 * Temps en double : GetTimeSeconds() d'un serveur allumé depuis des jours mangerait la tolérance en float.
 	 */
-	inline float GetCastLockEnforcedUntil(float LockStart, float LockDuration, float Tolerance)
+	inline double GetCastLockEnforcedUntil(double LockStart, float MinLockDuration, float Tolerance)
 	{
-		return LockStart + FMath::Max(LockDuration - Tolerance, 0.f);
+		return LockStart + FMath::Max(MinLockDuration - Tolerance, 0.f);
 	}
 
 	/** Activation refusée par le verrou ? Le côté qui prédit (client, hôte, IA) le respecte toujours ; le serveur seulement avant EnforcedUntil. */
-	inline bool IsRefusedByCastLock(bool bLocked, bool bPredictingSide, float Now, float EnforcedUntil)
+	inline bool IsRefusedByCastLock(bool bLocked, bool bPredictingSide, double Now, double EnforcedUntil)
 	{
 		return bLocked && (bPredictingSide || Now < EnforcedUntil);
 	}

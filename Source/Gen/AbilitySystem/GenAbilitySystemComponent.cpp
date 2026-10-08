@@ -273,10 +273,16 @@ void UGenAbilitySystemComponent::RemoveTimedStates()
 	RemoveActiveEffects(Query);
 }
 
-void UGenAbilitySystemComponent::NoteCastLock(float LockDuration)
+void UGenAbilitySystemComponent::NoteCastLock(float MinLockDuration)
 {
 	if (IsOwnerActorAuthoritative() && GetWorld())
 	{
-		CastLockEnforcedUntil = GenFeeding::GetCastLockEnforcedUntil(GetWorld()->GetTimeSeconds(), LockDuration, GenFeeding::CastTimeTolerance);
+		CastLockEnforcedUntil = GenFeeding::GetCastLockEnforcedUntil(GetWorld()->GetTimeSeconds(), MinLockDuration, GenFeeding::CastTimeTolerance);
 	}
+}
+
+void UGenAbilitySystemComponent::ClearCastLock()
+{
+	SetLooseGameplayTagCount(GenGameplayTags::State_CastLocked, 0);
+	CastLockEnforcedUntil = -1.0;
 }

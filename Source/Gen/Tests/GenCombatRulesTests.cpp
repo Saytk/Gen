@@ -192,15 +192,29 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenCastLockRuleTest, "Gen.Feeding.CastLockRule
 
 bool FGenCastLockRuleTest::RunTest(const FString& Parameters)
 {
-	// GetCastLockEnforcedUntil(LockStart, LockDuration, Tolerance)
-	TestEqual(TEXT("bond de 0.45 s lancé à 10 s : refus serveur jusqu'à 10.35 s"), GenFeeding::GetCastLockEnforcedUntil(10.f, 0.45f, 0.1f), 10.35f, 0.0001f);
-	TestEqual(TEXT("verrou plus court que la tolérance : aucun refus serveur"), GenFeeding::GetCastLockEnforcedUntil(10.f, 0.05f, 0.1f), 10.f, 0.0001f);
+	// GetCastLockEnforcedUntil(LockStart, MinLockDuration, Tolerance)
+	TestEqual(TEXT("verrou d'au moins 0.45 s posé à 10 s : refus serveur jusqu'à 10.35 s"), GenFeeding::GetCastLockEnforcedUntil(10.0, 0.45f, 0.1f), 10.35, 0.0001);
+	TestEqual(TEXT("verrou plus court que la tolérance : aucun refus serveur"), GenFeeding::GetCastLockEnforcedUntil(10.0, 0.05f, 0.1f), 10.0, 0.0001);
 
 	// IsRefusedByCastLock(bLocked, bPredictingSide, Now, EnforcedUntil)
-	TestFalse(TEXT("pas de verrou"), GenFeeding::IsRefusedByCastLock(false, true, 10.f, 11.f));
-	TestTrue(TEXT("client : son propre verrou fait foi"), GenFeeding::IsRefusedByCastLock(true, true, 20.f, 10.35f));
-	TestTrue(TEXT("serveur, tôt dans le verrou : refusé (triche)"), GenFeeding::IsRefusedByCastLock(true, false, 10.2f, 10.35f));
-	TestFalse(TEXT("serveur, fin du vol : le client a déjà atterri, accepté"), GenFeeding::IsRefusedByCastLock(true, false, 10.4f, 10.35f));
+	TestFalse(TEXT("pas de verrou"), GenFeeding::IsRefusedByCastLock(false, true, 10.0, 11.0));
+	TestTrue(TEXT("client : son propre verrou fait foi"), GenFeeding::IsRefusedByCastLock(true, true, 20.0, 10.35));
+	TestTrue(TEXT("serveur, tôt dans le verrou : refusé (triche)"), GenFeeding::IsRefusedByCastLock(true, false, 10.2, 10.35));
+	TestFalse(TEXT("serveur, fin du vol : le client a déjà atterri, accepté"), GenFeeding::IsRefusedByCastLock(true, false, 10.4, 10.35));
+
+	// Atterrissage précoce : bond de 0.45 s qui peut se poser dès 0.225 s (MinimumLandedTriggerTime = moitié).
+	// Le client se pose à 0.25 s et tire aussitôt ; son tir arrive avant l'atterrissage du serveur.
+	const double EarlyLandingShot = 10.25;
+	TestTrue(TEXT("fenêtre calée sur la durée nominale : le client honnête serait refusé"),
+		GenFeeding::IsRefusedByCastLock(true, false, EarlyLandingShot, GenFeeding::GetCastLockEnforcedUntil(10.0, 0.45f, 0.1f)));
+	const double MinLockWindowEnd = GenFeeding::GetCastLockEnforcedUntil(10.0, 0.45f * 0.5f, 0.1f);
+	TestEqual(TEXT("fenêtre calée sur la durée minimale : refus jusqu'à 10.125 s"), MinLockWindowEnd, 10.125, 0.0001);
+	TestFalse(TEXT("atterrissage précoce : accepté"), GenFeeding::IsRefusedByCastLock(true, false, EarlyLandingShot, MinLockWindowEnd));
+	TestTrue(TEXT("tricheur pendant la durée minimale : toujours refusé"), GenFeeding::IsRefusedByCastLock(true, false, 10.1, MinLockWindowEnd));
+
+	// Temps en double : après une semaine de serveur, la fenêtre reste exacte
+	const double Week = 7.0 * 24.0 * 3600.0;
+	TestEqual(TEXT("une semaine de temps serveur : fenêtre exacte"), GenFeeding::GetCastLockEnforcedUntil(Week, 0.45f, 0.1f) - Week, 0.35, 0.001);
 	return true;
 }
 

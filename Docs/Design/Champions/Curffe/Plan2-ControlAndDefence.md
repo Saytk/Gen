@@ -119,7 +119,7 @@
    Pinned by Task 1 (`Gen.Area.LineOfSightSamples`) and Task 11 V10 and V17.
 6. **Leap, then an immediate LMB, under latency.** `State.CastLocked` is a loose tag that each machine sets on its own launch and clears on its own landing. The server launches about ½ RTT after the client, so a Fireball pressed right after the client lands can reach the server while the server's copy of the lock is still on. Expected:
    - the client enforces the lock (it is the predicting side);
-   - the server enforces it only during the first `LeapDuration − CastTimeTolerance` of its own lock, so an honest client is never refused and a cheating one gains at most the tolerance;
+   - the server enforces it only during the first `MinLockDuration − CastTimeTolerance` of its own lock, where `MinLockDuration` is the **shortest** the lock can last (the leap's earliest landing, `LeapDuration × 0.5`, not its nominal duration), so an honest client is never refused, even after an early landing on a step or ledge, and a cheating one gains at most `LeapDuration − MinLockDuration + CastTimeTolerance`;
    - the landing area and the ring are never skipped.
 
    Pinned by Task 1 (`Gen.Feeding.CastLockRule`) and Task 11 V19 (with `NetEmulation.PktLag`).
@@ -198,7 +198,7 @@ The ~20 `Condition failed` lines at frame 0 come from the engine's own start-up 
   - `FGenProjectileSalvo::HasHit(const UObject*) const -> bool`
   - `FGenProjectileSalvo::TryClaim(const UObject*) -> bool`
   - `GenFeeding::FFedDisplay { uint8 Count; FObjectKey Source; bool Set(FObjectKey, uint8); }`
-  - `GenFeeding::GetCastLockEnforcedUntil(float LockStart, float LockDuration, float Tolerance) -> float`
+  - `GenFeeding::GetCastLockEnforcedUntil(double LockStart, float MinLockDuration, float Tolerance) -> double` (amended by the review of Tasks 3–4: the shortest lock, and `double` world time)
   - `GenFeeding::IsRefusedByCastLock(bool bLocked, bool bPredictingSide, float Now, float EnforcedUntil) -> bool`
 
 - [ ] **Step 0: Check the starting point.**
@@ -1170,7 +1170,7 @@ git commit -m "Timed states, hard CC through ApplyHardCC, compounding slows, sha
 - Produces:
   - `EGenHitResponse AGenCharacterBase::ResolveIncomingHit(AActor* Attacker, EGenHitKind Kind, const UObject* Source)`. Server only. Every damage source calls it before applying anything. A counter that blocks receives `Event.Counter.Blocked` with `Instigator` = Attacker, `OptionalObject` = Source and `EventMagnitude` = `(float)Kind`.
   - `void AGenCharacterBase::SetFedResource(const UObject* Source, uint8 Count)`, which replaces `SetFedResource(uint8)`.
-  - `UGenAbilitySystemComponent::NoteCastLock(float LockDuration)` (server) and `GetCastLockEnforcedUntil() const -> float`.
+  - `UGenAbilitySystemComponent::NoteCastLock(float MinLockDuration)` (server), `GetCastLockEnforcedUntil() const -> double` and `ClearCastLock()` (all machines, at death). Amended by the review of Tasks 3–4: the window uses the **shortest** possible lock, time is a `double`, refusals report `State.CastLocked` or the hard-CC tag in `OptionalRelevantTags`, and death clears the lock. The code blocks below show the original version; the source is authoritative.
   - `UGenGameplayAbility::CanActivateAbility` refuses:
     - under any hard CC (`GetHardCCTags()`), on every machine;
     - under `State.CastLocked` on the predicting side (`ActorInfo->IsLocallyControlled()`: the owning client, a listen host, an AI), and on the server for a remote client only before `GetCastLockEnforcedUntil()`.
@@ -2038,7 +2038,7 @@ A UPROPERTY that moves to a parent class keeps its saved value in the Blueprints
     - protected virtual: `OnCastLaunched(const FGenCastRelease&)` (default: `FinishAbility()`) and `IsInterruptedByHardCC() const` (default `true`);
     - protected helpers:
       - `FinishAbility()`
-      - `SetCastLock(bool bLocked, float ExpectedDuration = 0.f)` (the server also calls `UGenAbilitySystemComponent::NoteCastLock(ExpectedDuration)`)
+      - `SetCastLock(bool bLocked, float MinLockDuration = 0.f)` (the server also calls `UGenAbilitySystemComponent::NoteCastLock(MinLockDuration)`; pass the **shortest** the lock can last)
       - `MakeDamageSpec(TSubclassOf<UGameplayEffect>, float Amount, UObject* SourceObject) const -> FGameplayEffectSpecHandle`
       - `MakeGainSpec(float Energy, float Resource) const -> FGameplayEffectSpecHandle`
       - `SpawnProjectileShot(TSubclassOf<AGenProjectile>, const FVector& Origin, const FVector& Direction, const FGenProjectileShotParams&, TSubclassOf<UGameplayEffect> DamageClass, float DamageAmount, float EnergyGain, float ResourceGain, const TSharedPtr<FGenProjectileSalvo>& Salvo = nullptr) -> AGenProjectile*`
@@ -2139,10 +2139,11 @@ protected:
 
 	/**
 	 * Verrou de lancement (State.CastLocked, tag local sur le serveur et le client) ; retiré à la fin du sort.
-	 * ExpectedDuration : durée prévue du verrou (ex : LeapDuration). Le serveur s'en sert pour ne refuser les sorts
-	 * d'un client distant qu'au début du verrou (UGenAbilitySystemComponent::NoteCastLock).
+	 * MinLockDuration : durée la PLUS COURTE possible du verrou (bond : son atterrissage le plus précoce, pas LeapDuration).
+	 * Le serveur s'en sert pour ne refuser les sorts d'un client distant qu'au début du verrou (UGenAbilitySystemComponent::NoteCastLock).
+	 * Seul point d'entrée du tag : poser State.CastLocked sans NoteCastLock laisse la fenêtre du serveur fermée.
 	 */
-	void SetCastLock(bool bLocked, float ExpectedDuration = 0.f);
+	void SetCastLock(bool bLocked, float MinLockDuration = 0.f);
 
 	/** Spec du GE de dégâts (SetByCaller.Damage = Amount). Invalide si rien à infliger. */
 	FGameplayEffectSpecHandle MakeDamageSpec(TSubclassOf<UGameplayEffect> EffectClass, float Amount, UObject* SourceObject) const;
@@ -3027,7 +3028,7 @@ void UGenGA_Cast::FinishAbility()
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, bReplicateEnd, false);
 }
 
-void UGenGA_Cast::SetCastLock(bool bLocked, float ExpectedDuration)
+void UGenGA_Cast::SetCastLock(bool bLocked, float MinLockDuration)
 {
 	if (bCastLockApplied == bLocked)
 	{
@@ -3044,7 +3045,7 @@ void UGenGA_Cast::SetCastLock(bool bLocked, float ExpectedDuration)
 			// Serveur : fenêtre où le verrou refuse les sorts d'un client distant (GenFeeding::GetCastLockEnforcedUntil)
 			if (UGenAbilitySystemComponent* GenASC = Cast<UGenAbilitySystemComponent>(ASC))
 			{
-				GenASC->NoteCastLock(ExpectedDuration);
+				GenASC->NoteCastLock(MinLockDuration);
 			}
 		}
 		else
@@ -4348,8 +4349,8 @@ git commit -m "Counter stance ability (Backfire) and Curffe's native tags"
     - properties `MaxDistance`, `LeapHeight`, `LeapDuration`, `LandingAreaClass`, `LandingRadius`, `LandingDamage`, `LandingEnergyOnHit`, `LandingKnockback`, `TrailCueTag`, `ImpactCueTag` and `LandMontage`;
     - virtual `OnLeapLanded(const FGenCastRelease&, const FVector& LandingLocation)`;
     - not interrupted by a hard CC while airborne;
-    - `State.CastLocked` in flight, set with `SetCastLock(true, LeapDuration)` so the server enforces it only during its first `LeapDuration − CastTimeTolerance` (Task 3);
-    - **the leap MUST call `UGenAbilitySystemComponent::NoteCastLock(LeapDuration)` whenever it sets `State.CastLocked`.** `SetCastLock` does it for you (Task 5); never add the tag with a bare `AddLooseGameplayTag`. `CastLockEnforcedUntil` defaults to −1, so without `NoteCastLock` the server never refuses anything during the flight and only the client's own lock remains (pinned by `Gen.Net.CastLock`, which calls `NoteCastLock` by hand);
+    - `State.CastLocked` in flight, set with `SetCastLock(true, LeapDuration * 0.5f)`: the **shortest** flight, equal to the jump task's `MinimumLandedTriggerTime`, because `bFinishOnLanded` ends a leap onto a step or a ledge early and the client unlocks then. The server enforces the lock only during its first `LeapDuration * 0.5 − CastTimeTolerance` (Task 3, amended by the review of Tasks 3–4); a cheater gains at most the rest of the flight;
+    - **the leap MUST call `UGenAbilitySystemComponent::NoteCastLock(LeapDuration * 0.5f)` whenever it sets `State.CastLocked`.** `SetCastLock` does it for you (Task 5); never add the tag with a bare `AddLooseGameplayTag`. `CastLockEnforcedUntil` defaults to −1, so without `NoteCastLock` the server never refuses anything during the flight and only the client's own lock remains (pinned by `Gen.Net.CastLock`, which calls `NoteCastLock` by hand);
     - `LandMontage` plays with `CastMontageRootMotionScale`, like the cast montages (0 on `GA_FlameLeap`: the jump force moves the character, not the clip).
   - `UCurffeGA_MeteorLeap : UGenGA_Leap`:
     - properties `RingProjectileClass`, `RingDamage`, `RingEnergyOnHit` and `RingSpawnOffset`;
@@ -4468,8 +4469,10 @@ void UGenGA_Leap::OnCastLaunched(const FGenCastRelease& Release)
 	const float Distance = FVector::Dist2D(Start, Target);
 
 	bAirborne = true;
-	// Le serveur ne refuse les sorts du client que pendant LeapDuration - tolérance : son vol finit ~½ RTT après celui du client
-	SetCastLock(true, LeapDuration);
+	// Le serveur ne refuse les sorts du client que pendant le vol le plus court (atterrissage précoce possible dès
+	// MinimumLandedTriggerTime, ci-dessous) moins la tolérance : son vol finit ~½ RTT après celui du client
+	const float MinimumLandedTime = LeapDuration * 0.5f;
+	SetCastLock(true, MinimumLandedTime);
 
 	if (TrailCueTag.IsValid())
 	{
@@ -4479,7 +4482,7 @@ void UGenGA_Leap::OnCastLaunched(const FGenCastRelease& Release)
 	// Mouvement racine prédit (client et serveur) : arc visible, arrêt net à l'atterrissage
 	UAbilityTask_ApplyRootMotionJumpForce* JumpTask = UAbilityTask_ApplyRootMotionJumpForce::ApplyRootMotionJumpForce(
 		this, NAME_None, Release.AimDirection.Rotation(), Distance, LeapHeight, LeapDuration,
-		/*MinimumLandedTriggerTime*/ LeapDuration * 0.5f, /*bFinishOnLanded*/ true,
+		/*MinimumLandedTriggerTime*/ MinimumLandedTime, /*bFinishOnLanded*/ true,
 		ERootMotionFinishVelocityMode::SetVelocity, FVector::ZeroVector, 0.f, nullptr, nullptr);
 	JumpTask->OnLanded.AddDynamic(this, &ThisClass::OnLanded);
 	JumpTask->OnFinish.AddDynamic(this, &ThisClass::OnLanded);
@@ -5800,7 +5803,7 @@ def client_walls(viewer_index):
 | V16 | **Ring versus counter** | c2 counters 250 cm from the landing point, fed 3 | The ring Fireball that reaches c2 is blocked: c2 +2 flames and +10 energy |
 | V17 | **Ring at a wall** | Wall 40 cm in front of the landing point (along the leap direction); dummy behind it; fed 1 | The single Fireball explodes on the wall at spawn and the dummy behind it is untouched (judge from the server if `client_walls(1)` is empty) |
 | V18 | **Death during the window** | c2 counters at 10 hp; c1 kills c2 with a pillar | After respawn: no `State.Countering` or `State.Stunned` (`inspect_tags`), speed 550, no countering band (`status_shown`) |
-| V19 | **Leap, then immediate LMB** (Review Focus 6) | `log LogAbilitySystem Verbose` for this row only. In one call: client 1 taps Space aimed at +600 (unfed) and holds LMB (`hold("IA_Ability_Primary", 1.5, 1)`) | No `GA_Fireball` `Activé` on either side during the flight (`State.CastLocked`). The first `[CLIENT] … GA_Fireball … Activé` comes right after the landing; the server logs `[SERVEUR] … Activé` for the same shot and spawns its projectile (`Projectile … créé`). No activation failure for it in `LogAbilitySystem`. The landing area and `Cooldown.Ability.FlameLeap` are there as in V13 |
+| V19 | **Leap, then immediate LMB** (Review Focus 6) | `log LogAbilitySystem Verbose` for this row only. In one call: client 1 taps Space aimed at +600 (unfed) and holds LMB (`hold("IA_Ability_Primary", 1.5, 1)`) | No `GA_Fireball` `Activé` on either side during the flight (`State.CastLocked`). The first `[CLIENT] … GA_Fireball … Activé` comes right after the landing; the server logs `[SERVEUR] … Activé` for the same shot and spawns its projectile (`Projectile … créé`). No activation failure for it in `LogAbilitySystem`. The landing area and `Cooldown.Ability.FlameLeap` are there as in V13. **Early landing:** repeat with `spawn_wall` making a 60 cm high block at the landing point (+600), so the leap lands on it before 0.45 s: the Fireball pressed at that landing is accepted by the server too (no failure with `State.CastLocked` in `LogAbilitySystem`) |
 | V20 | **Server-only release failure** (Art Bible §8.4) | `time_dilation(0.25)`. In one call: client 1 taps RMB (unfed Great Fireball, 0.5 s cast) and `server_loose_tag(1, "Cooldown.Ability.GreatFireball")`. Afterwards `server_loose_tag(1, "Cooldown.Ability.GreatFireball", False)` | The server logs `CommitAbility a échoué au lancer`. `client_montage_playing(1, "/Game/Gen/Champions/Curffe/Animations/AM_GreatFireball")` is True just before that log and False within one RTT after it (`ClientStopCastMontage`). No projectile anywhere, and on the server no cooldown GE and no flame spent |
 
 - [ ] **Step 3b: Latency reruns.** Plan 1's own latency rows are the baseline (Step 2); here only this plan's risky rows run again under emulated latency.
@@ -5809,7 +5812,7 @@ def client_walls(viewer_index):
     - no `Nourrissage corrigé` and no refused activation in the logs;
     - V2 and V5: the band and the stun show on clients 1 and 3 within about one RTT of the server's tag change;
     - V13: the take-off, the arc and the landing area are where the client predicted them (no visible correction with `p.NetShowCorrections 1`);
-    - V19: the Fireball pressed at landing is accepted by the server (this is the case the server window exists for).
+    - V19: the Fireball pressed at landing is accepted by the server (this is the case the server window exists for), including the early landing on the block.
   - `set_pkt_lag(0)` afterwards.
 
 - [ ] **Step 4: Clean up.**
@@ -5849,5 +5852,5 @@ git commit -m "PIE helpers for counter, area, leap and latency verification; rep
 **Playtest and cheat notes:**
 - **The server's counter window starts when the client's aim arrives**, about ½ RTT after the client's own window. At 100 ms RTT, a projectile that reaches the counterer in the first ~50 ms of his window on his screen is still a hit on the server. Watch for "my counter didn't block" reports.
 - **Cast time not enforced for 0.1 s casts (cheat only).** Backfire's (and the unfed leap's) `CastTime` of 0.1 s equals `GenFeeding::CastTimeTolerance`, so the server's cast-time check can't tell an honest client from one that skips the cast. A modified client could counter instantly. Honest clients are unaffected.
-- **The server's cast-lock window** refuses a cast that reaches the server more than `CastTimeTolerance` before the end of its own leap lock. With more than ~100 ms of jitter between the aim RPC and the next activation, an honest Fireball pressed right at landing can be refused (it costs nothing). Watch V19 under real network conditions.
+- **The server's cast-lock window** refuses a cast that reaches the server more than `CastTimeTolerance` before the leap's earliest possible landing (`LeapDuration × 0.5`), so a cheater can fire during the second half of the flight. With more than ~100 ms of jitter between the aim RPC and the next activation, an honest Fireball pressed right at landing can be refused (it costs nothing). Watch V19 under real network conditions.
 - **Band flicker when Backfire is cancelled early.** The window GE is predicted. When the client ends the stance early (another spell, a stun), it removes its predicted copy at once (or fails to, if the server's copy has already replaced it), while the server's copy stays replicated until the server processes the same cancel. The band can linger or reappear for about one RTT. Not fixed here: it is cosmetic and short. A fix would remove the visual locally on the end event instead of waiting for the tag.

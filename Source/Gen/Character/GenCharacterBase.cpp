@@ -476,6 +476,13 @@ void AGenCharacterBase::OnRep_IsDead()
 
 void AGenCharacterBase::OnDeathStarted()
 {
+	// Toutes les machines : un verrou de lancement (tag local) oublié par un sort survivrait au respawn (l'ASC est
+	// sur le PlayerState) et bloquerait tous les sorts
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->ClearCastLock();
+	}
+
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	Movement->StopMovementImmediately();
 	Movement->DisableMovement();

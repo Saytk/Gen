@@ -23,7 +23,10 @@ using namespace GenNetTest;
  * - Le côté qui prédit (client propriétaire) respecte toujours son propre verrou.
  * - Le serveur ne refuse un client distant que pendant LockDuration - CastTimeTolerance, puis accepte
  *   même si son propre verrou est encore posé (il finit ~½ RTT après celui du client).
- * - Un contrôle dur répliqué refuse l'activation côté client.
+ * - Un contrôle dur répliqué refuse l'activation côté client ; un contrôle dur que le client n'a pas encore
+ *   reçu est refusé par le serveur (le client a prédit, sa prédiction est annulée).
+ * - Chaque refus du serveur donne sa raison (tag dans les AbilityFailedCallbacks).
+ * - Sans NoteCastLock, la fenêtre reste fermée : le serveur ne refuse rien (choix sûr, documenté).
  */
 NETWORK_TEST_CLASS(CastLock, "Gen.Net")
 {
@@ -41,6 +44,8 @@ NETWORK_TEST_CLASS(CastLock, "Gen.Net")
 	int32 ServerProjectileCount = 0;
 	int32 ServerFailureCount = 0;
 	bool bServerLockedAtSpawn = false;
+	/** Raisons du dernier refus du serveur (OptionalRelevantTags de CanActivateAbility). */
+	FGameplayTagContainer ServerFailureTags;
 
 	BEFORE_EACH()
 	{
@@ -117,25 +122,49 @@ NETWORK_TEST_CLASS(CastLock, "Gen.Net")
 					}
 				}));
 
-				FailedHandle = ServerCasterASC->AbilityFailedCallbacks.AddLambda([this](const UGameplayAbility* Ability, const FGameplayTagContainer&)
+				FailedHandle = ServerCasterASC->AbilityFailedCallbacks.AddLambda([this](const UGameplayAbility* Ability, const FGameplayTagContainer& FailureTags)
 				{
 					if (Ability && Ability->GetClass() == AbilityClass.Get())
 					{
 						++ServerFailureCount;
+						ServerFailureTags = FailureTags;
 					}
 				});
 			});
 	}
 
-	/** Serveur : pose le verrou comme le bond (tag local + fenêtre). */
-	void QueueServerLock(float LockDuration)
+	/** Serveur : pose le verrou comme le bond (tag local + fenêtre sur la durée minimale du verrou). */
+	void QueueServerLock(float MinLockDuration)
 	{
-		Network.ThenServer(TEXT("Serveur : pose State.CastLocked et note la fenêtre"), [this, LockDuration](FBasePIENetworkComponentState&)
+		Network.ThenServer(TEXT("Serveur : pose State.CastLocked et note la fenêtre"), [this, MinLockDuration](FBasePIENetworkComponentState&)
 		{
 			ASSERT_THAT(IsNotNull(ServerCasterASC.Get()));
 			ServerCasterASC->AddLooseGameplayTag(CastLockedTag());
-			ServerCasterASC->NoteCastLock(LockDuration);
+			ServerCasterASC->NoteCastLock(MinLockDuration);
 		});
+	}
+
+	/** Serveur : le sort du client doit être refusé, sans tir, pour la raison Reason ; puis le client annule sa prédiction. */
+	void QueueExpectServerRefusal(const FGameplayTag& Reason)
+	{
+		Network
+			.UntilServer(TEXT("Serveur : activation refusée"), [this](FBasePIENetworkComponentState&)
+			{
+				return ServerFailureCount > 0;
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : aucun tir, sort inactif, raison du refus"), [this, Reason](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(AreEqual(0, ServerProjectileCount, TEXT("Aucun projectile ne doit partir après un refus")));
+				const FGameplayAbilitySpec* Spec = FindAbilitySpec(ServerCasterASC.Get(), AbilityClass);
+				ASSERT_THAT(IsTrue(Spec && !Spec->IsActive(), TEXT("Le sort ne doit pas être actif sur le serveur")));
+				ASSERT_THAT(IsTrue(ServerFailureTags.HasTagExact(Reason), *FString::Printf(TEXT("Raison du refus attendue : %s (reçu : %s)"), *Reason.ToString(), *ServerFailureTags.ToStringSimple())));
+				RemoveServerHandlers();
+			})
+			.UntilClient(TEXT("Client 0 : prédiction annulée (sort terminé)"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				const FGameplayAbilitySpec* Spec = FindAbilitySpec(GetASC(GetLocalController(Client)->GetPlayerState<AGenPlayerState>()), AbilityClass);
+				return Spec && !Spec->IsActive();
+			}, DefaultWait());
 	}
 
 	/** Client 0 : active le sort par son ASC (prédiction locale), visée déterministe. */
@@ -166,24 +195,64 @@ NETWORK_TEST_CLASS(CastLock, "Gen.Net")
 		QueuePrepare();
 		QueueServerLock(10.f);
 		QueueClientActivate(/*bExpectLocalSuccess*/ true);
+		QueueExpectServerRefusal(CastLockedTag());
+	}
+
+	/**
+	 * Verrou posé sans NoteCastLock (ce que SetCastLock interdit) : la fenêtre reste fermée et le serveur accepte.
+	 * Documente le choix « échec ouvert » : un oubli ne bloque jamais un client honnête, seul son propre verrou compte.
+	 */
+	TEST_METHOD(LockWithoutNoteCastLock_ServerAccepts)
+	{
+		QueuePrepare();
+
+		Network.ThenServer(TEXT("Serveur : pose State.CastLocked sans noter de fenêtre"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsNotNull(ServerCasterASC.Get()));
+			ServerCasterASC->AddLooseGameplayTag(CastLockedTag());
+			ASSERT_THAT(IsTrue(ServerCasterASC->GetCastLockEnforcedUntil() < 0.0, TEXT("Fenêtre fermée par défaut")));
+		});
+
+		QueueClientActivate(/*bExpectLocalSuccess*/ true);
 
 		Network
-			.UntilServer(TEXT("Serveur : activation refusée"), [this](FBasePIENetworkComponentState&)
+			.UntilServer(TEXT("Serveur : projectile du lanceur apparu"), [this](FBasePIENetworkComponentState&)
 			{
-				return ServerFailureCount > 0;
+				return ServerProjectileCount > 0;
 			}, DefaultWait())
-			.ThenServer(TEXT("Serveur : aucun tir, sort inactif"), [this](FBasePIENetworkComponentState&)
+			.ThenServer(TEXT("Serveur : accepté malgré son tag"), [this](FBasePIENetworkComponentState&)
 			{
-				ASSERT_THAT(AreEqual(0, ServerProjectileCount, TEXT("Aucun projectile ne doit partir pendant la fenêtre du verrou")));
-				const FGameplayAbilitySpec* Spec = FindAbilitySpec(ServerCasterASC.Get(), AbilityClass);
-				ASSERT_THAT(IsTrue(Spec && !Spec->IsActive(), TEXT("Le sort ne doit pas être actif sur le serveur")));
+				ASSERT_THAT(AreEqual(0, ServerFailureCount, TEXT("Sans fenêtre, aucun refus")));
+				ASSERT_THAT(IsTrue(bServerLockedAtSpawn, TEXT("Le tag du serveur doit être posé : sinon le test ne vérifie rien")));
+				ServerCasterASC->RemoveLooseGameplayTag(CastLockedTag());
 				RemoveServerHandlers();
-			})
-			.UntilClient(TEXT("Client 0 : prédiction annulée (sort terminé)"), 0, [this](FBasePIENetworkComponentState& Client)
+			});
+	}
+
+	/**
+	 * Contrôle dur que le client n'a pas encore reçu (ici : tag libre du serveur, jamais répliqué, pour figer
+	 * la course) : le client prédit, le serveur refuse avec le tag du contrôle comme raison, la prédiction est annulée.
+	 */
+	TEST_METHOD(HardCC_NotYetReplicated_ServerRefuses)
+	{
+		QueuePrepare();
+
+		Network.ThenServer(TEXT("Serveur : silence connu du serveur seul"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsNotNull(ServerCasterASC.Get()));
+			ServerCasterASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Silenced")));
+		});
+
+		QueueClientActivate(/*bExpectLocalSuccess*/ true);
+		QueueExpectServerRefusal(FGameplayTag::RequestGameplayTag(TEXT("State.Silenced")));
+
+		Network.ThenServer(TEXT("Serveur : retire le silence"), [this](FBasePIENetworkComponentState&)
+		{
+			if (ServerCasterASC.IsValid())
 			{
-				const FGameplayAbilitySpec* Spec = FindAbilitySpec(GetASC(GetLocalController(Client)->GetPlayerState<AGenPlayerState>()), AbilityClass);
-				return Spec && !Spec->IsActive();
-			}, DefaultWait());
+				ServerCasterASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Silenced")));
+			}
+		});
 	}
 
 	/**
