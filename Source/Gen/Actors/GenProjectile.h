@@ -61,6 +61,16 @@ public:
 	/** Serveur, avant FinishSpawning. */
 	void InitializeShot(const FGenProjectileShotParams& Params);
 
+	/**
+	 * Serveur, avant FinishSpawning : équipe du lanceur retenue au tir (même nom et type que sur curffe-plan2, revue
+	 * Plan 2 Tasks 7-8, M-6). Répliquée à l'apparition seulement (revue V6-V8, M-9) : le marqueur au sol a la bonne
+	 * couleur avant l'arrivée du pion du lanceur. Sans appel : équipe du pion instigateur.
+	 */
+	void SetSourceTeam(uint8 InSourceTeam);
+
+	/** Équipe retenue au tir, ou celle du pion instigateur (GenNoTeam si aucun). */
+	uint8 GetSourceTeam() const;
+
 	float GetSpeed() const { return Speed; }
 
 	/** Portée max (cm) : lue sur le CDO par la visée (V1). */
@@ -95,9 +105,6 @@ protected:
 
 	/** Couleur du marqueur selon le point de vue du joueur local (soi, allié, ennemi). */
 	void UpdateGroundMarkerRelation();
-
-	/** Équipe du lanceur (pion instigateur), GenNoTeam si inconnue (pion pas encore répliqué). */
-	uint8 GetInstigatorTeam() const;
 
 	UFUNCTION()
 	void OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -168,7 +175,7 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> GroundMarkerMesh;
 
-	/** Plan du marqueur, créé en BeginPlay sur les clients seulement. */
+	/** Plan du marqueur, créé en BeginPlay sur les clients seulement (son MID : une fois, au premier affichage). */
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> GroundMarker;
 
@@ -205,4 +212,10 @@ protected:
 
 private:
 	bool bImpactEffectsPlayed = false;
+
+	/** Équipe du lanceur au tir (serveur), valable si bHasSourceTeam. Répliquées à l'apparition seulement. */
+	UPROPERTY(Replicated)
+	uint8 SourceTeam = 255;
+	UPROPERTY(Replicated)
+	bool bHasSourceTeam = false;
 };

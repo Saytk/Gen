@@ -82,6 +82,24 @@ void AGenProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME_CONDITION(AGenProjectile, Speed, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AGenProjectile, ShotScale, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AGenProjectile, ExplosionRadius, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AGenProjectile, SourceTeam, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AGenProjectile, bHasSourceTeam, COND_InitialOnly);
+}
+
+void AGenProjectile::SetSourceTeam(uint8 InSourceTeam)
+{
+	SourceTeam = InSourceTeam;
+	bHasSourceTeam = true;
+}
+
+uint8 AGenProjectile::GetSourceTeam() const
+{
+	if (bHasSourceTeam)
+	{
+		return SourceTeam;
+	}
+	const AGenCharacterBase* InstigatorCharacter = Cast<AGenCharacterBase>(GetInstigator());
+	return InstigatorCharacter ? InstigatorCharacter->GetTeamId() : GenNoTeam;
 }
 
 float AGenProjectile::GetCollisionRadius() const
@@ -182,13 +200,7 @@ void AGenProjectile::SetupGroundMarker()
 	const float Scale = FMath::Max(GetGroundMarkerRadius(), 1.f) / MarkerPlaneHalfSize;
 	GroundMarker->SetWorldScale3D(FVector(Scale, Scale, 1.f));
 
-	GroundMarkerMID = GroundMarker->CreateDynamicMaterialInstance(0, GroundMarkerMaterial);
-	if (GroundMarkerMID)
-	{
-		// Disque plein (pas de minuteur)
-		GroundMarkerMID->SetScalarParameterValue(MarkerParamFill, 1.f);
-	}
-
+	// Le MID est créé au premier affichage (UpdateGroundMarkerRelation), une seule fois par projectile
 	UpdateGroundMarkerRelation();
 }
 
@@ -198,12 +210,6 @@ void AGenProjectile::OnRep_Instigator()
 
 	// Le pion du lanceur peut arriver après le projectile : couleur et hauteur recalculées
 	UpdateGroundMarkerRelation();
-}
-
-uint8 AGenProjectile::GetInstigatorTeam() const
-{
-	const AGenCharacterBase* InstigatorCharacter = Cast<AGenCharacterBase>(GetInstigator());
-	return InstigatorCharacter ? InstigatorCharacter->GetTeamId() : GenNoTeam;
 }
 
 void AGenProjectile::UpdateGroundMarkerRelation()
@@ -221,14 +227,26 @@ void AGenProjectile::UpdateGroundMarkerRelation()
 		: GroundMarkerFallbackHeight;
 	GroundMarker->SetRelativeLocation(FVector(0.f, 0.f, -(HalfHeight - MarkerFloorOffset) / FMath::Max(ShotScale, 0.1f)));
 
+	// Revue V6-V8, M-9 : MID créé une seule fois par projectile, et seulement quand le marqueur est visible
 	if (!GroundMarkerMID)
 	{
-		return;
+		if (!GroundMarker->IsVisible() || bExploded)
+		{
+			return;
+		}
+		GroundMarkerMID = GroundMarker->CreateDynamicMaterialInstance(0, GroundMarkerMaterial);
+		if (!GroundMarkerMID)
+		{
+			return;
+		}
+		// Disque plein (pas de minuteur)
+		GroundMarkerMID->SetScalarParameterValue(MarkerParamFill, 1.f);
 	}
 
-	// Point de vue du joueur local, comparé par PlayerState (comme AGenGroundArea)
+	// Point de vue du joueur local, comparé par PlayerState (comme AGenGroundArea). Équipe retenue au tir, répliquée à
+	// l'apparition : juste même avant l'arrivée du pion du lanceur (seul « soi » attend OnRep_Instigator)
 	const APawn* SourcePawn = GetInstigator();
-	const EGenViewerRelation Relation = GenWorldQueries::GetLocalViewerRelation(GetWorld(), SourcePawn ? SourcePawn->GetPlayerState() : nullptr, GetInstigatorTeam());
+	const EGenViewerRelation Relation = GenWorldQueries::GetLocalViewerRelation(GetWorld(), SourcePawn ? SourcePawn->GetPlayerState() : nullptr, GetSourceTeam());
 
 	// Ennemi : chevrons (motif ennemi) ; soi et allié : disque plein
 	GroundMarkerMID->SetScalarParameterValue(MarkerParamRelationIndex, static_cast<float>(Relation));

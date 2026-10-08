@@ -1145,6 +1145,10 @@ AGenProjectile* UGenGA_Cast::SpawnProjectileShot(TSubclassOf<AGenProjectile> Sho
 	}
 
 	Projectile->InitializeShot(ShotParams);
+	if (const AGenCharacterBase* Caster = Cast<AGenCharacterBase>(Avatar))
+	{
+		Projectile->SetSourceTeam(Caster->GetTeamId());
+	}
 	Projectile->Salvo = Salvo;
 	Projectile->DamageEffectSpecHandle = MakeDamageSpec(DamageClass, DamageAmount, Projectile);
 	Projectile->InstigatorOnHitSpecHandle = MakeGainSpec(EnergyGain, ResourceGain);

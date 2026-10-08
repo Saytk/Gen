@@ -34,7 +34,7 @@ void AGenPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 void AGenPlayerState::SetTeamId(uint8 NewTeamId)
 {
 	TeamId = NewTeamId;
-	OnRep_TeamId(); // Les RepNotify ne s'exécutent pas sur le serveur : appel manuel (listen server)
+	OnRep_TeamId(); // Les RepNotify ne s'exÃ©cutent pas sur le serveur : appel manuel (listen server)
 }
 
 void AGenPlayerState::OnRep_TeamId()
