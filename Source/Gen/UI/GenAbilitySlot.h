@@ -74,6 +74,8 @@ private:
 	TWeakObjectPtr<const UGenGameplayAbility> AbilityCDO;
 	FGameplayTagContainer CooldownTags;
 
+	/** MID de M_UI_AbilityIcon : texture du sort (paramètre Icon) et désaturation pendant la recharge (DimAmount). */
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> IconMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> SweepMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> ArcMID;
 

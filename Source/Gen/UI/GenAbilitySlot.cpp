@@ -28,6 +28,11 @@ void UGenAbilitySlot::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	if (IconImage)
+	{
+		IconMID = IconImage->GetDynamicMaterial();
+		UE_CLOG(!IconMID, LogGenUI, Warning, TEXT("%s : IconImage n'a pas de matériau (M_UI_AbilityIcon attendu), icône et désaturation invisibles."), *GetPathName());
+	}
 	if (SweepImage)
 	{
 		SweepMID = SweepImage->GetDynamicMaterial();
@@ -176,9 +181,13 @@ void UGenAbilitySlot::ResolveAbility()
 		TagHandles.Emplace(Tag, Handle);
 	}
 
+	// Par le paramètre du MID et non SetBrushFromTexture, qui remplacerait le matériau (cercle, désaturation)
 	if (UTexture2D* Icon = AbilityCDO->Icon.LoadSynchronous())
 	{
-		IconImage->SetBrushFromTexture(Icon);
+		if (IconMID)
+		{
+			IconMID->SetTextureParameterValue(TEXT("Icon"), Icon);
+		}
 	}
 	IconImage->SetToolTipText(AbilityCDO->DisplayName);
 
@@ -317,6 +326,12 @@ void UGenAbilitySlot::RefreshVisuals()
 		UpdateUltimateArc();
 	}
 
+	// La désaturation de la recharge s'applique à l'icône, pas au voile du balayage (§4.1)
+	if (IconMID)
+	{
+		IconMID->SetScalarParameterValue(TEXT("DimAmount"), State == EGenAbilitySlotState::Cooldown ? Metrics->CooldownDesaturation : 0.f);
+	}
+
 	if (SweepMID)
 	{
 		const float Progress = (State == EGenAbilitySlotState::Cooldown && CooldownDuration > 0.f) ? Remaining / CooldownDuration : 0.f;
@@ -332,7 +347,14 @@ void UGenAbilitySlot::RefreshVisuals()
 		SweepMID->SetScalarParameterValue(TEXT("RimFlash"), Flash);
 		SweepMID->SetScalarParameterValue(TEXT("Locked"), State == EGenAbilitySlotState::Locked ? 1.f : 0.f);
 		SweepMID->SetVectorParameterValue(TEXT("OverlayColour"), State == EGenAbilitySlotState::Locked ? Palette->Cooldown_Locked : Palette->Cooldown_Overlay);
-		SweepMID->SetVectorParameterValue(TEXT("RimColour"), bIsUltimate ? Palette->Energy_Full : Palette->Line_Bronze);
+		// Bord : line.bronze ; ultime : anneau energy.full à α 0.5, α 1.0 une fois prête (§4.1)
+		FLinearColor RimColour = Palette->Line_Bronze;
+		if (bIsUltimate)
+		{
+			RimColour = Palette->Energy_Full;
+			RimColour.A = bUltimateWasReadyFull ? 1.f : 0.5f;
+		}
+		SweepMID->SetVectorParameterValue(TEXT("RimColour"), RimColour);
 		SweepMID->SetVectorParameterValue(TEXT("FlashColour"), Palette->Flash_White);
 	}
 }
@@ -389,6 +411,9 @@ void UGenAbilitySlot::UpdateUltimateArc()
 		ArcMID->SetScalarParameterValue(TEXT("Funded"), Funded);
 		ArcMID->SetScalarParameterValue(TEXT("FullOutline"), bFull ? 1.f : 0.f);
 		ArcMID->SetVectorParameterValue(TEXT("Colour"), bFull ? Palette->Energy_Full : Palette->Energy_Charging);
+		// Segments non financés : contour creux text.secondary ; contour de l'arc plein : text.primary (§4.1)
+		ArcMID->SetVectorParameterValue(TEXT("HollowColour"), Palette->Text_Secondary);
+		ArcMID->SetVectorParameterValue(TEXT("OutlineColour"), Palette->Text_Primary);
 	}
 
 	// Ultime prête : une seule impulsion de 300 ms via le RimFlash du balayage (indépendante de l'arc), jamais de boucle (§4.1).
