@@ -48,11 +48,68 @@ Quand l'utilisateur annonce qu'il va modifier des assets à la main, proposer de
 - Aucun widget ne code en dur une couleur, une police ou une taille : tout passe par les tokens.
 - Toute PR d'UI passe la checklist du §9. En cas de conflit, `Docs/ArtBible.md` l'emporte.
 
+## Itération rapide et sécurité de l'éditeur (agents)
+
+**Compiler le C++**
+- **Live Coding, pour les `.cpp` seulement.** Si le changement ne touche que des corps de fonctions dans des
+  `.cpp`, compiler à chaud sans fermer l'éditeur : `call_tool` → `LiveCodingToolset.CompileLiveCoding`
+  (repli : commande console `LiveCoding.CompileSync`).
+  - Après le patch, lancer `ModelContextProtocol.RefreshTools`.
+  - Si le log annonce un ré-instanciement (« data type changes may cause packaging to fail »), ne
+    sauvegarder aucun asset qui référence ces types avant une vraie compilation.
+  - Le patch n'existe qu'en mémoire : avant un commit, il faut une compilation complète et les tests headless.
+- **Tout le reste passe par le cycle complet** (fermer l'éditeur, `Build.bat`, relancer) : un `.h` modifié
+  (UPROPERTY, UFUNCTION, membre, signature), un nouveau fichier ou une nouvelle classe, un `Build.cs`, une
+  valeur par défaut de constructeur ou de CDO.
+- **Compiler depuis un worktree** :
+  `Build.bat GenEditor Win64 Development -Project="<worktree>\Gen.uproject" -NoHotReloadFromIDE -WaitMutex`.
+  - Pour vérifier un seul fichier sans lier : ajouter `-SingleFile="<chemin du .cpp>"`, ou `-Module=Gen`.
+  - `-NoHotReloadFromIDE` est réservé aux worktrees : jamais dans l'arbre principal pendant que l'éditeur tourne.
+- **UBT** : garder les réglages par défaut. Ne pas mettre `bUseUnityBuild=false` (bug 5.8.1), ni passer
+  `-NoUBTMakefiles`.
+
+**Tests**
+- **Dans l'éditeur ouvert** : `AutomationTestToolset` → `DiscoverTests` (une fois par session), puis
+  `RunTestsByFilter("StartsWith:Gen.")`, puis `GetTestResults`.
+- **Multijoueur** : les vérifications déterministes (réplication, GAS, autorité serveur) s'écrivent en CQTest
+  `NETWORK_TEST_CLASS` dans le module éditeur `GenTests`, qui fait tourner un serveur dédié et des clients
+  dans un seul process (guide : `Docs/Dev/CQTestNetworkTests.md`). Le PIE manuel (2 clients + serveur dédié)
+  reste la vérification finale, à l'œil.
+  - Lancés dans l'éditeur ouvert, ces tests remplacent le niveau courant par une carte vide, sans demander.
+    Il faut donc sauvegarder avant, puis rouvrir `L_Arena` après.
+- **Test headless, seulement comme barrière avant un commit** :
+  `UnrealEditor-Cmd.exe "<projet>\Gen.uproject" -ExecCmds="Automation RunTests Gen.;Quit" -unattended -nullrhi -nosplash -nosound -stdout -ReportExportPath="<projet>\Saved\TestReport" -ModelContextProtocolPort=8011`.
+  Lire ensuite `index.json` dans le dossier du rapport, pas le log. `Tools/RunGenTests.ps1` fait les deux.
+
+**Sécurité de l'éditeur**
+- **Ne jamais piloter l'UI de l'éditeur** (clics, saisie, glisser). `SlateInspectorToolset` est désactivé
+  dans `DefaultEngine.ini`, parce qu'un modal ouvert pendant un appel MCP gèle l'éditeur.
+- **Un seul appel MCP à la fois par éditeur** : jamais d'appels en parallèle, ni deux sous-agents sur le
+  même éditeur.
+- **Un port MCP par process d'éditeur.** L'éditeur principal écoute sur 8010 (réglage par utilisateur,
+  dans `Saved`). Tout autre éditeur du projet (headless, worktree) se lance avec
+  `-ModelContextProtocolPort=8011` (puis 8012...).
+- **VibeUE exécute le Python en mode « unattended »** : les boîtes de dialogue prennent leur réponse par
+  défaut au lieu de bloquer. C'est un patch local du sous-module, `Tools/Patches/VibeUE-unattended-python.patch`.
+  Après chaque mise à jour de VibeUE, le réappliquer
+  (`git -C Plugins/VibeUE apply ../../Tools/Patches/VibeUE-unattended-python.patch`), puis recompiler.
+- **`Config/DefaultEditorPerProjectUserSettings.ini`** : pas d'invite de restauration des onglets, et pas
+  d'ajout automatique au contrôle de source. Committer par chemins explicites.
+- **Éditions d'assets en lot** : prendre le verrou LFS d'abord. Ensuite, soit de petits appels
+  `execute_python_code` en série, soit le commandlet
+  `UnrealEditor-Cmd.exe Gen.uproject -run=pythonscript -script="<fichier.py>" -ModelContextProtocolPort=8011`,
+  mais seulement pour des assets que l'éditeur ouvert n'a pas chargés.
+
 ## Exceptions propres à ce projet (prioritaires sur le guide VibeUE ci-dessous)
 
 - Ne PAS lancer `Plugins/VibeUE/BuildAndLaunchGame.ps1` : il tue l'éditeur de force (taskkill /F)
-  et vide `Saved/Logs`. Pour compiler le C++ : fermer l'éditeur proprement, puis l'utilisateur
-  relance `Gen.uproject` (il propose de recompiler).
+  et vide `Saved/Logs`. Pour compiler le C++ (hors Live Coding) :
+  1. vérifier qu'aucun asset n'est modifié sans être sauvegardé ;
+  2. fermer l'éditeur proprement (`unreal.SystemLibrary.quit_editor()`) ;
+  3. compiler avec `Build.bat` ;
+  4. relancer l'éditeur. Claude peut le faire lui-même (accord de l'utilisateur du 2026-10-07), avec le
+     chemin complet de `UnrealEditor.exe` suivi de `Gen.uproject` : l'`EngineAssociation` du projet ne
+     correspond pas à toutes les installations.
 - `execute_python_code` : passer `auto_save: false` sauf si l'utilisateur veut tout sauvegarder.
 - Répondre en français.
 

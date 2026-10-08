@@ -9,3 +9,5 @@
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 *.exr filter=lfs diff=lfs merge=lfs -text
 *.hdr filter=lfs diff=lfs merge=lfs -text
+# Patches keep the line endings of the files they target
+Tools/Patches/*.patch -text
