@@ -15,6 +15,7 @@
 #include "AbilitySystemComponent.h"
 #include "Actors/GenProjectile.h"
 #include "Character/GenCharacterBase.h"
+#include "Champions/Curffe/CurffeTuning.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GenGameplayTags.h"
@@ -28,6 +29,10 @@ UGenGA_Projectile::UGenGA_Projectile()
 	ProjectileClass = AGenProjectile::StaticClass();
 	DamageEffectClass = UGenGE_Damage::StaticClass();
 	Damage = FScalableFloat(20.f);
+
+	// Curffe est le seul champion qui nourrit ses sorts pour l'instant : ses règles servent de défaut
+	FeedInterval = CurffeTuning::FeedInterval;
+	MaxFeed = CurffeTuning::MaxFeedPerSpell;
 
 	ActivationOwnedTags.AddTag(GenGameplayTags::State_Casting);
 }

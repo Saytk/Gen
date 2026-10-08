@@ -27,6 +27,7 @@
 - **LFS locks:** before modifying any `.uasset` or `.umap`, run `git pull` then `git lfs lock <path>`. Unlock after the commit is pushed (see `CLAUDE.md`).
 - **PIE verification** uses a dedicated server and **3 clients**, so that two players share a team (clients 1 and 3 are team 0, client 2 is team 1). Restore the user's PIE settings afterwards (Standalone, 1 client).
 - **Starting values (spec §3):**
+  - **Superseded by `8096d2c` (2026-10-08) for feeding:** 3 flames max per spell at 0.3 s each (`CurffeTuning::MaxFeedPerSpell`, `CurffeTuning::FeedInterval`). Great Fireball is now 14 + 10 per flame, splash from 2 flames, knockback at 3, 16 m/s at 3 flames, +6 energy +2 per flame. The Great Fireball values below and in Tasks 8–9 are the original plan. See `Curffe.md` §2–§3 for the current numbers.
   - Fireball: 0.35 s cast, no cooldown, 11 m, 10 damage, +1 flame and +2 energy on hit.
   - Great Fireball: 0.5 s + 0.2 s per flame, 6 s cooldown, 13 m, 14 + 6 per flame.
     - Explosion of 1.5 m from 3 flames; knockback of 4 m at 5 flames.

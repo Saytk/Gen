@@ -34,7 +34,7 @@ namespace GenFeeding
 	 * Serveur : borne le compte annoncé par le client à la fin de son nourrissage (affichage pour les
 	 * autres joueurs). Accepté à ±1 de l'estimation du serveur (ses ticks ont une image de décalage),
 	 * et jamais au-delà de la ressource disponible ni du maximum du sort : le client peut corriger
-	 * l'estimation dans les deux sens, mais pas annoncer 5 flammes dès l'activation.
+	 * l'estimation dans les deux sens, mais pas annoncer tous les seuils dès l'activation.
 	 */
 	inline int32 ClampReportedFed(int32 Reported, int32 ServerEstimate, int32 MaxFeed, float AvailableResource)
 	{

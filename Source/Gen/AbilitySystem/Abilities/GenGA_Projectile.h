@@ -135,12 +135,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Projectile|Feeding")
 	bool bFeedable = false;
 
-	/** Une unité absorbée toutes les FeedInterval secondes. */
+	/** Une unité absorbée toutes les FeedInterval secondes. Par défaut : CurffeTuning::FeedInterval (0.3 s). */
 	UPROPERTY(EditDefaultsOnly, Category = "Projectile|Feeding", meta = (EditCondition = "bFeedable", ClampMin = "0.05", Units = "s"))
-	float FeedInterval = 0.2f;
+	float FeedInterval;
 
+	/**
+	 * Seuils de nourrissage du sort (crans de la barre), même si le champion a plus de ressource.
+	 * Par défaut : CurffeTuning::MaxFeedPerSpell (3).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Projectile|Feeding", meta = (EditCondition = "bFeedable", ClampMin = "1"))
-	int32 MaxFeed = 5;
+	int32 MaxFeed;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Projectile|Feeding", meta = (EditCondition = "bFeedable"))
 	float DamagePerFeed = 0.f;
