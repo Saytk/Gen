@@ -61,7 +61,7 @@ Tiers apply to **states and events**, not to widgets. One widget can show events
 - **Team colours are the Art Bible's** (§4.3): self off-white, ally sky blue, enemy vermillion (the last two from the Okabe-Ito palette). Self moved from yellow to off-white so it no longer shares a hue with fire, stun and heal VFX. Battlerite's own team hues are unverified (Art Bible §12 Q5).
 - **Team frames in the top corners**: allies on the left, enemies on the right. Battlerite's exact frame placement is unverified. Its top plaque is documented.
 - **Counter sits below hard CC, silence and root** in the state-word priority list (§4.6).
-- **Untargetable characters are dimmed, not hidden** (§4.4).
+- **Untouchable characters are dimmed, not hidden** (§4.4).
 
 **Avoid (documented Battlerite criticisms):**
 - An ability bar too small to read in peripheral vision. We use larger slots and a one-shot ready flash.
@@ -234,7 +234,7 @@ Never "fix" a CVD preset by moving `heal` or `status.*` into blue: that lands wi
 | `hp.tick` | `line.outline` | — | 0.55 thin / 0.90 heavy | Segment ticks (§4.3) |
 | `energy.charging` | `#FFC233` (= Art Bible §4.3 energy orb) | (1.000, 0.539, 0.033) | 1.0 | Energy below 100% (11.4:1 on track). **Amber means energy.** OKLCH hue 83°, 35° from the enemy vermillion (48°), so it clears the Art Bible's ≥ 30° reserved-hue separation |
 | `energy.full` | = `energy.charging` + a 1 px `text.primary` outline on every segment | — | 1.0 | Energy at 100%, ultimate ready, ultimate ring. Same hue **by design**: a separate "full" yellow would sit next to stun `#FFE07A`, and a darker "charging" amber collapses into the enemy vermillion under deuteranope simulation (ΔE 7). "Full" is shown by the outline, the complete segment count and the one-shot brighten (§4.2) |
-| `heal` | `#7FD14F` (= Art Bible §4.3 heal / health orb) | (0.212, 0.638, 0.078) | 1.0 | Heal numbers, health pickups, `State.Healing` icon. **Never** a team colour. Always paired with a "+" prefix or plus glyph |
+| `heal` | `#7FD14F` (= Art Bible §4.3 heal) | (0.212, 0.638, 0.078) | 1.0 | Heal numbers, the heal part of the centre-orb reward, `State.Healing` icon. **Never** a team colour. Always paired with a "+" prefix or plus glyph |
 | `cast.fill` | `#E9DFC8` | (0.815, 0.738, 0.578) | 1.0 | Cast and channel fill for every relation (13.9:1 on track). Low chroma (OKLCH C 0.033). Always in its own bar row, never inside an HP bar, so it cannot be mistaken for the off-white self fill (1.18:1) |
 | `cast.interrupted` | = `status.danger` | — | 1.0 | Interrupt or cancel flash |
 
@@ -259,8 +259,8 @@ Contrast notes:
 | `cooldown.noEnergy` | `#2E4A78` | (0.027, 0.068, 0.188) | 0.45 | "Not enough energy" wash |
 | `cooldown.locked` | `#110C09` with a 45° hatch | (0.006, 0.004, 0.003) | 0.70 | Silenced or stunned slot |
 | `world.boundary` | = `text.primary` `#F3DEC9` | (0.896, 0.730, 0.584) | 0.90 | Sudden-death or shrinking-zone edge line, drawn **dashed** (8 px dash, 8 px gap) so a long near-white line never reads as the off-white self ring. Neutral, never "mine". Round-flow visuals are still open (Art Bible §12 Q19) |
-| `pickup.health` | = `heal` `#7FD14F` (Art Bible §4.3 health orb), with a white plus glyph | — | — | Health orb UI marks (timer ring, icon) |
-| `pickup.energy` | = `energy.charging` `#FFC233` (Art Bible §4.3 energy orb), with a bolt glyph | — | — | Energy orb UI marks (timer ring, icon) |
+| `pickup.centreOrb` | = `energy.charging` `#FFC233`, with a bolt-and-plus glyph | — | — | Centre orb UI marks (spawn timer ring, icon): +20 energy and a small heal for the team that lands the last hit (CharacterGuidelines §4.2). Gen has no health orb |
+| `pickup.energy` | = `energy.charging` `#FFC233` (Art Bible §4.3 energy orbs), with a bolt glyph | — | — | Death orb UI marks: half the dead player's energy, for their allies only (CharacterGuidelines §4.2) |
 | `proximity.far` / `.mid` / `.near` | = `text.primary` | (0.880, 0.791, 0.723) | 0.50 / 0.75 / 1.00 | Stealth proximity. Shown as **1 / 2 / 3 chevrons**; the count is the cue, not a colour ramp |
 
 There is **no `status.warning` token.** At 10 s or less, the round timer stays `text.primary` and switches its format to `s.s`. Other warnings use `text.primary` plus a glyph. This keeps orange for the enemy and amber for energy only.
@@ -269,8 +269,8 @@ There is **no `status.warning` token.** At 10 s or less, the round timer stays `
 
 | Art Bible use | Hex | OKLCH hue | Where the UI uses it |
 |---|---|---|---|
-| Energy orb | `#FFC233` | 83° | `energy.*`, `pickup.energy` |
-| Heal / health orb | `#7FD14F` | 136° | `heal`, `status.success`, `pickup.health`, `State.Healing` icon |
+| Energy orbs (centre, death) | `#FFC233` | 83° | `energy.*`, `pickup.energy`, `pickup.centreOrb` |
+| Heal | `#7FD14F` | 136° | `heal`, `status.success`, `State.Healing` icon |
 | Stun | `#FFE07A` | 93° | `State.Stunned` status icon glyph |
 | Poison / silence | `#9E7BD9` | 300° | `State.Silenced` (and poison) status icon glyph |
 | Fire body | `#F5B82E` | 82° | `State.Burning` status icon glyph |
@@ -370,7 +370,7 @@ Base unit 4 px. In `DA_UIMetrics`: `Space_0_5` = 2, `Space_1` = 4, `Space_2` = 8
 | State-duration line | 0.80 | fixed |
 | Off-screen edge indicators | 0.70 | fixed (enemy ultimate arrow 1.0) |
 | Disabled controls | Text uses `text.disabled`. Never lower opacity instead | — |
-| Untargetable character's overhead stack | 0.30 | fixed (§4.4) |
+| Untouchable character's overhead stack | 0.30 | fixed (§4.4) |
 
 **Measuring HUD panel text:** set the panel to its minimum opacity (0.70) and measure over `ref.floorMax` `#8C8C8C`. At that setting, `text.primary` is 9.0:1 and `text.secondary` is 4.9:1. Lowering opacity must never push essential information below **3:1** (graphics) or **4.5:1** (text).
 
@@ -380,7 +380,7 @@ Base unit 4 px. In `DA_UIMetrics`: `Space_0_5` = 2, `Space_1` = 4, `Space_2` = 8
 - Author at 256 px. Display at 64 px, or 72 px for the ultimate.
 - Each set uses one light direction (top-left), one rendering style and a limited palette per champion.
 - Before approval, an icon must pass three tests: **greyscale**, **Gaussian blur 2 px** and **32 px**.
-- Show the ability type with frame or corner marks, never with colour alone. For example, an EX variant gets an 8 px corner chevron.
+- Show the ability type with frame or corner marks, never with colour alone. For example, the energy spell (R) carries its cost arc (§4.1). Gen has no EX variants (CharacterGuidelines §2).
 
 **Status icons** (Art Bible §9: "status icons repeat the §7.6 shape motifs, so the world and the HUD speak one vocabulary"):
 - 32 px single-colour solid glyphs on a `bg.panelRaised` tile.
@@ -506,7 +506,7 @@ x=0                                                                   x=1920
 
 ### 4.1 Ability bar and slots
 
-**Slot order:** LMB, RMB, Space, Ability 1, Ability 2, Ability 3, Ultimate (F). These map to `InputTag.Ability.Primary / Secondary / Mobility / 1 / 2 / 3 / Ultimate`.
+**Slot order:** LMB, RMB, Space, Q, E, R, F, the kit from CharacterGuidelines §2: basic attack, signature skillshot, mobility, defensive tool, utility, energy spell (costs 25) and ultimate (costs 100). They map to `InputTag.Ability.Primary / Secondary / Mobility / Defensive / Utility / Energy / Ultimate`. Primary, Secondary, Mobility and Ultimate exist in code; the other three names are proposals.
 
 **Geometry:**
 
@@ -517,7 +517,7 @@ x=0                                                                   x=1920
 | Ability row width | 6×64 + 72 + 6×12 = **528 px** |
 | Key label | `TS_Label` (20 px), centred **above** the slot, 2 px gap |
 | Label source | The live Enhanced Input mapping, resolved through `DA_UIKeyGlyphs`. Mouse buttons use glyphs. Space shows "SPC" (tunable). Never hard-coded |
-| Energy-cost arc | Under the slot: a 120° arc, 4 px thick, 4 segments (one per 25% energy) with 4° gaps. **Shown only while Shift (EX mode) is held, plus always on the ultimate slot.** Funded segments use `energy.charging`. Unfunded segments are a 1 px hollow outline in `text.secondary`. A fully funded ultimate arc uses `energy.full` |
+| Energy-cost arc | Under the slot: a 120° arc, 4 px thick, 4 segments (one per 25% energy) with 4° gaps. **Always shown on the two energy slots, and only there:** R shows one segment (its 25 cost), F shows all four (100). Funded segments use `energy.charging`. Unfunded segments are a 1 px hollow outline in `text.secondary`. A fully funded ultimate arc uses `energy.full` |
 | Slot rim | 1 px `line.bronze`. Ultimate: 2 px ring in `energy.full` at α 0.5 |
 
 **States.** These are mutually exclusive except where marked "+".
@@ -527,11 +527,10 @@ x=0                                                                   x=1920
 | **Ready** | Icon at full brightness | — | — |
 | **Activating** (late-commit abilities only: between `TryActivateAbility` and `CommitAbility`) | Icon at 60% brightness, no number | Brightness | Within 100 ms of the press, client-side |
 | **Cooldown** | `cooldown.overlay` radial sweep: a dark wedge that starts at 12 o'clock and shrinks **clockwise**, the same direction everywhere. Icon desaturated 70% | **Mandatory:** a number in `TS_Cooldown`, centred and outlined, plus the desaturation. Whole seconds rounded up while ≥ 1 s; one decimal under 1 s ("0.6"). The number is hidden for total cooldowns under 2 s (tunable); desaturation and sweep remain | Sweep is linear (real time) |
-| **Not enough energy** | `cooldown.noEnergy` wash; icon brightness 55% | Brightness drop. While Shift is held, unfunded arc segments show hollow | None |
-| **Locked** (`State.Stunned`, future `State.Silenced`) | `cooldown.locked` hatch | 20 px lock glyph, centred | None |
+| **Not enough energy** | `cooldown.noEnergy` wash; icon brightness 55% | Brightness drop, plus hollow unfunded arc segments (R and F) | None |
+| **Locked** (CC that blocks casting: `State.Stunned`, `State.Incapacitated`, `State.Feared`, `State.Silenced`; CharacterGuidelines §3.2. Root does not lock) | `cooldown.locked` hatch | 20 px lock glyph, centred | None |
 | **Charges** + | — | Up to 3 pips (6 px circles, `text.primary`) on the top-right of the rim. 4 or more charges show a number in `TS_Label`. While at least 1 charge is left, the icon stays bright and only the sweep shows the next charge | — |
 | **Active / recast window** + | 2 px `text.primary` ring on the rim that drains **counter-clockwise**. The interior stays bright | Ring on the rim vs sweep on the interior: the two never look alike | Ring drains linearly |
-| **EX variant** (while Shift is held) | Icon and tooltip swap to the EX version; cost arcs appear | 8 px corner chevron | 100 ms cross-fade |
 | **Ultimate ready** | Ring goes from α 0.5 to `energy.full` at α 1.0. The cost arc is complete. **No glow** | Ring opacity and the complete arc | One 300 ms pulse on becoming ready, plus a sound. **No idle loop** |
 
 **Ready flash:**
@@ -609,7 +608,7 @@ Rows, from top to bottom. Every row is **always reserved**: hide content with `H
   - Positions snap to whole physical px (§8.5). **No smoothing or lag.**
 - **Z-order when stacks overlap:** allies at the bottom, enemies above them, self on top. **No automatic declutter or offset.**
 - **No HP numbers overhead.** Numbers appear only in the vitals block. The prototype's overhead HP number is removed.
-- **Untargetable** (`State.Untargetable`): the whole stack drops to α 0.30. We dim instead of hiding so that a moving character can still be tracked. `State.Leaping` dims only if the ability also grants `State.Untargetable`.
+- **Untouchable** (`State.Untouchable`, ≤ 0.5 s, CharacterGuidelines §3.5): the whole stack drops to α 0.30. We dim instead of hiding so that a moving character can still be tracked. `State.Leaping` dims only if the ability also grants `State.Untouchable`.
 - **Enemy ultimate-ready marker:** a 6 px `energy.full` dot at the right end of the energy bar while that champion's energy is at 100%. It can be toggled in settings.
 - **Off-screen characters:** the stack is hidden and an edge indicator appears instead (§4.14).
 - **Dead characters:** the stack is hidden (`State.Dead`).
@@ -642,18 +641,20 @@ Rows, from top to bottom. Every row is **always reserved**: hide content with `H
 
 **Overhead (all characters):**
 - One state word at a time, chosen by priority.
-- Words are short CAPS: STUNNED, SILENCED, ROOTED, COUNTER, SLOWED, HASTE. The word is the non-colour cue.
+- Words are short CAPS: STUNNED, FEARED, SILENCED, ROOTED, COUNTER, SLOWED, WEAKENED, HASTE. The word is the non-colour cue.
 
 | Priority | Category | Tags (create missing ones under `State.*`) | Word |
 |---|---|---|---|
-| 1 | Hard CC | `State.Stunned` (exists), `State.Incapacitated`, `State.Petrified` | STUNNED… |
+| 1 | Hard CC | `State.Stunned` (exists), `State.Incapacitated` (ends on any damage), `State.Feared` (CharacterGuidelines §3.2) | STUNNED (stun and incapacitate), FEARED |
 | 2 | Silence | `State.Silenced` | SILENCED |
 | 3 | Root | `State.Rooted` | ROOTED |
-| 4 | Counter or parry stance | `State.Counter` | COUNTER |
+| 4 | Counter or parry stance | `State.Countering` | COUNTER |
 | 5 | Snare or slow | `State.Slowed` (driven by the move-speed GE) | SLOWED |
-| 6 | Notable buffs | `State.Buff.*` | e.g. HASTE |
-| — | Airborne (leap) | `State.Leaping` (exists) | No word. Dims only with `State.Untargetable` |
-| — | Immune or untargetable | `State.Untargetable` | No word. The stack dims (§4.4) |
+| 6 | Weaken (−25 % damage dealt) | `State.Weakened` | WEAKENED |
+| 7 | Notable buffs | `State.Buff.*` | e.g. HASTE |
+| — | Airborne (leap) | `State.Leaping` (exists) | No word. Dims only with `State.Untouchable` |
+| — | Untouchable | `State.Untouchable` | No word. The stack dims (§4.4) |
+| — | CC immunity (Resilience) | `State.CCImmune` (CharacterGuidelines §3.3) | IMMUNE for the first 1 s, then no word; the world halo (Art Bible §7.6) shows the rest of the 1.5 s |
 
 - **Decision (Gen):** Counter sits under hard CC, silence and root, because imposed control matters more to the reader than a chosen stance.
 - The table lives in `DA_UIStatusPriority` (Gameplay Tag → priority, label `FText`, category, icon), not in widget code.
@@ -727,7 +728,7 @@ Rows, from top to bottom. Every row is **always reserved**: hide content with `H
 
 ### 4.10 Kill feed (spectator or opt-in only)
 
-In a 3v3, a death is already shown by the skull on the team frame, the overhead stack disappearing and the death time-slow. Battlerite's feed is undocumented, so the feed is **not** part of the default player HUD.
+In a 3v3, a death is already shown by the skull on the team frame, the overhead stack disappearing and the death flash and puff (Art Bible §7.9). Gen has no death time-slow: world time dilation is ruled out (Art Bible §8). Battlerite's feed is undocumented, so the feed is **not** part of the default player HUD.
 
 - **Availability:** always on in spectator mode. For players, "Kill feed" is a setting, **off by default**.
 - **Position:** top-right, under the enemy frames: x 1588, y 196, 300 px wide. This clears the clear zone at both 16:9 and 16:10.
@@ -746,7 +747,7 @@ In a 3v3, a death is already shown by the skull on the team frame, the overhead 
 | Strip | 640 × 64 px `bg.panel`, fixed α 0.90 | 640 × 96 px `bg.panel`, fixed α 0.90 |
 | Content | `TS_Banner` 48 px: "ROUND WON" (`team.ally`, 6.7:1), "ROUND LOST" (`team.enemy`, 4.0:1; large text needs ≥ 3:1), "SUDDEN DEATH" (`text.primary`). The banner strip is fixed at α 0.90 and ignores the panel-opacity setting: at α 0.70 the vermillion would drop to 2.9:1. Ratios are measured over `ref.floorMax` | `TS_Label` "ROUND 2" above a `TS_Banner` countdown 3 → 2 → 1, in `text.primary` |
 | Timing | Fade in over 200 ms with an 8 px rise, hold **1200 ms**, fade out over 150 ms (1.55 s) | 1000 ms per digit. Digits cut with a 100 ms cross-fade. The strip fades in during the first 200 ms and fades out over the last 150 ms. **Total ≤ 3 s** |
-| Also | Paired with the round sound cue and the existing death time-slow | Enemy loadout icons fade into the enemy team frames (200 ms) during the intro |
+| Also | Paired with the round sound cue and the cosmetic last-kill hit-stop (Art Bible §7.9, ≤ 120 ms) | Enemy loadout icons fade into the enemy team frames (200 ms) during the intro |
 
 - Neither sequence exceeds 3 s.
 - Neither is a full-screen panel. Rewards and stats live on the post-match screen only.
@@ -925,8 +926,8 @@ While the local player is dead (`UI.State.Dead` → `UI.State.Spectating`):
 
 ### 5.4 Flash and pulse limits
 
-- No element may flash or pulse faster than **3 Hz**. Default pulses are 1 Hz.
-- No flashing element may cover more than **20%** of the screen.
+- Flashes follow the **Art Bible §9.1** photosensitivity rule (WCAG 2.3.1): at most **3 flashes in any 1 s** within any **341 × 256 px** box at 1080p, unless the flash covers ≤ 25 % of that box (≈ 21 800 px, about 1 % of the screen). UI flashes count **together** with world impact flashes, and the Art Bible flash governor applies to both. A 64 px slot-rim flash is well under the area limit; a full-width banner must fade, never flash.
+- No element may pulse faster than **3 Hz**. Default pulses are 1 Hz.
 - **No saturated full-screen red flashes.** An optional damage vignette is edge-only, at most α 0.15, lasts 300 ms, and can be turned off ("Full-screen effects" 0%).
 - Use eased fades, never hard on/off blinks.
 - No flashing sequence may last longer than 5 s.
@@ -997,7 +998,7 @@ While the local player is dead (`UI.State.Dead` → `UI.State.Spectating`):
 | Minimum graphic sizes | Bars ≥ 4 px tall, gaps ≥ 2 px, lines ≥ 1 physical px |
 | High-contrast mode | ≥ 7:1 for text and for every bar fill, outline and glyph against its immediate background, except the documented exemptions (§2.3) |
 | Colour | No essential information by colour alone (§6, Art Bible §4.3). In every preset, ally vs enemy is ≥ 1.5:1 contrast and ΔE2000 ≥ 20, and every saturated UI hue is ≥ 30° (OKLCH) from each team hue |
-| Flashes | ≤ 3 Hz, ≤ 20% of the screen, no saturated full-screen red |
+| Flashes | ≤ 3 flashes in any 1 s per 341 × 256 px box (Art Bible §9.1), pulses ≤ 3 Hz, no saturated red flashes |
 | Text blocks | Sentence case, left-aligned, 1.5× line height, ≤ 80 characters per line |
 | Captions | ≤ 40 characters per line, ≤ 2 lines, a speaker prefix, backing opacity 0–100% (default 80%; text keeps its outline at any opacity). **On by default** for announcer events |
 | Critical audio cues | Each has a visual equivalent: the edge arrow for off-screen enemy ultimate wind-ups (§4.14), a caption for objective spawns |
@@ -1347,7 +1348,7 @@ Copy this into the PR description and tick each item.
 - [ ] **Overhead clump test:** all 6 characters stacked within one screen area. Z-order is correct (self on top) and nothing shifts while casting.
 
 **Motion and audio**
-- [ ] **Motion:** durations, classes and easing match §5.1–5.2. Nothing from §5.3 animates. Pulses ≤ 3 Hz. Reduce-motion and flash-intensity settings are respected.
+- [ ] **Motion:** durations, classes and easing match §5.1–5.2. Nothing from §5.3 animates. Pulses ≤ 3 Hz; flashes within the Art Bible §9.1 limit. Reduce-motion and flash-intensity settings are respected.
 - [ ] **Audio:** key events trigger sound and visual in the same frame, and every sound has a visual. UI sounds use `SC_UI`.
 
 **Engineering**
