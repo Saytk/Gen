@@ -17,3 +17,5 @@ Plugins/*/Intermediate/
 UpgradeLog.htm
 # Claude local
 .claude/settings.local.json
+# Python
+__pycache__/
