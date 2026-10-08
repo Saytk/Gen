@@ -5,6 +5,10 @@
 > 2026-10-08 decision: **max 3 flames per spell, 0.3 s per flame**, Hearth pool 5), `Docs/ArtBible.md` v0.7.1,
 > `Docs/UI_Guidelines.md` and `Docs/Design/CharacterGuidelines.md`.
 > Implementation plan: `Docs/Design/Champions/Curffe/Plan-Visuals.md`.
+> **User decisions 2026-10-08** (recorded in §7 and §8): F2 Flame Pillar size, exception accepted (Art Bible §7.2
+> [TASTE #4]); F22 Living Flame, Curffe-only flame form; Q3 Meteor Leap landing circle visible to enemies during the
+> flight; go-ahead given for the hot shared files (`M_VFX_Telegraph`, `M_VFX_Erode`, `MPC_TeamColours`,
+> `M_VFX_StatusShape`, Effect Types, `T_VFX_*`).
 
 **Precedence (Art Bible header):** performance budget (§3.0) > readability tests (§10) > [TASTE] entries (§13) >
 everything else, including this document. Every conflict found while writing this spec is **flagged** (marked
@@ -75,6 +79,7 @@ and matches the replicated feed montage, which is server-timed too.
 | **Aim indicator** | The caster only (local, never replicated) | The active ability computes its own geometry from its own gameplay values each frame (footprint = hitbox by construction, Art Bible §7.1 rule 1) | RMB line + splash cap; E range arc (its circle is Plan 2's area preview); Space range arc + landing circle + ring stubs; LMB/Pyroblast line **only if the player turns on an option** (⚑ F11) |
 | **Cast telegraph** (self-centred) | **Everyone**, in their relation colour | Replicated `FGenCastInfo` (owner: predicted) + the ability's own radius | F Combustion (during its 0.5 s cast); R Living Flame (during its 0.5 s form) |
 | **Delayed-area telegraph** | Everyone | `AGenGroundArea` (Plan 2) | E Flame Pillar after release (0.8 s) |
+| **Flight telegraph** (decision 2026-10-08) | Everyone, in their relation colour | The replicated landing point and the ability's `LandingRadius` (new, see Plan-Visuals "Open points") | Space Meteor Leap's landing circle during the flight (~0.45 s, ⚑ F5) |
 
 **Rendering (all three).** `M_VFX_Telegraph`, unlit translucent, on flat plane meshes 2 cm above the floor (the
 "unlit translucent projected mesh" option of Art Bible §7.5, as `AGenGroundArea` already does). No lit decals. Border
@@ -85,8 +90,8 @@ MPC through `RelationIndex` (1 self, 2 ally, 3 enemy, 4 neutral).
 
 `M_VFX_Telegraph` gets one scalar, **`Shape`**, and two sizes in centimetres, **`SizeX` / `SizeY`** (half-extents of the
 plane), so every border is computed in world units and stays 2 px wide whatever the plane's stretch. One master, one
-uniform branch, no static switch (Art Bible §3.2: keep permutations low). This edits a hot shared file: **needs the
-user's go-ahead** (Plan-Visuals Task E1).
+uniform branch, no static switch (Art Bible §3.2: keep permutations low). This edits a hot shared file: **go-ahead
+given by the user on 2026-10-08** (Plan-Visuals Task E1).
 
 | `Shape` | Name | Geometry | Vocabulary (Art Bible §7.5) |
 |---|---|---|---|
@@ -117,7 +122,7 @@ interrupt, death, or when another spell replaces the cast. Never shown on the de
 - **Material: `M_VFX_Erode`** (Art Bible §7.4): painted stepped shape in R, panning noise in G, erosion threshold from a
   Niagara Dynamic Parameter **stepped at 12 fps per particle age** (`floor(Age*12)/12`, never on global `Time`), a hard
   `SmoothStep` edge, a rim band. **Colour bands from three vector parameters** (core/body/edge) instead of a Curve
-  Atlas for v0 (⚑ F10). It does not exist yet: creating it is a hot shared master, **user go-ahead** (Task E1).
+  Atlas for v0 (⚑ F10). It is a hot shared master: **go-ahead given on 2026-10-08** (Task E1).
 - **Three layers** (§7.1): primary = hitbox-defining core or border (crisp, highest value range); secondary = trails and
   wisps at 50–70 % opacity; tertiary = sparks and embers, brief, desaturated.
 - **Niagara, shader-first.** Mesh + erode shader for rings, columns and shockwaves; small flipbooks only for smoke puffs;
@@ -134,7 +139,7 @@ interrupt, death, or when another spell replaces the cast. Never shown on the de
   Fireball stream** (it would hold the cap permanently).
 - **Impacts.** Frame 1 = full-size flash at the **exact** hitbox radius, unstepped; 2–4 frames at peak; ≤ 50 % opacity
   and saturation within ~0.2 s; linger within the tier cap. Big areas flash their **border ring and a column, not the
-  whole disc at full value** (⚑ F2).
+  whole disc at full value** (⚑ F2: Flame Pillar's size exception accepted on 2026-10-08, ring first).
 - **Per-viewer.** An ally's non-threatening effects should render at 50–70 % opacity and saturation on other clients
   (§7.2). Every clean route needs a per-instance input on the Niagara system (a user parameter, blocked by issue #464,
   or custom primitive data read by `M_VFX_Erode`, unverified for Niagara renderers in 5.8.3). **v0 ships ally effects at
@@ -198,10 +203,10 @@ self-centred cast telegraph of Living Flame. Combustion's 0.5 s is a normal cast
 | **LMB Fireball** | 2 (Filler) | None by default; optional lane (setting) | Hand ember, projectile + ground marker | Hand ember 0.35 s · head + 2-layer trail · small impact ≤ 0.2 s | Charge `L/0.35` → Cast (rate 1) |
 | **Pyroblast** (F active) | 4 (Skillshot) proposed ⚑ F12 | Same as LMB | Bigger hand ember, bigger head, ground marker | Larger head · 1.2 m splash impact | Reuses Fireball montages |
 | **RMB Great Fireball** | 5 / 5 / 7 / 8 at N = 0–3 | Lane (width = hitbox × scale(N)) + splash cap from N = 2 + spokes at N = 3 | Feed pose, flames leaving, hand charge growing per threshold, cast bar ticks; projectile size | Feed pops · charge · core scaling 1 → max · splash flash 1.5 m (N ≥ 2) · light (N ≥ 2) | Feed (3 × 0.3 s) → Charge `L/0.5` → Cast |
-| **Space Meteor Leap** | 4 / 5 / 5 / 6 | Range arc 7 m + landing circle 1.5 m + N ring stubs | Crouch-gather pose, flames to the feet, leap arc + trail (v1: fed flames orbiting tight in flight) | Gather pops · take-off burst · trail · landing ring 1.5 m · ring Fireballs | Feed → Take-off `L/0.1` → Air `L/0.45` (root motion × 0) → Land |
+| **Space Meteor Leap** | 4 / 5 / 5 / 6 | Range arc 7 m + landing circle 1.5 m + N ring stubs | Crouch-gather pose, flames to the feet, leap arc + trail, **landing circle 1.5 m during the flight** (decision 2026-10-08) (v1: fed flames orbiting tight in flight) | Gather pops · take-off burst · trail · landing ring 1.5 m · ring Fireballs | Feed → Take-off `L/0.1` → Air `L/0.45` (root motion × 0) → Land |
 | **Q Backfire** | 7 on trigger | None (no aim) | Guard pose, `State.Countering` band eroding with the window, overhead channel drain | Raise flash 0.1 s · band · block burst + 2 flames flying into the orbit | Raise `L/0.1` → Guard `L/1.2` (stops with the window) |
 | **E Flame Pillar** | 7 (N 0–1), 8 (N 2–3) | Range arc 9 m + Plan 2 area preview (radius 2.0 / 2.5 / 3.0 / 3.5 m, snaps) | Feed pose; after release the 0.8 s telegraph (enemy stripes) with timer fill; audio wind-up | Feed pops · telegraph · column + border flash at r(N) · stun status | Feed → Charge `L/0.4` → Cast (point/slam) |
-| **R Living Flame** | 7 proposed ⚑ F3 | Cast telegraph (self colour) | Ghost dither (§7.6) + Hearth flames converging; **2.5 m self-centred telegraph 0.5 s** with timer fill; channel drain | Ignite flash · form · ring shockwave at 2.5 m · refill stagger · haste embers | Ignite `L/0.1` → Form `L/0.5` → Burst (rate 1) |
+| **R Living Flame** | 7 proposed ⚑ F3 | Cast telegraph (self colour) | Ghost dither (§7.6) + **Curffe fire layer** (decision 2026-10-08) + Hearth flames converging; **2.5 m self-centred telegraph 0.5 s** with timer fill; channel drain | Ignite flash · form · ring shockwave at 2.5 m · refill stagger · haste embers | Ignite `L/0.1` → Form `L/0.5` → Burst (rate 1) |
 | **F Combustion** | 9–10 (Ultimate) | Cast telegraph (self colour) | **3 m self-centred telegraph during the 0.5 s cast**, audio wind-up, off-screen edge arrow (UI §4.14) | Build-up · eruption flash at 3 m · ablaze body + enlarged orbit 5 s | Charge `L/0.5` → Erupt (rate 1) |
 | **Hearth** | Custom state | — | 5 fixed sockets, lit = flames; dim embers when empty; flights into spells | Socket pops on gain, flights on feed, refill stagger, ablaze size | — |
 
@@ -305,8 +310,12 @@ take-off.
 **Others see:** the crouch-gather pose and the flames leaving the orbit **toward the feet**; then the leap arc with its
 trail (§7.1 rule 7). **[v1, not in v0]** In flight, the fed flames could orbit tight around the body so an opponent
 counts the incoming ring Fireballs before they burst; the flames are spent at take-off, so this needs the fed count
-carried by the trail cue (`RawMagnitude`) into a looping cue actor. **No landing marker for enemies** by default (keeps the floor clean; a
-leap is visible movement, CharacterGuidelines §3.6); ⚑ F5 and open question Q3.
+carried by the trail cue (`RawMagnitude`) into a looping cue actor. **Landing circle for everyone during the flight**
+(user decision 2026-10-08, open question Q3 closed): from the aim lock (end of the take-off) until the landing, every
+client draws the 1.5 m landing disc (`LandingRadius`) at the locked landing point, in its relation colour (enemy:
+fill 0.15 + static stripes, sorted on top), with the timer fill growing to the edge over `LeapDuration`. It lasts
+~0.45 s, under the 0.6 s delayed-area minimum: recorded as an exception (⚑ F5, Art Bible §12 Q42). It needs a
+replicated landing point (Plan-Visuals "Open points").
 
 **VFX beats.**
 
@@ -379,7 +388,7 @@ radius r(N), timer fill growing from the centre, enemy stripes, plus the **audio
 |---|---|---|---|
 | Feed | `GCN_Curffe_FeedThreshold` + Hearth flights to the hand | As RMB | — |
 | Telegraph (0.8 s) | `BP_Area_FlamePillar` (Plan 2) on `M_VFX_Telegraph` | Unchanged | — |
-| Impact | `NS_Curffe_PillarImpact` (create; replaces `NS_ST_GreatFireballImpact` on `BP_Area_FlamePillar`), scaled r(N) / 150 | Frame 1: **border ring flash at exactly r(N)** + a fire **column** (tube mesh, erode, 12 fps) of radius ~0.4 · r [GEN] rising 2.5 m; disc fill flash ≤ 50 % opacity for 2 frames; erodes out by 0.5 s; one shadowless light ≤ 0.2 s (Medium+) | CC: **area ⚑ F2**, ≤ 0.5 s, ≤ 150 particles |
+| Impact | `NS_Curffe_PillarImpact` (create; replaces `NS_ST_GreatFireballImpact` on `BP_Area_FlamePillar`), scaled r(N) / 150 | Frame 1: **border ring flash at exactly r(N)** + a fire **column** (tube mesh, erode, 12 fps) of radius ~0.4 · r [GEN] rising 2.5 m; disc fill flash ≤ 50 % opacity for 2 frames; erodes out by 0.5 s; one shadowless light ≤ 0.2 s (Medium+) | CC: area exception accepted (⚑ F2, Art Bible §7.2 [TASTE #4]), ≤ 0.5 s, ≤ 150 particles |
 | Stun | `State.Stunned` (shared library: stars/ring above the head, `#FFE07A`) | Plan 2 placeholder → shared GCN later | — |
 
 **Animation.**
@@ -403,7 +412,7 @@ The overhead row shows the form as a channel (drains in 0.5 s).
 | Beat | Asset | Technique | Caps |
 |---|---|---|---|
 | Ignite (0.1 s) | cue on the Form montage's frame 0 | Chest flash, pale core | Filler |
-| Form (0.5 s) | `State.Untouchable` ghost dither (Plan 3, `M_VFX_GhostDither`) **+ the Hearth flames converging into the body and spinning fast** (§5) | No body overlay: the outline and the team ring stay (§7.6). "Living fire" comes from the Hearth, not from hiding the body ⚑ F22 | Status, ≤ in-flight limits |
+| Form (0.5 s) | `State.Untouchable` ghost dither (Plan 3, `M_VFX_GhostDither`) **+ a Curffe-only fire layer** `NS_Curffe_LivingFlameForm` (create; stepped 12 fps flames over the dithered body, attached to `spine_03`, set on `BP_Curffe`'s status visual for `State.Untouchable` through V9's `System`, so other champions keep the generic ghost) **+ the Hearth flames converging into the body and spinning fast** (§5) | Decision 2026-10-08 (⚑ F22): Curffe "becomes living fire". The outline and the team ring stay (§7.6); the fire layer is body-only, low opacity over the dither, ≤ in-flight limits, no team hue | Status, ≤ 40 particles |
 | Burst | `NS_Curffe_LivingFlameBurst` (create) on `BP_Area_LivingFlame` (Plan 3's burst area class), scaled 2.5 / 1.5 | Frame-1 **ring shockwave at exactly 2.5 m** (mesh ring, not a filled disc), radial knockback streaks, erodes in 0.3 s | CC: ring area ≈ 3 % (band) ⚑ F3 |
 | Refill | Hearth: the 5 sockets light one after another, 50 ms apart | — | Small |
 | Haste 2 s | `NS_Curffe_HasteEmbers` (optional) on a status visual for the haste tag | Low trailing embers at the feet | ⚑ F20 (no §7.6 motif) |
@@ -448,7 +457,8 @@ cast below the ultimate band).
 
 | Element | Self | Ally | Enemy |
 |---|---|---|---|
-| Aim indicators (lane, cap, arcs, landing, stubs, pillar preview) | Yes | No | No |
+| Aim indicators (lane, cap, arcs, landing while aiming, stubs, pillar preview) | Yes | No | No |
+| Meteor Leap landing circle during the flight (decision 2026-10-08) | Self colour | Ally colour | Enemy colour + stripes, sorted on top |
 | Delayed telegraph (Pillar) | Self colour | Ally colour, fill 0.20 | Enemy colour, fill 0.15 + static stripes, sorted on top |
 | Self-centred cast telegraphs (Combustion, Living Flame) | Self colour | Ally colour | Enemy colour + stripes |
 | Hand charge, feed pose, Hearth, cast bar | Yes | Yes (50–70 % opacity for VFX) | Yes (full) |
@@ -507,11 +517,11 @@ cast below the ultimate band).
 
 | # | Conflict | With | Proposal (needs a decision where marked) |
 |---|---|---|---|
-| **F1** | Art Bible §7.2 lists Great Fireball as Skillshot at **0–2** flames and CC at **3–5**; §7.3 says a fed cast adds **0.2 s** per flame; §12 Q41 says "up to 1 s" of feeding | Spec 2026-10-08 (0–1 → Skillshot, 2–3 → CC; 0.3 s; feed ≤ 0.9 s) | Art Bible doc update by its owner (not a taste entry). This spec follows the Curffe spec |
-| **F2** | **Flame Pillar area vs the CC/burst cap (8 % of the screen).** r = 2.0 / 2.5 / 3.0 / 3.5 m → **7.5 / 11.8 / 17.0 / 23.1 %** | Art Bible §7.2: "If a designed hitbox alone exceeds its tier's area cap, flag it to design. Don't shrink the visual" | **Flagged to design.** Implementation that keeps readability: the frame-1 flash is the **border ring at exactly r** + a narrow column, the disc fill flashes at ≤ 50 % opacity for 2 frames; the telegraph fill (≤ 0.20) is not counted as effect area. Options for design: cap the radius at 3.0 m, move Pillar to the Ultimate-sized cap as an exception, or accept the ring-only flash. **Decision needed** |
+| **F1** | Art Bible §7.2 lists Great Fireball as Skillshot at **0–2** flames and CC at **3–5**; §7.3 says a fed cast adds **0.2 s** per flame; §12 Q41 says "up to 1 s" of feeding | Spec 2026-10-08 (0–1 → Skillshot, 2–3 → CC; 0.3 s; feed ≤ 0.9 s) | **Resolved 2026-10-08:** factual update of the Art Bible (§7.2, §7.3, §12 Q41; change log v0.8.1, not a taste entry). This spec follows the Curffe spec |
+| **F2** | **Flame Pillar area vs the CC/burst cap (8 % of the screen).** r = 2.0 / 2.5 / 3.0 / 3.5 m → **7.5 / 11.8 / 17.0 / 23.1 %** | Art Bible §7.2: "If a designed hitbox alone exceeds its tier's area cap, flag it to design. Don't shrink the visual" | **Flagged to design.** Implementation that keeps readability: the frame-1 flash is the **border ring at exactly r** + a narrow column, the disc fill flashes at ≤ 50 % opacity for 2 frames; the telegraph fill (≤ 0.20) is not counted as effect area. Options for design: cap the radius at 3.0 m, move Pillar to the Ultimate-sized cap as an exception, or accept the ring-only flash. **Decided 2026-10-08 (user): exception accepted.** The radius stays 2 m + 0.5 m per flame (max 3.5 m); the impact shows its **outer ring first** (frame-1 border ring at exactly r + column, disc fill ≤ 50 % for 2 frames). Recorded where the cap is defined: Art Bible §7.2 [TASTE #4], change log v0.8 |
 | **F3** | Living Flame has **no VisualWeight** in the spec; its 2.5 m ring is 11.8 % as a disc | §7.2, CharacterGuidelines §7 item 3 | Propose **CC/burst (7)** and a **ring-shaped** shockwave (band area ≈ 3 %). Spec update needed |
 | **F4** | Meteor Leap landing 1.5 m = 4.2 % > Skillshot cap 3 % | §7.2 | Ring-shaped landing shockwave (band ≈ 1.5 %), scorch at ≤ 30 % opacity. Flag to design |
-| **F5** | Telegraphs shorter than the 0.6 s delayed-area minimum: Living Flame form 0.5 s, Combustion cast 0.5 s; leap flight 0.45 s (no enemy marker) | CharacterGuidelines §3.1, Art Bible §7.5, §12 Q42 | Show them anyway (more information, not less). They are not "delayed areas" the rule was written for, but Q42 must record the exception |
+| **F5** | Telegraphs shorter than the 0.6 s delayed-area minimum: Living Flame form 0.5 s, Combustion cast 0.5 s; leap flight 0.45 s (landing circle shown to everyone, decision 2026-10-08) | CharacterGuidelines §3.1, Art Bible §7.5, §12 Q42 | Show them anyway (more information, not less). They are not "delayed areas" the rule was written for. **Exception recorded in Art Bible §12 Q42 on 2026-10-08** (factual update, change log v0.8.1) |
 | **F6** | Combustion's fast feeding: "telegraphs never drop below 0.5 s"; code clamps delayed areas to 0.6 s | Plan 3 Task 9 note | No conflict in practice (0.6 ≥ 0.5); Pillar's 0.8 s is unchanged |
 | **F7** | The caster's **range arc** is a near-white circle; the sudden-death boundary is a **dashed** near-white line (`world.boundary`) | UI §2.5 | Range arc is a **solid, partial** arc (±30° around the aim), α 0.45, caster-only: shape, extent and owner differ |
 | **F8** | **Knockback spokes** on the Great Fireball cap (N = 3) are a new shape; "never reuse a shape for another meaning" | Art Bible §7.5 vocabulary | Add "spokes = knockback" to the §7.5 vocabulary (Art Bible owner). Until then, spokes stay behind a material switch (`Shape` 4 unused = no spokes) |
@@ -528,7 +538,7 @@ cast below the ultimate band).
 | **F19** | Tag name `State.Ablaze` (Art Bible) vs `State.Curffe.Ablaze` (code) | §7.6 | Already flagged by Plan 3; unchanged |
 | **F20** | Living Flame haste has **no §7.6 status motif** | §7.6 | Propose `State.Hasted`: low trailing embers at the feet (neutral, shape cue). Art Bible addition |
 | **F21** | Dynamic lights | §7.8 cap 4 | Only three Curffe impact kinds use one, all ≤ 0.3 s; none on the Fireball stream |
-| **F22** | "Becomes living fire" vs the generic ghost dither | §7.6, Plan 3 open point | Keep the generic ghost; the living-fire read comes from the **Hearth converging and spinning** around the body, which is Curffe-specific without touching the body rule. **Decision needed** (Plan 3 already asks) |
+| **F22** | "Becomes living fire" vs the generic ghost dither | §7.6, Plan 3 open point | **Decided 2026-10-08 (user): Curffe-only flame form.** The generic ghost dither stays (the §7.6 `State.Untouchable` shape, outline and team ring kept) and Curffe adds his own fire layer over it (`NS_Curffe_LivingFlameForm`, §3.6), plus the Hearth converging and spinning |
 | **F23** | Backfire frontal vs omnidirectional | §7.6 (frontal arc), Plan 2 open point | Indicator follows the design decision (band now, ground arc if frontal) |
 | **F24** | Photosensitivity: Combustion eruption (17 % of the screen) + Pillar at 3.5 m in the same second | §9.1, §10 #15 | The flash governor handles overlaps; both big areas use ring-first flashes (F2); §10 #15 check in Task E9 |
 | **F25** | Ally effects at 50–70 % intensity (§7.2 per-viewer columns) not in v0 | §7.2 | Needs a per-instance Niagara input: a user parameter (wait for VibeUE #464, or add by hand in the Niagara editor) or custom primitive data (test on 5.8.3). Follow-up task, not blocking |
@@ -537,12 +547,16 @@ cast below the ultimate band).
 
 ## 8. Open questions
 
-1. **F2**: Flame Pillar at 3.5 m exceeds the CC area cap: accept the ring-first impact, cap the radius, or grant an exception?
+1. ~~**F2**: Flame Pillar at 3.5 m exceeds the CC area cap: accept the ring-first impact, cap the radius, or grant an exception?~~
+   **Decided 2026-10-08:** exception accepted, 2 m + 0.5 m per flame kept, ring-first impact (Art Bible §7.2 [TASTE #4]).
 2. **F10**: three colour parameters in `M_VFX_Erode` for v0, or a Curve Atlas now?
-3. Should **enemies see Meteor Leap's landing circle** during the 0.45 s flight (more forgiving, but a sub-0.6 s marker),
-   or only the arc and the trail (default)?
+3. ~~Should **enemies see Meteor Leap's landing circle** during the 0.45 s flight (more forgiving, but a sub-0.6 s marker),
+   or only the arc and the trail (default)?~~ **Decided 2026-10-08:** yes, visible to everyone during the flight (§3.3;
+   ⚑ F5 exception in Art Bible §12 Q42).
 4. **F8**: add "spokes = knockback" to the Art Bible §7.5 vocabulary?
 5. **F3 / F12**: VisualWeight for Living Flame (7?) and Pyroblast (4?) in the spec.
-6. **F22**: Living Flame's look: generic ghost + Hearth (default), or a Curffe-only flame layer?
+6. ~~**F22**: Living Flame's look: generic ghost + Hearth (default), or a Curffe-only flame layer?~~ **Decided
+   2026-10-08:** Curffe-only flame form (ghost dither + Curffe fire layer + Hearth, §3.6).
 7. Should the Backfire window show as a **channel bar to everyone** (default here), or stay a status band only?
 8. LMB aim lane as an option (off by default): acceptable, or never?
+9. ~~Go-ahead for the hot shared files (Plan-Visuals Task E1)?~~ **Given 2026-10-08.**
