@@ -159,7 +159,7 @@ interrupt, death, or when another spell replaces the cast. Never shown on the de
 
 | Phase | Montage property | When it starts | Play rate | Notes |
 |---|---|---|---|---|
-| **Feed** (feedable spells only) | `FeedMontage` (**new**) | Feed start (`StartFeeding`), **also fixes Art Bible §12 Q41**: opponents now see the gathering pose for the whole feed | `L_step / I_active` | Three sections `Feed_1`, `Feed_2`, `Feed_3`, each authored **one interval long** (0.30 s = 9 frames at 30 fps) and linked in order; `Feed_3` links to itself (safety only: feeding ends at the 3rd threshold at the latest). At rate 1 the section boundaries fall **exactly on the thresholds** (the feed ticks are scheduled from the feed start too), so each flame meets a slightly stronger pose without any section jump. Ablaze: `I` = 0.15 s, rate 2 |
+| **Feed** (feedable spells only) | `FeedMontage` (**new**) | Feed start (`StartFeeding`), **also fixes Art Bible §12 Q41**: opponents now see the gathering pose for the whole feed | `L_step / I_active` | Three sections `Feed_1`, `Feed_2`, `Feed_3`, each authored **one interval long** (0.30 s = 9 frames at 30 fps) and linked in order; `Feed_3` links to `Feed_3_Hold` (0.6 s, links to itself; safety only: feeding ends at the 3rd threshold at the latest), a seamless held loop of the `Feed_3` pose with a gentle heat sway (E7, 2026-10-08: the old `Feed_3` → `Feed_3` loop replayed the `Feed_2` → `Feed_3` move, a 52 cm hand pop each loop). At rate 1 the section boundaries fall **exactly on the thresholds** (the feed ticks are scheduled from the feed start too), so each flame meets a slightly stronger pose without any section jump. Ablaze: `I` = 0.15 s, rate 2 |
 | **Charge** (anticipation) | `ChargeMontage` | Cast start (`StartCasting`), after the feed | `L_charge / CastTime` | The held anticipation pose; **the cast flash is only its first 0.1–0.25 s** (§7.3). Ends exactly at the release, so the anticipation never outlasts the gameplay window (§8.3, Yasuo rule) |
 | **Cast** (release) | `CastMontage` | Release (`ReleaseCast`) | 1, or `L_cast / TargetDuration` | Action pose in **frames 0–2**, smear 1–2 frames, held follow-through ≤ 0.3–0.4 s. `TargetDuration` (virtual, 0 = rate 1) is set only where the release phase has a gameplay length: leap flight (`LeapDuration`), Backfire window (`CounterWindow`), Living Flame form (`FormDuration`) |
 | **Land / Finish** | `LandMontage` (Plan 2) / `FinishMontage` (Living Flame, new) | Landing / form end | 1 | Follow-through only |
@@ -360,7 +360,8 @@ drawn as a ground arc (Shape 2 at a larger radius, all viewers). ⚑ F23.
 | Melee knockback | knockback status trail on the attacker | — | — |
 
 **Animation.**
-- **Raise (Charge):** `AM_Backfire_Raise` (create, `UpperBody`): forearms snap up crossed in front of the chest, 3 frames →
+- **Raise (Charge):** `AM_Backfire_Raise` (create, `UpperBody`): forearms snap up crossed well in front of the chest (wrists ≈ 47–49 cm ahead of
+  `spine_05` and a little above it, elbows ≈ 45 cm apart, so the guard clears the head and torso from the −60° camera; E7), 3 frames →
   rate `L / 0.1`.
 - **Guard (Cast):** `AM_Backfire_Guard` (create): the guard pose, held with a slow heat sway; one section authored ≥ 1.2 s,
   rate = `L / CounterWindow`; **stops when the ability ends** (window over, another spell, stun):
@@ -418,7 +419,8 @@ The overhead row shows the form as a channel (drains in 0.5 s).
 | Haste 2 s | `NS_Curffe_HasteEmbers` (optional) on a status visual for the haste tag | Low trailing embers at the feet | ⚑ F20 (no §7.6 motif) |
 
 **Animation.**
-- **Ignite (Charge):** `AM_LivingFlame_Ignite` (create): arms pulled in, chin down, 3 frames → `L / 0.1`.
+- **Ignite (Charge):** `AM_LivingFlame_Ignite` (create): arms pulled down and back (hands behind the hips), chin down, 3 frames → `L / 0.1`
+  (E7: the old "hands at the chest" ignite read like the Combustion gather and the Backfire guard from above).
 - **Form (Cast):** `AM_LivingFlame_Form` (create, `UpperBody`): arms half-open, rising heat sway, held; rate =
   `L / FormDuration` (0.5 s). He can move.
 - **Burst (Finish):** `AM_LivingFlame_Burst` (create, `UpperBody`): arms thrown outward on frames 0–2, follow-through 0.3 s
@@ -444,7 +446,8 @@ cast below the ultimate band).
 | Pyroblasts | §3.1 | — | — |
 
 **Animation.**
-- **Charge:** `AM_Combustion_Charge` (create, `UpperBody`): arms crossed over the chest, shoulders hunched, rising; author
+- **Charge:** `AM_Combustion_Charge` (create, `UpperBody`): crouched spine, shoulders hunched, elbows out wide (≈ 78 cm apart), hands low and
+  apart cradling a sphere in front of the belly (E7: a wide, low top-down silhouette, distinct from the guard and the ignite); author
   15 frames → rate `L / 0.5`. Interrupted by hard CC: the task's cancel binding stops it (no cost, energy kept).
 - **Erupt (Cast):** `AM_Combustion_Erupt` (create): arms and chest thrown open on frames 0–2, head back, held 0.4 s.
   Placeholder: `MM_ChargedAttack` (charge part → Charge, release → Erupt).
