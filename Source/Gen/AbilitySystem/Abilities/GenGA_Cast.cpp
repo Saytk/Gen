@@ -303,20 +303,43 @@ void UGenGA_Cast::PlayFeedMontage()
 	const float Rate = GetPhaseRate(FeedMontage, StepLength, ActiveFeedInterval, GenMontageTiming::GetExpectedFeedRate(FeedInterval, ActiveFeedInterval));
 	PlayPhaseMontage(FeedMontage, Rate, /*bStopWhenAbilityEnds*/ true);
 
-	// Le geste ne dépasse pas le dernier seuil atteignable (2 flammes : Feed_2 tenue, jamais Feed_3 avant la charge).
-	// Par l'ASC : local sur cette machine et répliqué aux autres joueurs depuis le serveur
-	int32 FeedSectionCount = 0;
-	while (FeedMontage->GetSectionIndex(*FString::Printf(TEXT("Feed_%d"), FeedSectionCount + 1)) != INDEX_NONE)
-	{
-		++FeedSectionCount;
-	}
+	// Le geste ne dépasse pas le dernier seuil atteignable (2 flammes : jamais Feed_3 avant la charge). Feed_3, dernier
+	// seuil, enchaîne sur sa boucle de tenue (Feed_3_Hold, asset). Plus bas, Feed_N est FIGÉE à sa fin (vitesse 0) : la
+	// boucler sur elle-même rejouait le mouvement vers la pose (pop à chaque boucle, et une image avant la charge chez le
+	// lanceur, dont le geste a une image d'avance sur le minuteur des seuils). Plafond figé à l'appui : jamais relevé.
+	const UAnimMontage* Montage = FeedMontage;
+	const int32 FeedSectionCount = GenMontageTiming::CountFeedSections([Montage](FName Section) { return Montage->GetSectionIndex(Section) != INDEX_NONE; });
 	const int32 FeedCap = FMath::Min(MaxFeed, FeedSlotsAtPress);
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (ASC && ASC->GetCurrentMontage() == FeedMontage && GenMontageTiming::ShouldHoldFeedSection(FeedCap, FeedSectionCount))
+	if (!GenMontageTiming::ShouldHoldFeedSection(FeedCap, FeedSectionCount))
 	{
-		const FName HoldSection(*FString::Printf(TEXT("Feed_%d"), GenMontageTiming::GetFeedHoldSection(FeedCap, FeedSectionCount)));
-		ASC->CurrentMontageSetNextSectionName(HoldSection, HoldSection);
+		return;
 	}
+
+	const FGameplayAbilityActorInfo* Info = GetCurrentActorInfo();
+	const UAnimInstance* AnimInstance = Info ? Info->GetAnimInstance() : nullptr;
+	if (!AnimInstance || !AnimInstance->Montage_IsPlaying(FeedMontage))
+	{
+		return;
+	}
+
+	const int32 HoldIndex = FeedMontage->GetSectionIndex(GenMontageTiming::GetFeedSectionName(GenMontageTiming::GetFeedHoldSection(FeedCap, FeedSectionCount)));
+	float SectionStart = 0.f;
+	float SectionEnd = 0.f;
+	FeedMontage->GetSectionStartAndEndTime(HoldIndex, SectionStart, SectionEnd);
+	const float EffectiveRate = AnimInstance->Montage_GetPlayRate(FeedMontage) * FeedMontage->RateScale;
+	const float Delay = GenMontageTiming::GetFeedHoldDelay(SectionEnd, AnimInstance->Montage_GetPosition(FeedMontage), EffectiveRate, GetWorld()->GetDeltaSeconds());
+	if (Delay < 0.f)
+	{
+		return;
+	}
+
+	if (FeedHoldTask)
+	{
+		FeedHoldTask->EndTask();
+	}
+	FeedHoldTask = UAbilityTask_WaitDelay::WaitDelay(this, Delay);
+	FeedHoldTask->OnFinish.AddDynamic(this, &ThisClass::OnFeedHoldReached);
+	FeedHoldTask->ReadyForActivation();
 }
 
 void UGenGA_Cast::OnFeedMontageDelayFinished()
@@ -326,6 +349,33 @@ void UGenGA_Cast::OnFeedMontageDelayFinished()
 	{
 		PlayFeedMontage();
 	}
+}
+
+void UGenGA_Cast::OnFeedHoldReached()
+{
+	FeedHoldTask = nullptr;
+
+	// Nourrissage fini entre-temps : la charge (ou l'arrêt) a déjà remplacé le geste, rien à figer
+	const FGameplayAbilityActorInfo* Info = GetCurrentActorInfo();
+	UAnimInstance* AnimInstance = Info ? Info->GetAnimInstance() : nullptr;
+	if (!bIsFeeding || !FeedMontage || !AnimInstance || !AnimInstance->Montage_IsPlaying(FeedMontage))
+	{
+		return;
+	}
+
+	// Serveur (et hôte) : par l'ASC, vitesse et position répliquées (RepAnimMontageInfo), les autres joueurs figent leur
+	// copie là où elle en est. Client du lanceur : localement, sans RPC (le serveur fige la sienne à SA fin de section,
+	// ServerEstimateLag plus tard). La phase suivante est un nouveau montage, joué à sa propre vitesse.
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (Info->IsNetAuthority() && ASC && ASC->GetCurrentMontage() == FeedMontage)
+	{
+		ASC->CurrentMontageSetPlayRate(0.f);
+	}
+	else
+	{
+		AnimInstance->Montage_SetPlayRate(FeedMontage, 0.f);
+	}
+	GEN_CAST_LOG(Verbose, "Geste de nourrissage figé à %.3f (plafond %d)", AnimInstance->Montage_GetPosition(FeedMontage), FMath::Min(MaxFeed, FeedSlotsAtPress));
 }
 
 void UGenGA_Cast::StopFeedMontage()
@@ -494,7 +544,7 @@ void UGenGA_Cast::OnFeedSynced()
 	}
 	MarkFeedEnded(FedVisualCount);
 
-	// V3 : la dernière section du geste de nourrissage boucle (sécurité). Seul un montage du MÊME groupe de slots le
+	// V3 : le geste de nourrissage boucle sur sa tenue ou reste figé (plafond < 3). Seul un montage du MÊME groupe de slots le
 	// remplace en partant : sans ChargeMontage à suivre, ou avec une charge dans un autre groupe (revue V2-V4, I3),
 	// on l'arrête explicitement, sinon il continuerait jusqu'au lancer ou à la fin du sort
 	if (FeedMontage)
@@ -533,6 +583,11 @@ void UGenGA_Cast::EndFeedTasks()
 	{
 		FeedMontageDelayTask->EndTask();
 		FeedMontageDelayTask = nullptr;
+	}
+	if (FeedHoldTask)
+	{
+		FeedHoldTask->EndTask();
+		FeedHoldTask = nullptr;
 	}
 }
 

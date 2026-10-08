@@ -73,17 +73,75 @@ namespace GenMontageTiming
 	 * Section de nourrissage à tenir (Feed_N, 1-based) : celle du dernier seuil atteignable, FeedCap = min(MaxFeed,
 	 * unités disponibles à l'appui). Le geste ne dépasse jamais ce seuil (sinon le lanceur montre Feed_3 avec 2
 	 * flammes, le temps que la charge démarre). 0 si le montage n'a pas de section Feed_N ou rien à nourrir.
+	 * Le plafond est figé à l'appui (une flamme régénérée pendant l'appui ne s'ajoute pas, UGenGA_Cast::StartFeeding) :
+	 * la section tenue ne change jamais pendant le nourrissage.
 	 */
 	inline int32 GetFeedHoldSection(int32 FeedCap, int32 FeedSectionCount)
 	{
 		return FeedCap > 0 && FeedSectionCount > 0 ? FMath::Min(FeedCap, FeedSectionCount) : 0;
 	}
 
-	/** Faut-il boucler la section tenue sur elle-même ? Seulement si elle n'est pas déjà la dernière (qui boucle). */
+	/**
+	 * Faut-il figer le geste (vitesse 0) à la fin de la section tenue ? Seulement si elle n'est pas la dernière : la
+	 * dernière (Feed_3) enchaîne sur la boucle de tenue de l'asset (Feed_3_Hold), sans pop. Boucler Feed_1 ou Feed_2 sur
+	 * elle-même rejouait le mouvement vers la pose à chaque boucle (pop visible).
+	 */
 	inline bool ShouldHoldFeedSection(int32 FeedCap, int32 FeedSectionCount)
 	{
 		const int32 Hold = GetFeedHoldSection(FeedCap, FeedSectionCount);
 		return Hold > 0 && Hold < FeedSectionCount;
+	}
+
+	/** Section du seuil Threshold (1-based) du montage de nourrissage : Feed_<Threshold>. */
+	inline FName GetFeedSectionName(int32 Threshold)
+	{
+		return FName(*FString::Printf(TEXT("Feed_%d"), Threshold));
+	}
+
+	/** Borne du comptage des sections de seuil (montage mal formé). */
+	inline constexpr int32 MaxFeedSections = 16;
+
+	/**
+	 * Nombre de sections de seuil Feed_1..Feed_N consécutives ; HasSection(FName) dit si le montage a la section. Les
+	 * sections annexes (Feed_3_Hold, boucle de tenue de l'asset) ne sont pas des seuils et ne comptent pas.
+	 */
+	template <typename FHasSection>
+	int32 CountFeedSections(FHasSection&& HasSection)
+	{
+		int32 Count = 0;
+		while (Count < MaxFeedSections && HasSection(GetFeedSectionName(Count + 1)))
+		{
+			++Count;
+		}
+		return Count;
+	}
+
+	/**
+	 * Images d'avance du gel : le minuteur part après la mise à jour de l'animation de son image, et le geste du client du
+	 * lanceur, joué avant cette mise à jour, a une image d'avance sur le minuteur. Sans cette marge, le geste a déjà
+	 * franchi la fin de la section quand il est figé.
+	 */
+	inline constexpr float FeedHoldFrameMargin = 2.f;
+
+	/**
+	 * Délai (s) avant de figer le geste de nourrissage à la fin de la section tenue (SectionEnd, temps du montage), depuis
+	 * Position, à EffectiveRate (vitesse de l'instance x RateScale) : temps restant moins FeedHoldFrameMargin images
+	 * (FrameTime), marge au plus la moitié du temps restant. 0 si la fin est déjà atteinte (figer tout de suite), -1 si le
+	 * geste n'avance pas (rien à figer).
+	 */
+	inline float GetFeedHoldDelay(float SectionEnd, float Position, float EffectiveRate, float FrameTime)
+	{
+		if (EffectiveRate <= KINDA_SMALL_NUMBER)
+		{
+			return -1.f;
+		}
+		const float Remaining = (SectionEnd - Position) / EffectiveRate;
+		if (Remaining <= 0.f)
+		{
+			return 0.f;
+		}
+		const float Margin = FMath::Min(FeedHoldFrameMargin * FMath::Max(FrameTime, 0.f), 0.5f * Remaining);
+		return Remaining - Margin;
 	}
 
 	/** Durée pendant laquelle le geste de lancer du sort précédent est protégé (clic gauche maintenu). */
