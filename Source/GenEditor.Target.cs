@@ -11,5 +11,6 @@ public class GenEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V7;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
 		ExtraModuleNames.Add("Gen");
+		ExtraModuleNames.Add("GenTests"); // tests CQTest, editeur uniquement
 	}
 }
