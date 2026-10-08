@@ -32,6 +32,11 @@ namespace GenUIRules
 			return FString::FromInt(FMath::CeilToInt32(Remaining - KINDA_SMALL_NUMBER));
 		}
 		const float Tenths = FMath::CeilToFloat(Remaining * 10.f - KINDA_SMALL_NUMBER) / 10.f;
+		// Sous 1 s mais dixièmes arrondis à 1.0 (ex : 0.95) : afficher "1" comme la branche >= 1 s, pas "1.0" puis "1"
+		if (Tenths >= 1.f)
+		{
+			return FString(TEXT("1"));
+		}
 		return FString::Printf(TEXT("%.1f"), FMath::Max(Tenths, 0.1f));
 	}
 

@@ -49,6 +49,10 @@
 		{
 			"Name": "VibeUE",
 			"Enabled": true
+		},
+		{
+			"Name": "CommonUI",
+			"Enabled": true
 		}
 	]
 }

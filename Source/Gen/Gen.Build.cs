@@ -21,7 +21,13 @@ public class Gen : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
-			"Niagara"
+			"Niagara",
+			"UMG",
+			"Slate",
+			"SlateCore",
+			"CommonUI",
+			"CommonInput",
+			"DeveloperSettings"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
