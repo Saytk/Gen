@@ -40,6 +40,7 @@ void UGenGA_Projectile::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 	FedCount = 0;
 	FedVisualCount = 0;
+	FeedSlotsAtPress = 0;
 	ServerFeedElapsed = 0.f;
 	ReportedFedCount = INDEX_NONE;
 	bInterruptWatchStarted = false;
@@ -100,8 +101,8 @@ void UGenGA_Projectile::ApplyReportedFedCount(int32 Reported)
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const float Available = ASC ? ASC->GetNumericAttribute(UGenAttributeSet::GetResourceAttribute()) : 0.f;
 
-	// À ±1 de l'estimation du serveur, borné à la ressource et au maximum du sort
-	const int32 Accepted = GenFeeding::ClampReportedFed(Reported, FedCount, MaxFeed, Available);
+	// À ±1 de l'estimation du serveur, borné à la ressource et aux flammes disponibles à l'appui (crans de la barre)
+	const int32 Accepted = GenFeeding::ClampReportedFed(Reported, FedCount, FMath::Min(MaxFeed, FeedSlotsAtPress), Available);
 	if (Accepted != Reported)
 	{
 		GEN_ABILITY_LOG(Verbose, "Compte annoncé par le client borné : %d -> %d (estimation %d, ressource %.0f)", Reported, Accepted, FedCount, Available);
@@ -130,6 +131,9 @@ void UGenGA_Projectile::StartFeeding()
 {
 	bIsFeeding = true;
 	FeedStartTime = GetWorld()->GetTimeSeconds();
+	// Flammes disponibles à l'appui : autant de crans sur la barre, et jamais plus de flammes nourries
+	// (une flamme régénérée pendant l'appui ne s'ajoute pas)
+	FeedSlotsAtPress = GetAvailableFeed();
 
 	ApplyCastSlow();
 	StartInterruptWatch();
@@ -138,12 +142,12 @@ void UGenGA_Projectile::StartFeeding()
 	{
 		// Une seule barre de l'appui au lancer : un cran par flamme disponible, repliée à la fin du
 		// nourrissage (OnFeedSynced) puis prolongée par l'incantation sans redémarrer
-		Character->StartFeedCast(GetClass(), GetAvailableFeed(), FeedInterval, CastTime, CastFX, CastFXSocket);
+		Character->StartFeedCast(GetClass(), FeedSlotsAtPress, FeedInterval, CastTime, CastFX, CastFXSocket);
 	}
 
 	if (IsLocallyControlled())
 	{
-		if (GetAvailableFeed() == 0)
+		if (FeedSlotsAtPress == 0)
 		{
 			StopFeedingLocal(); // rien à nourrir : on incante directement
 			return;
@@ -173,7 +177,9 @@ void UGenGA_Projectile::StartFeeding()
 
 void UGenGA_Projectile::ScheduleFeedTick()
 {
-	FeedTickTask = UAbilityTask_WaitDelay::WaitDelay(this, FeedInterval);
+	// Calé sur le début du nourrissage : les retards des ticks ne s'additionnent pas
+	const float Delay = GenFeeding::GetNextFeedTickDelay(FeedStartTime, FedCount, FeedInterval, GetWorld()->GetTimeSeconds());
+	FeedTickTask = UAbilityTask_WaitDelay::WaitDelay(this, Delay);
 	FeedTickTask->OnFinish.AddDynamic(this, &ThisClass::OnFeedTick);
 	FeedTickTask->ReadyForActivation();
 }
@@ -185,7 +191,7 @@ void UGenGA_Projectile::OnFeedTick()
 		return;
 	}
 
-	const int32 Limit = GetAvailableFeed();
+	const int32 Limit = FMath::Min(GetAvailableFeed(), FeedSlotsAtPress);
 	if (FedCount < Limit)
 	{
 		++FedCount;
@@ -234,7 +240,8 @@ void UGenGA_Projectile::StopFeedingLocal()
 	// Client distant : le serveur n'a qu'une estimation des unités nourries (son minuteur peut avoir un
 	// tick de retard, surtout quand le client s'arrête pile au maximum). On lui annonce le compte exact
 	// pour que les autres joueurs voient le bon nombre de flammes quitter l'orbite pendant l'incantation.
-	if (FedCount > 0 && CurrentActorInfo && !CurrentActorInfo->IsNetAuthority())
+	// Envoyé même à 0 : l'estimation du serveur peut déjà en être à 1.
+	if (CurrentActorInfo && !CurrentActorInfo->IsNetAuthority())
 	{
 		if (AGenCharacterBase* Character = GetGenCharacterFromActorInfo())
 		{
@@ -270,7 +277,7 @@ void UGenGA_Projectile::OnFeedSynced()
 
 	// Barre : les segments inutilisés se replient. Compte affiché = flammes qui quittent l'orbite
 	// (serveur pour un client distant : son estimation, ou l'annonce du client si elle est déjà arrivée).
-	// Le compte validé arrive avec la visée (ReleaseShot).
+	// L'annonce du client arrivée après coup corrige la barre (ApplyReportedFedCount).
 	MarkFeedEnded(FedVisualCount);
 
 	if (CastTime > 0.f)
@@ -503,10 +510,13 @@ int32 UGenGA_Projectile::ResolveFedCount(const FGameplayAbilityTargetData* Data)
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const float Available = ASC ? ASC->GetNumericAttribute(UGenAttributeSet::GetResourceAttribute()) : 0.f;
 
+	// Jamais plus de flammes que de crans sur la barre (flammes disponibles à l'appui)
+	const int32 FeedCap = FMath::Min(MaxFeed, FeedSlotsAtPress);
+
 	// Serveur pour un client distant : le client ne peut annoncer ni plus que ce qu'il a, ni plus que le temps écoulé
 	if (IsServerForRemoteClient())
 	{
-		const int32 Validated = GenFeeding::ValidateFedCount(Reported, MaxFeed, Available, ServerFeedElapsed, FeedInterval);
+		const int32 Validated = GenFeeding::ValidateFedCount(Reported, FeedCap, Available, ServerFeedElapsed, FeedInterval);
 		if (Validated != Reported)
 		{
 			GEN_ABILITY_LOG(Warning, "Nourrissage corrigé par le serveur : %d -> %d (ressource %.0f, %.2fs)", Reported, Validated, Available, ServerFeedElapsed);
@@ -518,7 +528,7 @@ int32 UGenGA_Projectile::ResolveFedCount(const FGameplayAbilityTargetData* Data)
 		return Validated;
 	}
 
-	return FMath::Min(Reported, GenFeeding::GetFeedLimit(MaxFeed, Available));
+	return FMath::Min(Reported, GenFeeding::GetFeedLimit(FeedCap, Available));
 }
 
 void UGenGA_Projectile::SpendResource(int32 Amount)
@@ -560,12 +570,6 @@ bool UGenGA_Projectile::ReleaseShot(const FGameplayAbilityTargetDataHandle& Data
 	}
 
 	const int32 Fed = ResolveFedCount(Data);
-	if (bFeedable && Fed != FedVisualCount)
-	{
-		// Compte validé différent de celui affiché : on corrige la barre. Aujourd'hui sans effet visible,
-		// la barre est déjà arrêtée à la réception de la visée (OnCastFinished, OnServerAimReceived).
-		MarkFeedEnded(Fed);
-	}
 
 	// Le sort part : on applique cooldown, coût et dépense des flammes maintenant, pour qu'une
 	// incantation interrompue (annulée, étourdi, mort) ne coûte rien. Le client est dans la fenêtre

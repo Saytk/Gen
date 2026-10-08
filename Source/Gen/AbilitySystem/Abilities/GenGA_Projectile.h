@@ -221,6 +221,8 @@ private:
 
 	int32 FedCount = 0;
 	int32 FedVisualCount = 0;
+	/** Flammes disponibles à l'appui (crans de la barre) : plafond du nourrissage. */
+	int32 FeedSlotsAtPress = 0;
 	bool bIsFeeding = false;
 	bool bInterruptWatchStarted = false;
 	float FeedStartTime = 0.f;
