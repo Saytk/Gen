@@ -26,6 +26,10 @@ class UStaticMesh;
  *   le matériau.
  * - Sans HearthFlameMesh / HearthFlameMaterial (assets pas encore assignés) : repli sur l'ancien rendu (FlameMesh,
  *   FlameMaterial, sphères), emplacements vides cachés.
+ * - Flammes illimitées (State.FreeResource, Combustion, Curffe-Visuals.md §5) : une flamme nourrie part vers le sort et
+ *   son emplacement se rallume aussitôt ; rien ne revient. Embrasé : flammes × AblazeScale, orbite plus rapide.
+ * - Forme de Living Flame (State.Curffe.LivingFlame, §3.6) : les flammes convergent vers le corps et tournent vite,
+ *   puis se rallument une à une à la recharge. Incantation de Combustion (§3.7) : l'orbite se resserre et accélère.
  * Purement cosmétique : rien sur un serveur dédié.
  */
 UCLASS(ClassGroup = (Gen), meta = (BlueprintSpawnableComponent))
@@ -52,6 +56,15 @@ public:
 
 	/** Instances dessinées (5 emplacements + 3 vols), 0 sur un serveur dédié. */
 	int32 GetInstanceCount() const;
+
+	/** Échelle des flammes allumées à la dernière image (1 = carte de 16 cm ; × AblazeScale embrasé). */
+	float GetLitFlameScale() const { return LitFlameScale; }
+
+	/** Rayon de l'orbite à la dernière image (OrbitRadius, ou resserré : forme de Living Flame, incantation de Combustion). */
+	float GetCurrentOrbitRadius() const { return CurrentOrbitRadius; }
+
+	/** Orbite resserrée vers la cible de la dernière image (forme de Living Flame ou incantation de Combustion). */
+	bool IsConverging() const { return bConverging; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -130,6 +143,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Ablaze")
 	float AblazeOrbitSpeedScale = 1.5f;
 
+	/** Forme de Living Flame : les flammes convergent vers le corps (rayon de l'orbite) et tournent vite. */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Converge", meta = (Units = "cm"))
+	float ConvergeRadius = 25.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Converge")
+	float ConvergeOrbitSpeedScale = 4.f;
+
+	/** Incantation de Combustion : l'orbite se resserre et accélère (montée en puissance). */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Converge", meta = (Units = "cm"))
+	float BuildUpRadius = 45.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Converge")
+	float BuildUpOrbitSpeedScale = 2.5f;
+
+	/** Temps pour passer de l'orbite normale à l'orbite resserrée (et retour). */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Converge", meta = (Units = "s"))
+	float ConvergeBlendTime = 0.1f;
+
 private:
 	struct FFlight
 	{
@@ -167,6 +198,8 @@ private:
 	FVector GetFlameSocketLocation(int32 Socket) const;
 	FVector GetSpellLocation(FName SpellSocket) const;
 	int32 GetFlamesNow() const;
+	/** Flammes illimitées (State.FreeResource) : les emplacements nourris restent allumés, rien ne revient. */
+	bool IsUnlimited() const;
 	bool UsesFallback() const;
 	double GetNow() const;
 
@@ -177,6 +210,7 @@ private:
 	FDelegateHandle FedChangedHandle;
 	FDelegateHandle ThresholdHandle;
 	FGameplayTag AblazeTag;
+	FGameplayTag LivingFlameTag;
 
 	FFlight Flights[3];
 	FPendingDrop PendingDrop;
@@ -205,6 +239,9 @@ private:
 	TArray<float> SentCustomData;
 
 	float OrbitAngle = 0.f;
+	float CurrentOrbitRadius = 0.f;
+	float LitFlameScale = 0.f;
+	bool bConverging = false;
 	int32 VisibleFlames = 0;
 	int32 StartedFlights = 0;
 	int32 StartedReturnFlights = 0;

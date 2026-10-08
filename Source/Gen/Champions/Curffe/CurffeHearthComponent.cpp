@@ -2,6 +2,8 @@
 
 #include "AbilitySystemComponent.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Champions/Curffe/CurffeGA_Combustion.h"
+#include "Champions/Curffe/CurffeGameplayTags.h"
 #include "Champions/Curffe/CurffeHearthRules.h"
 #include "Champions/Curffe/CurffeTuning.h"
 #include "Character/GenCharacterBase.h"
@@ -12,6 +14,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "GenGameplayTags.h"
 #include "NiagaraFunctionLibrary.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -65,8 +68,9 @@ void UCurffeHearthComponent::BeginPlay()
 		return;
 	}
 
-	// Plan 3 Task 9 : tag pas encore déclaré tant que Combustion n'existe pas (alors invalide : jamais embrasé)
-	AblazeTag = FGameplayTag::RequestGameplayTag(TEXT("State.Curffe.Ablaze"), /*ErrorIfNotFound*/ false);
+	AblazeTag = CurffeGameplayTags::State_Ablaze;
+	LivingFlameTag = CurffeGameplayTags::State_LivingFlame;
+	CurrentOrbitRadius = OrbitRadius;
 
 	if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetOwner()))
 	{
@@ -145,6 +149,14 @@ void UCurffeHearthComponent::OnFedResourceChanged(AGenCharacterBase* Character, 
 	}
 	if (New >= Old)
 	{
+		return;
+	}
+
+	// Flammes illimitées (Combustion) : les emplacements se sont rallumés au départ de chaque flamme, rien ne revient
+	if (IsUnlimited())
+	{
+		FlownCount = FMath::Min(FlownCount, New);
+		PendingDrop.bActive = false;
 		return;
 	}
 
@@ -265,10 +277,17 @@ uint8 UCurffeHearthComponent::GetPendingDropSockets() const
 	return Sockets;
 }
 
+bool UCurffeHearthComponent::IsUnlimited() const
+{
+	const AGenCharacterBase* Character = OwnerCharacter.Get();
+	const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+	return ASC && ASC->HasMatchingGameplayTag(GenGameplayTags::State_FreeResource);
+}
+
 FVector UCurffeHearthComponent::GetFlameSocketLocation(int32 Socket) const
 {
 	const float Angle = FMath::DegreesToRadians(OrbitAngle + 360.f * Socket / SocketCount);
-	return GetComponentLocation() + FVector(FMath::Cos(Angle) * OrbitRadius, FMath::Sin(Angle) * OrbitRadius, OrbitHeight);
+	return GetComponentLocation() + FVector(FMath::Cos(Angle) * CurrentOrbitRadius, FMath::Sin(Angle) * CurrentOrbitRadius, OrbitHeight);
 }
 
 FVector UCurffeHearthComponent::GetSpellLocation(FName SpellSocket) const
@@ -318,6 +337,8 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	const int32 Fed = Character->GetFedResource();
 	// Un compte reçu sans seuil (personnage devenu pertinent en plein nourrissage) : ses flammes ne volent pas
 	FlownCount = Fed;
+	// Flammes illimitées (Combustion, Curffe-Visuals.md §5) : une flamme nourrie part et son emplacement se rallume aussitôt
+	const int32 ShownFed = IsUnlimited() ? 0 : Fed;
 
 	// Baisse en attente (autres joueurs) : lancer si la ressource a baissé d'autant, sinon les flammes reviennent
 	if (PendingDrop.bActive)
@@ -351,7 +372,7 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	// Emplacements : règle du Foyer (floor(Resource) − nourries), puis vols de retour, puis recharge échelonnée
 	TArray<CurffeHearthRules::ESocket, TInlineAllocator<8>> States;
-	CurffeHearthRules::GetSocketStates(FlamesNow, Fed, SocketCount, States);
+	CurffeHearthRules::GetSocketStates(FlamesNow, ShownFed, SocketCount, States);
 	VisibleFlames = 0;
 	uint8 LitSockets = 0;
 	for (int32 Socket = 0; Socket < SocketCount; ++Socket)
@@ -413,7 +434,19 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	// Embrasé : flammes plus grandes, orbite plus rapide
 	const UAbilitySystemComponent* ASC = Character->GetAbilitySystemComponent();
 	const bool bAblaze = AblazeTag.IsValid() && ASC && ASC->HasMatchingGameplayTag(AblazeTag);
-	OrbitAngle = FMath::Fmod(OrbitAngle + OrbitSpeedDegrees * (bAblaze ? AblazeOrbitSpeedScale : 1.f) * DeltaTime, 360.f);
+
+	// Forme de Living Flame (§3.6) : les flammes convergent vers le corps et tournent vite. Incantation de Combustion
+	// (§3.7) : l'orbite se resserre et accélère. Lu sur les tags et l'incantation répliqués : vu par tous
+	const bool bLivingFlameForm = LivingFlameTag.IsValid() && ASC && ASC->HasMatchingGameplayTag(LivingFlameTag);
+	const FGenCastInfo& CastInfo = Character->GetCastInfo();
+	const bool bBuildUp = !bLivingFlameForm && CastInfo.IsCasting() && !CastInfo.bChannel && CastInfo.Ability
+		&& CastInfo.Ability->IsChildOf(UCurffeGA_Combustion::StaticClass());
+	bConverging = bLivingFlameForm || bBuildUp;
+	const float TargetRadius = bLivingFlameForm ? ConvergeRadius : (bBuildUp ? BuildUpRadius : OrbitRadius);
+	const float BlendSpeed = ConvergeBlendTime > 0.f ? FMath::Abs(OrbitRadius - ConvergeRadius) / ConvergeBlendTime : 0.f;
+	CurrentOrbitRadius = BlendSpeed > 0.f ? FMath::FInterpConstantTo(CurrentOrbitRadius, TargetRadius, DeltaTime, BlendSpeed) : TargetRadius;
+	const float SpeedScale = bLivingFlameForm ? ConvergeOrbitSpeedScale : (bBuildUp ? BuildUpOrbitSpeedScale : (bAblaze ? AblazeOrbitSpeedScale : 1.f));
+	OrbitAngle = FMath::Fmod(OrbitAngle + OrbitSpeedDegrees * SpeedScale * DeltaTime, 360.f);
 
 	// Cartes (face à +X) tournées vers la caméra locale, haut vers +Z (pas de billboard par WPO) ; sphères du repli : sans importance
 	const bool bFallback = UsesFallback();
@@ -429,6 +462,7 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	// Carte : même échelle allumée ou braise (la braise est dessinée dans la carte). Repli : pas de braise (rendu du Plan 1)
 	const float LitScale = (bFallback ? FlameScale : FlameCardScale) * (bAblaze ? AblazeScale : 1.f);
+	LitFlameScale = LitScale;
 	const float EmberScale = bFallback ? 0.f : LitScale;
 
 	float CustomData[InstanceCount * CustomDataCount];
