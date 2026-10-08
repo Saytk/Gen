@@ -2,11 +2,14 @@
 
 #include "AbilitySystem/GenAreaRules.h"
 #include "Actors/GenProjectile.h"
+#include "Character/GenCharacterBase.h"
 #include "CollisionQueryParams.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerController.h"
+#include "Player/GenPlayerState.h"
 
 namespace GenWorldQueries
 {
@@ -95,5 +98,14 @@ namespace GenWorldQueries
 			return FVector(Hit.ImpactPoint);
 		}
 		return Point;
+	}
+
+	EGenViewerRelation GetLocalViewerRelation(const UWorld* World, const APlayerState* SourceState, uint8 SourceTeam)
+	{
+		const APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr;
+		const AGenPlayerState* ViewerState = LocalController ? LocalController->GetPlayerState<AGenPlayerState>() : nullptr;
+		const bool bViewerIsSource = ViewerState && SourceState == ViewerState;
+		const uint8 ViewerTeam = ViewerState ? ViewerState->GetTeamId() : GenNoTeam;
+		return GenAreaRules::GetViewerRelation(bViewerIsSource, ViewerTeam, SourceTeam, GenNoTeam);
 	}
 }

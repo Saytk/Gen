@@ -7,6 +7,8 @@
 #include "AbilitySystem/GenMontageTiming.h"
 #include "Champions/Curffe/CurffeHearthRules.h"
 #include "Champions/Curffe/CurffeTuning.h"
+#include "Actors/GenProjectile.h"
+#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenMontageTimingTest, "Gen.Visuals.MontageTiming",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -212,6 +214,29 @@ bool FCurffeHearthSocketsTest::RunTest(const FString& Parameters)
 
 	CurffeHearthRules::GetSocketStates(9, 0, 5, S);
 	TestEqual(TEXT("plus de flammes que d'emplacements : borné"), S.Num(), 5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGenProjectileMarkerDefaultsTest, "Gen.Visuals.ProjectileMarker",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGenProjectileMarkerDefaultsTest::RunTest(const FString& Parameters)
+{
+	// V7 : getters lisibles sur le CDO (la visée V1 les lit sans projectile), marqueur = collision × échelle × 1.2
+	const AGenProjectile* CDO = GetDefault<AGenProjectile>();
+	TestEqual(TEXT("rayon de collision non mis à l'échelle"), CDO->GetCollisionRadius(), 20.f);
+	TestEqual(TEXT("portée max"), CDO->GetMaxRange(), 1500.f);
+	TestEqual(TEXT("marqueur : collision × 1 × 1.2"), CDO->GetGroundMarkerRadius(), 24.f, 0.001f);
+	TestEqual(TEXT("pas d'éclaboussure par défaut"), CDO->GetExplosionRadius(), 0.f);
+	TestNull(TEXT("pas de plan sur le CDO (créé en BeginPlay, clients seulement)"), CDO->GetGroundMarker());
+
+	// Le rayon d'éclaboussure est répliqué (taille de l'impact chez les clients)
+	const FProperty* Property = FindFProperty<FProperty>(AGenProjectile::StaticClass(), TEXT("ExplosionRadius"));
+	TestTrue(TEXT("ExplosionRadius répliqué"), Property && Property->HasAnyPropertyFlags(CPF_Net));
+
+	// Le matériau par défaut existe (MI_Telegraph_Marker) : tout projectile a un marqueur (Art Bible §7.1 règle 6)
+	const FObjectProperty* MaterialProperty = FindFProperty<FObjectProperty>(AGenProjectile::StaticClass(), TEXT("GroundMarkerMaterial"));
+	TestTrue(TEXT("GroundMarkerMaterial par défaut"), MaterialProperty && MaterialProperty->GetObjectPropertyValue_InContainer(CDO) != nullptr);
 	return true;
 }
 

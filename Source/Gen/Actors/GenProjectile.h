@@ -8,11 +8,15 @@
 #include "GenProjectile.generated.h"
 
 class AGenCharacterBase;
+class UMaterialInstanceDynamic;
+class UMaterialInterface;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class UProjectileMovementComponent;
 class USoundBase;
 class USphereComponent;
+class UStaticMesh;
+class UStaticMeshComponent;
 
 /** Réglages propres à un tir, fixés par le sort avant FinishSpawning (serveur). */
 struct FGenProjectileShotParams
@@ -32,6 +36,9 @@ struct FGenProjectileShotParams
  * - Traverse les alliés et les morts, explose sur un ennemi ou un obstacle.
  * - Coup direct = projectile (déclenche les contres) ; éclaboussure = zone (ne les déclenche pas).
  * - Seul le serveur applique les dégâts ; l'explosion est répliquée (bExploded) pour les FX.
+ * - Marqueur au sol (Art Bible §7.1 règle 6) : un plan sous le projectile aux couleurs du point de vue (soi, allié,
+ *   ennemi), créé sur les clients seulement (jamais sur le serveur dédié), sans tick.
+ * - Rayon d'explosion répliqué à l'apparition : l'impact d'éclaboussure a la taille réelle chez chaque client.
  */
 UCLASS()
 class GEN_API AGenProjectile : public AActor
@@ -56,6 +63,24 @@ public:
 
 	float GetSpeed() const { return Speed; }
 
+	/** Portée max (cm) : lue sur le CDO par la visée (V1). */
+	float GetMaxRange() const { return MaxRange; }
+
+	/** Rayon de collision non mis à l'échelle (CollisionSphere ; lisible sur le CDO). */
+	float GetCollisionRadius() const;
+
+	/** Échelle du tir (répliquée à l'apparition). */
+	float GetShotScale() const { return ShotScale; }
+
+	/** Rayon d'éclaboussure (cm, 0 = aucune) : fixé par le serveur, répliqué à l'apparition. */
+	float GetExplosionRadius() const { return ExplosionRadius; }
+
+	/** Rayon du marqueur au sol (cm) : collision × ShotScale × GroundMarkerRadiusScale. */
+	float GetGroundMarkerRadius() const;
+
+	/** Plan du marqueur au sol (nul sur le serveur dédié, sans matériau ou si le projectile a déjà explosé). */
+	UStaticMeshComponent* GetGroundMarker() const { return GroundMarker; }
+
 	/** A explosé (consommé par un impact) ; répliqué. */
 	bool HasExploded() const { return bExploded; }
 
@@ -63,6 +88,16 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnRep_Instigator() override;
+
+	/** Clients : crée le plan du marqueur au sol (une fois), le pose au sol et le colore. */
+	void SetupGroundMarker();
+
+	/** Couleur du marqueur selon le point de vue du joueur local (soi, allié, ennemi). */
+	void UpdateGroundMarkerRelation();
+
+	/** Équipe du lanceur (pion instigateur), GenNoTeam si inconnue (pion pas encore répliqué). */
+	uint8 GetInstigatorTeam() const;
 
 	UFUNCTION()
 	void OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -106,6 +141,40 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|FX")
 	TObjectPtr<USoundBase> ImpactSound;
 
+	/**
+	 * Impact d'éclaboussure, joué EN PLUS d'ImpactFX quand le tir a un rayon d'explosion. Échelle =
+	 * ExplosionRadius / SplashImpactReferenceRadius : le cercle dessiné = la zone touchée.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|FX")
+	TObjectPtr<UNiagaraSystem> SplashImpactFX;
+
+	/** Rayon pour lequel SplashImpactFX est dessiné à l'échelle 1. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|FX", meta = (ClampMin = "1.0", Units = "cm"))
+	float SplashImpactReferenceRadius = 150.f;
+
+	/** Matériau du marqueur au sol (défaut C++ : MI_Telegraph_Marker). Sans matériau : pas de marqueur. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Ground Marker")
+	TObjectPtr<UMaterialInterface> GroundMarkerMaterial;
+
+	/** Rayon du marqueur = rayon de collision mis à l'échelle × ce facteur (un peu plus large que la boule). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Ground Marker", meta = (ClampMin = "0.1"))
+	float GroundMarkerRadiusScale = 1.2f;
+
+	/** Demi-hauteur du lanceur supposée tant que son pion n'est pas connu (le tir part du centre de sa capsule). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Ground Marker", meta = (ClampMin = "0.0", Units = "cm"))
+	float GroundMarkerFallbackHeight = 88.f;
+
+	/** Maillage du marqueur (plan de 100 cm du moteur). */
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> GroundMarkerMesh;
+
+	/** Plan du marqueur, créé en BeginPlay sur les clients seulement. */
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> GroundMarker;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GroundMarkerMID;
+
 	UPROPERTY(ReplicatedUsing = OnRep_Exploded)
 	bool bExploded = false;
 
@@ -116,8 +185,11 @@ protected:
 	UPROPERTY(Replicated)
 	float ShotScale = 1.f;
 
-	/** Serveur uniquement. */
+	/** Rayon d'éclaboussure (0 = aucune) : fixé par le serveur, répliqué à l'apparition (taille de l'impact). */
+	UPROPERTY(Replicated)
 	float ExplosionRadius = 0.f;
+
+	/** Serveur uniquement. */
 	float KnockbackDistance = 0.f;
 
 	bool IsValidTarget(const AGenCharacterBase* Character) const;
