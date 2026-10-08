@@ -117,8 +117,9 @@ protected:
 };
 
 /**
- * Pyroblast de test (Plan 3 Task 9) : comme l'asset GA_Pyroblast, n'est lançable que sous State.Curffe.Ablaze
- * (ActivationRequiredTags dans l'asset ; ici par CanActivateAbility, le tag de Curffe n'étant pas exporté).
+ * Pyroblast de test (Plan 3 Task 9) : comme l'asset GA_Pyroblast, n'est lançable que sous State.Curffe.Ablaze, par
+ * ActivationRequiredTags comme l'asset (revue P3 T8-10, I1 : la grâce du serveur porte sur les tags requis). Posé à
+ * l'octroi sur l'instance, jamais pendant le chargement du module (tag de Curffe demandé par son nom).
  */
 UCLASS(NotBlueprintable, HideDropdown)
 class UGenNetTestGA_Pyroblast : public UGenGA_Projectile
@@ -133,11 +134,9 @@ public:
 		BaseExplosionRadius = 120.f;
 	}
 
-	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
-		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override
+	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override
 	{
-		const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-		return ASC && ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Curffe.Ablaze")))
-			&& Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+		ActivationRequiredTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Curffe.Ablaze")));
+		Super::OnGiveAbility(ActorInfo, Spec);
 	}
 };

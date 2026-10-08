@@ -132,6 +132,8 @@ bool FGenLivingFlameTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("forme : un autre sort est refusé"), Other->CanActivateAbility(OtherHandle, ActorInfo));
 	TestEqual(TEXT("payé au lancer : 60 -> 35"), F.Attr(F.ASC, UGenAttributeSet::GetEnergyAttribute()), 35.f);
 	TestTrue(TEXT("recharge de 16 s posée"), F.ASC->HasMatchingGameplayTag(CurffeGameplayTags::Cooldown_Ability_LivingFlame));
+	// Revue P3 T8-10, I2 : Foyer plein dès le départ (prédit chez le client), affiché à la fin de la forme
+	TestEqual(TEXT("forme : Foyer déjà rempli à 5"), F.Attr(F.ASC, UGenAttributeSet::GetResourceAttribute()), 5.f);
 	TestFalse(TEXT("forme : contrôle dur ignoré"), F.ASC->ApplyHardCC(GenGameplayTags::State_Stunned, 1.f, nullptr).IsValid());
 	TestTrue(TEXT("forme : canalisation (barre qui se vide)"), F.Caster->GetCastInfo().IsCasting() && F.Caster->GetCastInfo().bChannel);
 	TestEqual(TEXT("canalisation de la durée de la forme"), F.Caster->GetCastInfo().Duration, 0.5f, 0.001f);
@@ -208,17 +210,34 @@ bool FGenCombustionTest::RunTest(const FString& Parameters)
 	const float TargetHealth = F.Attr(F.TargetASC, UGenAttributeSet::GetHealthAttribute());
 	F.ASC->SetNumericAttributeBase(UGenAttributeSet::GetResourceAttribute(), 1.f);
 	TestFalse(TEXT("99 d'énergie : refusé"), (SetEnergy(99.f), F.ASC->TryActivateAbility(Handle)));
-	SetEnergy(100.f);
-	TestTrue(TEXT("100 d'énergie : activation"), F.ASC->TryActivateAbility(Handle));
+	// Revue P3 T8-10, M6 : énergie max 200, départ à 150 (l'énergie est bornée à 0 : 100 -> 0 cacherait une double
+	// dépense) et chaque baisse d'énergie comptée : une seule dépense
+	F.ASC->SetNumericAttributeBase(UGenAttributeSet::GetMaxEnergyAttribute(), 200.f);
+	SetEnergy(150.f);
+	int32 EnergyDrops = 0;
+	float EnergySpent = 0.f;
+	const FDelegateHandle EnergyHandle = F.ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).AddLambda(
+		[&EnergyDrops, &EnergySpent](const FOnAttributeChangeData& Data)
+		{
+			if (Data.NewValue < Data.OldValue)
+			{
+				++EnergyDrops;
+				EnergySpent += Data.OldValue - Data.NewValue;
+			}
+		});
+	TestTrue(TEXT("150 d'énergie : activation"), F.ASC->TryActivateAbility(Handle));
 	F.TestWorld.Advance(0.3f);
 	TestTrue(TEXT("0.3 s : toujours en incantation"), IsActive(F.ASC, Handle));
-	TestEqual(TEXT("0.3 s : rien de payé"), F.Attr(F.ASC, UGenAttributeSet::GetEnergyAttribute()), 100.f);
+	TestEqual(TEXT("0.3 s : rien de payé"), F.Attr(F.ASC, UGenAttributeSet::GetEnergyAttribute()), 150.f);
 	TestFalse(TEXT("0.3 s : pas encore embrasé"), HasAblaze());
 
 	F.TestWorld.Advance(0.3f);
 	TestEqual(TEXT("une nova posée"), BeginPendingAreas(F.TestWorld.World), 1);
 	TestFalse(TEXT("lancé : sort terminé"), IsActive(F.ASC, Handle));
-	TestEqual(TEXT("100 payés à la fin de l'incantation"), F.Attr(F.ASC, UGenAttributeSet::GetEnergyAttribute()), 0.f);
+	TestEqual(TEXT("100 payés à la fin de l'incantation : 150 -> 50"), F.Attr(F.ASC, UGenAttributeSet::GetEnergyAttribute()), 50.f);
+	TestEqual(TEXT("une seule baisse d'énergie"), EnergyDrops, 1);
+	TestEqual(TEXT("100 dépensés en tout"), EnergySpent, 100.f, 0.01f);
+	F.ASC->GetGameplayAttributeValueChangeDelegate(UGenAttributeSet::GetEnergyAttribute()).Remove(EnergyHandle);
 	TestTrue(TEXT("embrasé"), HasAblaze());
 	TestTrue(TEXT("nourrissage rapide"), F.ASC->HasMatchingGameplayTag(GenGameplayTags::State_FastFeeding));
 	TestTrue(TEXT("flammes illimitées"), F.ASC->HasMatchingGameplayTag(GenGameplayTags::State_FreeResource));

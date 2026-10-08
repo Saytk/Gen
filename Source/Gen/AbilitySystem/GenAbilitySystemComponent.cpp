@@ -81,6 +81,14 @@ TArray<FActiveGameplayEffectHandle> UGenAbilitySystemComponent::ApplyEffectsToSe
 void UGenAbilitySystemComponent::OnGiveAbility(FGameplayAbilitySpec& AbilitySpec)
 {
 	Super::OnGiveAbility(AbilitySpec);
+
+	// Revue P3 T8-10, I1 : les tags requis du sort accordé (instance : un sort peut les poser à l'octroi) sont suivis
+	const UGenGameplayAbility* GenAbility = Cast<UGenGameplayAbility>(AbilitySpec.GetPrimaryInstance() ? AbilitySpec.GetPrimaryInstance() : AbilitySpec.Ability.Get());
+	if (GenAbility)
+	{
+		RegisterGraceTags(GenAbility->GetActivationRequiredTagsForGrace());
+	}
+
 	OnAbilitiesChanged.Broadcast(AbilitySpec, /*bRemoved*/ false);
 }
 
@@ -344,12 +352,18 @@ void UGenAbilitySystemComponent::OnTagUpdated(const FGameplayTag& Tag, bool TagE
 {
 	Super::OnTagUpdated(Tag, TagExists);
 
-	// Revue V2-V4, I1 : seuls les tags qui changent la règle de nourrissage d'un sort déjà prédit par le client
-	if ((Tag == GenGameplayTags::State_FastFeeding || Tag == GenGameplayTags::State_FreeResource) && GetWorld())
+	// Revue V2-V4, I1 : les tags qui changent la règle de nourrissage d'un sort déjà prédit par le client ; revue P3
+	// T8-10, I1 : et ceux que les sorts accordés exigent (grâce de DoesAbilitySatisfyTagRequirements)
+	if (IsGraceTag(Tag) && GetWorld())
 	{
 		FGraceTagTimes& Times = GraceTagTimes.FindOrAdd(Tag);
 		(TagExists ? Times.Added : Times.Removed) = GetWorld()->GetTimeSeconds();
 	}
+}
+
+bool UGenAbilitySystemComponent::IsGraceTag(const FGameplayTag& Tag) const
+{
+	return Tag == GenGameplayTags::State_FastFeeding || Tag == GenGameplayTags::State_FreeResource || RegisteredGraceTags.HasTagExact(Tag);
 }
 
 bool UGenAbilitySystemComponent::WasGraceTagChangedNear(const FGameplayTag& Tag, bool bAdded, double ReferenceTime) const

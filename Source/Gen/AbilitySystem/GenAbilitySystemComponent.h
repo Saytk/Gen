@@ -81,10 +81,18 @@ public:
 	double GetCastLockEnforcedUntil() const { return CastLockEnforcedUntil; }
 
 	/**
-	 * Revue V2-V4, I1 : le tag Tag (State.FastFeeding ou State.FreeResource seulement) a-t-il été retiré (bAdded faux) ou
-	 * posé (vrai) dans la fenêtre de grâce autour de ReferenceTime (temps du monde) ? Voir GenFeeding::ServerTagGrace.
+	 * Revue V2-V4, I1 : le tag Tag (un tag suivi : IsGraceTag) a-t-il été retiré (bAdded faux) ou posé (vrai) dans la
+	 * fenêtre de grâce autour de ReferenceTime (temps du monde) ? Voir GenFeeding::ServerTagGrace.
 	 */
 	bool WasGraceTagChangedNear(const FGameplayTag& Tag, bool bAdded, double ReferenceTime) const;
+
+	/**
+	 * Revue P3 T8-10, I1 : tags dont l'ASC retient l'heure des changements. Toujours State.FastFeeding et
+	 * State.FreeResource (règle de nourrissage) ; en plus, les tags requis par les sorts accordés (OnGiveAbility, ex :
+	 * State.Curffe.Ablaze pour le Pyroblast) : la liste vient des données, Gen ne nomme aucun tag de champion.
+	 */
+	void RegisterGraceTags(const FGameplayTagContainer& Tags) { RegisteredGraceTags.AppendTags(Tags); }
+	bool IsGraceTag(const FGameplayTag& Tag) const;
 
 	/** Toutes les machines : retire State.CastLocked et ferme la fenêtre (mort : un verrou oublié bloquerait tout après le respawn). */
 	void ClearCastLock();
@@ -102,7 +110,7 @@ public:
 	FGenOnAbilitiesChanged OnAbilitiesChanged;
 
 protected:
-	/** Retient l'heure des changements de State.FastFeeding et State.FreeResource (WasGraceTagChangedNear). */
+	/** Retient l'heure des changements des tags suivis (IsGraceTag, WasGraceTagChangedNear). */
 	virtual void OnTagUpdated(const FGameplayTag& Tag, bool TagExists) override;
 
 	virtual void OnGiveAbility(FGameplayAbilitySpec& AbilitySpec) override;
@@ -129,4 +137,7 @@ protected:
 		double Removed = -1.e9;
 	};
 	TMap<FGameplayTag, FGraceTagTimes> GraceTagTimes;
+
+	/** Tags suivis en plus des deux tags de nourrissage (RegisterGraceTags). */
+	FGameplayTagContainer RegisteredGraceTags;
 };

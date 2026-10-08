@@ -1,9 +1,12 @@
 #include "Champions/Curffe/CurffeHearthComponent.h"
 
+#include "AbilitySystemComponent.h"
+#include "Champions/Curffe/CurffeGameplayTags.h"
 #include "Champions/Curffe/CurffeTuning.h"
 #include "Character/GenCharacterBase.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "GenGameplayTags.h"
 #include "UObject/ConstructorHelpers.h"
 
 UCurffeHearthComponent::UCurffeHearthComponent()
@@ -50,9 +53,22 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	const AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetOwner());
-	VisibleFlames = (Character && !Character->IsDead())
+	int32 Flames = (Character && !Character->IsDead())
 		? FMath::Clamp(FMath::FloorToInt32(Character->GetResource()) - Character->GetFedResource(), 0, FlameComponents.Num())
 		: 0;
+
+	// Revue P3 T8-10, I2 : la flamme vivante remplit le Foyer dès son départ (prédit), mais les flammes ne reviennent
+	// qu'à la fin de la forme (Curffe-Visuals §3.6, convergence) : pendant State.Curffe.LivingFlame, pas de hausse.
+	// Le propriétaire garde le tag ~1 RTT après SA fin de forme (revue P3 T8-10, M1) : chez lui, la forme finit avec
+	// son verrou de lancement local (State.CastLocked), pour que les flammes reviennent quand il peut les nourrir
+	const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+	const bool bFormShown = ASC && ASC->HasMatchingGameplayTag(CurffeGameplayTags::State_LivingFlame)
+		&& (!Character->IsLocallyControlled() || ASC->HasMatchingGameplayTag(GenGameplayTags::State_CastLocked));
+	if (bFormShown)
+	{
+		Flames = FMath::Min(Flames, VisibleFlames);
+	}
+	VisibleFlames = Flames;
 
 	OrbitAngle = FMath::Fmod(OrbitAngle + OrbitSpeedDegrees * DeltaTime, 360.f);
 

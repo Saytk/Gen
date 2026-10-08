@@ -11,7 +11,8 @@ class UGameplayEffect;
 /**
  * Flamme vivante (R, 25 d'énergie) : après 0.1 s d'incantation, Curffe devient flamme vivante, intouchable 0.5 s et
  * sans sort (guidelines §3.5). À la fin : anneau de 2.5 m (zone, 8 dégâts, repousse 3 m), Foyer rempli à 5, puis
- * +30 % de vitesse pendant 2 s, pendant lesquelles il peut lancer ses sorts.
+ * +30 % de vitesse pendant 2 s, pendant lesquelles il peut lancer ses sorts. Le remplissage est appliqué (prédit) dès le
+ * départ de la forme et affiché à sa fin (revue P3 T8-10, I2 : le combo vers la grande boule de feu sans attendre un RTT).
  *
  * - Forme : un état à durée prédit (State.Untouchable + State.Curffe.LivingFlame, vu par tous) et le verrou de
  *   lancement (SetCastLock : tag local + fenêtre du serveur, UGenAbilitySystemComponent::NoteCastLock).
