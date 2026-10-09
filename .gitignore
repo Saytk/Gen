@@ -23,3 +23,16 @@ __pycache__/
 Content/ParagonGideon/
 Content/ParagonSerath/
 Content/Paragon*/
+# Assets Paragon locaux (IK rigs, retargeters, clips reciblés non utilisés) : référencent les packs ignorés
+Content/Gen/Champions/Curffe/Animations/Paragon/_Local/
+# Packs tiers d'exploration (animations, VFX) : jamais versionnés en entier. Un élément retenu est copié et
+# adapté dans Content/Gen ; seuls les 4 fichiers MegaMagic déjà suivis restent versionnés.
+Content/FXVarietyPack/
+Content/Free_Magic/
+Content/Vefects/
+Content/MegaMagicVFXBundle/
+# Acteurs externes (One File Per Actor) des cartes de démo des packs, pas des cartes du jeu
+Content/__ExternalActors__/*
+Content/__ExternalObjects__/*
+!Content/__ExternalActors__/Gen/
+!Content/__ExternalObjects__/Gen/
