@@ -23,6 +23,7 @@
 #include "Character/GenSpellIndicatorComponent.h"
 #include "Champions/Curffe/CurffeTuning.h"
 #include "Engine/World.h"
+#include "Game/GenDevTuning.h"
 #include "GameFramework/Pawn.h"
 #include "GenGameplayTags.h"
 #include "HAL/PlatformTime.h"
@@ -59,10 +60,33 @@ void UGenGA_Cast::GetTooltipArgs(FFormatNamedArguments& Args) const
 	Args.Add(TEXT("MaxFeed"), MaxFeed);
 }
 
+void UGenGA_Cast::ApplyDevCastTimeScale(const FGameplayAbilityActorInfo* ActorInfo)
+{
+	// Incantation et nourrissage étirés ou raccourcis par le panneau développeur. Au réglage normal (x1), l'instance
+	// n'est pas touchée (un test peut avoir réglé son FeedInterval) ; sinon on part des valeurs d'avant multiplication
+	const float Scale = GenDevTuning::Get(ActorInfo ? ActorInfo->OwnerActor.Get() : nullptr).CastTimeScale;
+	if (AppliedDevCastTimeScale != 1.f)
+	{
+		CastTime = UnscaledCastTime;
+		FeedInterval = UnscaledFeedInterval;
+	}
+	if (Scale != 1.f)
+	{
+		UnscaledCastTime = CastTime;
+		UnscaledFeedInterval = FeedInterval;
+		CastTime *= Scale;
+		FeedInterval *= Scale;
+	}
+	AppliedDevCastTimeScale = Scale;
+}
+
 void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
 	// Pas de CommitAbility ici : le cooldown et le coût ne sont appliqués qu'au lancer
 	// (ReleaseCast). CanActivateAbility les a déjà vérifiés avant l'activation.
+
+	ApplyDevCastTimeScale(ActorInfo);
+
 	GEN_CAST_LOG(Verbose, "Activé (clé %s), incantation %.2fs%s", *ActivationInfo.GetActivationPredictionKey().ToString(), CastTime, bFeedable ? TEXT(", nourrissable") : TEXT(""));
 
 	FedCount = 0;

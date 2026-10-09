@@ -448,6 +448,17 @@ private:
 	 * serveur prend ValidationFeedInterval.
 	 */
 	float ActiveFeedInterval = 0.f;
+
+	/**
+	 * Panneau développeur (F10) : multiplicateur d'incantation appliqué à CastTime et FeedInterval à la dernière activation,
+	 * et leurs valeurs avant multiplication (restaurées quand le réglage change). À 1, l'instance n'est jamais touchée.
+	 */
+	float AppliedDevCastTimeScale = 1.f;
+	float UnscaledCastTime = 0.f;
+	float UnscaledFeedInterval = 0.f;
+
+	/** Applique le multiplicateur d'incantation du panneau développeur (client et serveur, mêmes réglages répliqués). */
+	void ApplyDevCastTimeScale(const FGameplayAbilityActorInfo* ActorInfo);
 	/**
 	 * Serveur : intervalle de la VALIDATION du compte (ResolveFedCount). = ActiveFeedInterval, sauf fenêtre de grâce de
 	 * State.FastFeeding (revue V2-V4, I1) : rapide pour valider ce que le client a prédit, sans changer les visuels.

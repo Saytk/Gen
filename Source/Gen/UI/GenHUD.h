@@ -6,6 +6,7 @@
 #include "GenHUD.generated.h"
 
 class AGenCharacterBase;
+class UGenDevPanel;
 class UGenPrimaryGameLayout;
 
 /**
@@ -24,7 +25,12 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void DrawHUD() override;
 
+	/** Panneau développeur (F10, hors Shipping) : empilé sur UI.Layer.GameMenu, ou retiré s'il est ouvert. */
+	void ToggleDevPanel();
+
 protected:
+	TWeakObjectPtr<UGenDevPanel> DevPanel;
+
 	/** Racine CommonUI du joueur local (nulle sur serveur dédié ou si la classe n'est pas configurée). */
 	UPROPERTY(Transient) TObjectPtr<UGenPrimaryGameLayout> PrimaryLayout;
 

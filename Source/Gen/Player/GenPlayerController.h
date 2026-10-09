@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "Game/GenDevTuning.h"
 #include "GenPlayerController.generated.h"
 
 class UGenAbilitySystemComponent;
@@ -42,6 +43,17 @@ public:
 
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "Gen|Debug")
 	FVector DebugAimLocation = FVector::ZeroVector;
+
+	/** Panneau développeur (F10) : nouveaux réglages, bornés puis répliqués par le serveur. Sans effet en Shipping. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Gen|Dev")
+	void ServerSetDevTuning(const FGenDevTuning& Tuning);
+
+	/** Panneau développeur : vie, énergie, ressource au maximum et recharges effacées pour tous. Sans effet en Shipping. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Gen|Dev")
+	void ServerDevRefillAll();
+
+	/** Ouvre ou ferme le panneau développeur (touche F10, hors Shipping). */
+	void ToggleDevPanel();
 
 protected:
 	virtual void BeginPlay() override;

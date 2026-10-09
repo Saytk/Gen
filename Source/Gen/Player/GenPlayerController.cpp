@@ -10,6 +10,7 @@
 #include "Input/GenInputConfig.h"
 #include "InputActionValue.h"
 #include "Player/GenPlayerState.h"
+#include "UI/GenHUD.h"
 #include "UI/GenUISubsystem.h"
 
 AGenPlayerController::AGenPlayerController()
@@ -64,6 +65,14 @@ void AGenPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
+#if !UE_BUILD_SHIPPING
+	// Outil de développement : touche fixe, hors des actions de jeu (pas d'asset d'entrée à livrer)
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &ThisClass::ToggleDevPanel);
+	}
+#endif
+
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!EnhancedInput || !InputConfig)
 	{
@@ -95,6 +104,38 @@ void AGenPlayerController::SetupInputComponent()
 			EnhancedInput->BindAction(Binding.InputAction, ETriggerEvent::Completed, this, &ThisClass::AbilityInputReleased, Binding.InputTag);
 		}
 	}
+}
+
+void AGenPlayerController::ServerSetDevTuning_Implementation(const FGenDevTuning& Tuning)
+{
+#if !UE_BUILD_SHIPPING
+	const UGenDevTuningSubsystem* DevTuning = UGenDevTuningSubsystem::Get(this);
+	if (AGenDevTuningActor* Actor = DevTuning ? DevTuning->GetActor() : nullptr)
+	{
+		Actor->SetTuning(Tuning);
+	}
+#endif
+}
+
+void AGenPlayerController::ServerDevRefillAll_Implementation()
+{
+#if !UE_BUILD_SHIPPING
+	const UGenDevTuningSubsystem* DevTuning = UGenDevTuningSubsystem::Get(this);
+	if (AGenDevTuningActor* Actor = DevTuning ? DevTuning->GetActor() : nullptr)
+	{
+		Actor->RefillAll();
+	}
+#endif
+}
+
+void AGenPlayerController::ToggleDevPanel()
+{
+#if !UE_BUILD_SHIPPING
+	if (AGenHUD* GenHUD = GetHUD<AGenHUD>())
+	{
+		GenHUD->ToggleDevPanel();
+	}
+#endif
 }
 
 void AGenPlayerController::Move(const FInputActionValue& Value)

@@ -11,6 +11,7 @@
 #include "AbilitySystemGlobals.h"
 #include "Character/GenCharacterBase.h"
 #include "Engine/World.h"
+#include "Game/GenDevTuning.h"
 #include "GenGameplayTags.h"
 #include "Player/GenPlayerController.h"
 
@@ -181,7 +182,8 @@ bool UGenGameplayAbility::CheckCost(const FGameplayAbilitySpecHandle Handle, con
 	{
 		return false;
 	}
-	if (EnergyCost <= 0.f)
+	// Panneau développeur (F10) : énergie infinie, mêmes réglages répliqués sur le client et le serveur
+	if (EnergyCost <= 0.f || GenDevTuning::Get(ActorInfo ? ActorInfo->OwnerActor.Get() : nullptr).bInfiniteEnergy)
 	{
 		return true;
 	}
@@ -207,7 +209,7 @@ void UGenGameplayAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle, con
 {
 	Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
 
-	if (EnergyCost <= 0.f)
+	if (EnergyCost <= 0.f || GenDevTuning::Get(ActorInfo ? ActorInfo->OwnerActor.Get() : nullptr).bInfiniteEnergy)
 	{
 		return;
 	}
@@ -224,15 +226,21 @@ void UGenGameplayAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle, con
 
 void UGenGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const
 {
+	// Panneau développeur (F10) : recharges coupées ou étirées, mêmes réglages répliqués sur le client et le serveur
+	const FGenDevTuning& DevTuning = GenDevTuning::Get(ActorInfo ? ActorInfo->OwnerActor.Get() : nullptr);
+
 	// Un GE de cooldown personnalisé a été assigné : comportement GAS standard
 	if (CooldownGameplayEffectClass)
 	{
-		Super::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+		if (!DevTuning.bNoCooldowns)
+		{
+			Super::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+		}
 		return;
 	}
 
 	const int32 Level = GetAbilityLevel(Handle, ActorInfo);
-	const float Duration = CooldownDuration.GetValueAtLevel(Level);
+	const float Duration = GenDevTuning::ScaleCooldown(DevTuning, CooldownDuration.GetValueAtLevel(Level));
 
 	if (Duration <= 0.f || CooldownTags.IsEmpty())
 	{

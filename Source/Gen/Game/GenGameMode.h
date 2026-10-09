@@ -20,6 +20,8 @@ class GEN_API AGenGameMode : public AGameModeBase
 public:
 	AGenGameMode();
 
+	/** Hors Shipping : crée l'acteur des réglages développeur (panneau F10), répliqué à tous. */
+	virtual void BeginPlay() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 

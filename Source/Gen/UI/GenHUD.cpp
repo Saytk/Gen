@@ -10,6 +10,7 @@
 #include "Engine/Font.h"
 #include "EngineUtils.h"
 #include "Player/GenPlayerState.h"
+#include "UI/GenDevPanel.h"
 #include "UI/GenHUDLayout.h"
 #include "UI/GenPrimaryGameLayout.h"
 #include "UI/GenUIDataAssets.h"
@@ -46,6 +47,26 @@ void AGenHUD::BeginPlay()
 	}
 	PrimaryLayout->AddToPlayerScreen(1000); // la racine est le seul widget ajouté à l'écran (§8.1)
 	PrimaryLayout->PushWidgetToLayer(GenUITags::UI_Layer_Game, Settings->HUDLayoutClass.LoadSynchronous());
+}
+
+void AGenHUD::ToggleDevPanel()
+{
+#if !UE_BUILD_SHIPPING
+	if (!PrimaryLayout)
+	{
+		return;
+	}
+	if (UGenDevPanel* Panel = DevPanel.Get(); Panel && Panel->IsActivated())
+	{
+		// Une pile CommonUI retire d'elle-même le widget désactivé
+		Panel->DeactivateWidget();
+		DevPanel.Reset();
+		UE_LOG(LogGenUI, Log, TEXT("Panneau développeur fermé"));
+		return;
+	}
+	DevPanel = Cast<UGenDevPanel>(PrimaryLayout->PushWidgetToLayer(GenUITags::UI_Layer_GameMenu, UGenDevPanel::StaticClass()));
+	UE_LOG(LogGenUI, Log, TEXT("Panneau développeur ouvert (%s)"), DevPanel.IsValid() ? TEXT("ok") : TEXT("échec"));
+#endif
 }
 
 void AGenHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)

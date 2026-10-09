@@ -1,5 +1,7 @@
 #include "AbilitySystem/GenAttributeSet.h"
 
+#include "Game/GenDevTuning.h"
+#include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectExtension.h"
 #include "GenGameplayTags.h"
@@ -121,7 +123,10 @@ void UGenAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 		// mais toute autre source de dégâts (mêlée, dégâts sur la durée, scripts) l'est aussi tant qu'il est intouchable
 		const UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
 		const bool bUntouchable = OwnerASC && OwnerASC->HasMatchingGameplayTag(GenGameplayTags::State_Untouchable);
-		if (LocalDamage > 0.f && !bOutOfHealth && !bUntouchable)
+		// Panneau développeur (F10) : joueurs invulnérables (les mannequins prennent toujours les coups)
+		const APawn* Avatar = OwnerASC ? Cast<APawn>(OwnerASC->GetAvatarActor()) : nullptr;
+		const bool bDevInvulnerable = Avatar && Avatar->IsPlayerControlled() && GenDevTuning::Get(Avatar).bInvulnerable;
+		if (LocalDamage > 0.f && !bOutOfHealth && !bUntouchable && !bDevInvulnerable)
 		{
 			// C'est ici qu'on ajoutera boucliers / réductions de dégâts plus tard
 			SetHealth(FMath::Clamp(GetHealth() - LocalDamage, 0.f, GetMaxHealth()));

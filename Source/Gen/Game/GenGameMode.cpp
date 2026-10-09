@@ -3,6 +3,7 @@
 #include "Character/GenCharacterBase.h"
 #include "Character/GenPlayerCharacter.h"
 #include "EngineUtils.h"
+#include "Game/GenDevTuning.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerStart.h"
 #include "Player/GenPlayerController.h"
@@ -16,6 +17,16 @@ AGenGameMode::AGenGameMode()
 	PlayerControllerClass = AGenPlayerController::StaticClass();
 	PlayerStateClass = AGenPlayerState::StaticClass();
 	HUDClass = AGenHUD::StaticClass();
+}
+
+void AGenGameMode::BeginPlay()
+{
+	Super::BeginPlay();
+#if !UE_BUILD_SHIPPING
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	GetWorld()->SpawnActor<AGenDevTuningActor>(Params);
+#endif
 }
 
 void AGenGameMode::PostLogin(APlayerController* NewPlayer)

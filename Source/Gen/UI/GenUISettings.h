@@ -4,6 +4,7 @@
 #include "Engine/DeveloperSettings.h"
 #include "GenUISettings.generated.h"
 
+class UCommonTextStyle;
 class UGenHUDLayout;
 class UGenPrimaryGameLayout;
 class UGenUIKeyGlyphs;
@@ -22,6 +23,11 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Tokens") TSoftObjectPtr<UGenUIKeyGlyphs> KeyGlyphs;
 	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UGenPrimaryGameLayout> PrimaryLayoutClass;
 	UPROPERTY(Config, EditAnywhere, Category = "Layout") TSoftClassPtr<UGenHUDLayout> HUDLayoutClass;
+
+	/** Style des textes du panneau développeur (F10, hors Shipping), construit en C++ sans WBP. */
+	UPROPERTY(Config, EditAnywhere, Category = "Dev") TSoftClassPtr<UCommonTextStyle> DevPanelTextStyle;
+
+	UGenUISettings();
 
 	virtual FName GetCategoryName() const override { return TEXT("Game"); }
 };
