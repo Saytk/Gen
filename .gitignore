@@ -19,3 +19,7 @@ UpgradeLog.htm
 .claude/settings.local.json
 # Python
 __pycache__/
+# Packs Paragon bruts (plusieurs Go) : seules les animations reciblées dans Content/Gen sont versionnées
+Content/ParagonGideon/
+Content/ParagonSerath/
+Content/Paragon*/
