@@ -22,7 +22,8 @@ float PxR = max(fwidth(R), 1e-5);
 float BorderW = BorderWidthPx * Px;
 float KeyW = KeylineWidthPx * Px;
 
-float3 Rel = RelationIndex < 1.5 ? SelfColour.rgb : (RelationIndex < 2.5 ? AllyColour.rgb : (RelationIndex < 3.5 ? EnemyColour.rgb : NeutralColour.rgb));
+// [TASTE #13] Soi et alliés partagent le bleu allié au sol (plus de blanc) ; l'autre équipe en rouge (MPC_TeamColours)
+float3 Rel = RelationIndex < 2.5 ? AllyColour.rgb : (RelationIndex < 3.5 ? EnemyColour.rgb : NeutralColour.rgb);
 float3 FirstKey = KeylinePolarity < 0.5 ? KeylineColour.rgb : KeylineLightColour.rgb;
 float SecondKeyW = KeylinePolarity > 1.5 ? KeyW : 0.0;
 
@@ -52,7 +53,7 @@ float AKey2 = (E2 - E3) * BorderAlpha;
 // Remplissage : plus dense près du bord qu'au centre (lecture de la forme), halo doux sous le liseré
 float Depth = max((IsLane || IsStub) ? SizeY : AX, 1e-4);
 float Grad = lerp(1.25, 0.4, saturate(In / (0.6 * Depth)));
-float Glow = exp(-max(In - BorderW - KeyW - SecondKeyW, 0.0) / (9.0 * Px));
+float Glow = exp(-max(In - BorderW - KeyW - SecondKeyW, 0.0) / (GlowFalloffPx * Px));   // [TASTE #13] liseré qui s'efface vers l'intérieur
 float FillBase = IsArc ? 0.0 : FillAlpha * Grad;
 float GlowA = Glow * (IsArc ? BorderAlpha * 0.35 : FillAlpha * 1.0);
 

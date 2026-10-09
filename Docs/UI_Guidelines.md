@@ -608,24 +608,21 @@ Every health bar in the game uses one base widget (`WBP_HealthBar`) with one fix
 
 ### 4.4 Overhead stack (nameplate)
 
-This is the most important HUD element. It is projected to screen space and keeps a **fixed pixel size at every camera zoom**: bars never scale with zoom (Art Bible §9). The only size change is the player's own "Overhead scale" accessibility setting (§7.2), which is never linked to the camera. The stack has no badge.
+This is the most important HUD element. It is projected to screen space and keeps a **fixed pixel size at every camera zoom**: bars never scale with zoom (Art Bible §9). Sizes below are at 1080p and scale with the screen height only (`Canvas.ClipY / 1080`, clamped 0.75–2). The stack has no badge.
 
-Bar sizes follow Art Bible §9: health bar **~80 × 8 px at 1080p**, energy bar **4 px tall directly below it**, fill in the team colour from `DA_TeamColours`, and an **off-white frame on the self bar**. Sizes below are track sizes (§2.9); the 1 px `line.outline` around each bar sits inside the 2 px gaps.
+**[TASTE #13] Look: the concept `Docs/Design/example_hpbar_concept_v0.jpg` (Battlerite feel), on the user's request (2026-10-09).** It replaces the earlier 80 px plain bars. Implemented in `AGenHUD::DrawNameplate` (Canvas prototype); sizes are `AGenHUD` properties (`HUD|Nameplate`).
 
-Rows, from top to bottom. Every row is **always reserved**: hide content with `Hidden`, never `Collapsed`, so the stack never shifts.
+| Row | Spec | Height |
+|---|---|---|
+| HP | **128 px** wide, 2 px `line.outline` frame on a `bg.panel` track. **One rectangle per 40 HP** (`HealthPerSegment`; 200 HP = 5), 2 px gaps; the last filled rectangle empties right to left. Rounded corners (frame 4 px, rectangles 2.5 px, anti-aliased) and a **soft vertical gradient** (top 12 % toward white → base → bottom ×0.62), no highlight band and no glow (user feedback 2026-10-09: "too glowy", "too rectangular"). Fill: **self teal `#2FAE8C`** (`GenUITokens::SelfHealthHex`), **ally blue / enemy red from `MPC_TeamColours`** (the telegraph colours, one source) | 14 |
+| Gap | | 3 |
+| Energy | 128 px, **hexagonal** (chevron ends, depth = half the height), `line.outline` frame, `energy.charging` fill (`energy.full` at 100 %), same soft vertical gradient, chevron ends anti-aliased. **A 1 px tick every 25 energy** (`EnergyPerChunk`; 100 = 4 chunks). Value **`85/100`** centred, Barlow SemiBold 7 pt, `text.primary`, 1 px dark outline | 11 |
+| Gap | | 3 |
+| Cast or channel | 128 px, `cast.fill`, the feed thresholds as 1 px ticks (§4.5), and a **leading edge** (2 px pale gold line + faint 4 px halo) at the fill front. Row reserved, drawn only while casting | 7 |
+| Champion resource | **Right of the HP and energy rows**, vertically centred on them, 6 px gap: the resource logo (`T_UI_Resource_Flame`, 26 px, from `Content/Python/gen_ui_resource_flame.py`) and the **available count** in Barlow Bold 14 pt, `text.primary`, outlined (fed units are already in the spell, like the Hearth). Only for champions with a custom resource | — |
+| **Total** | The **bottom** of the stack sits on the projected point (`OverheadOffsetZ` above the actor) | **41 px** |
 
-| Row | Others (ally / enemy / neutral) | Self | Height |
-|---|---|---|---|
-| Name **or** state word | `TS_Name` 20 px in `text.relation.*`, outlined, max 10 characters then "…". **Replaced** by the `TS_StatusWord` while a state is active | No name. State word only (row reserved) | 24 (line box) |
-| Gap | | | 2 |
-| State duration | 2 px `status.duration` line, 60 px wide, centred, drains linearly. Only while a state with a known duration is active | Same | 2 |
-| Gap | | | 2 |
-| HP bar | **80 × 8 px** track, solid relation fill. **Enemy:** a 4 px chevron point outside the right end of the track, in `team.enemy` with the `line.outline` edge (the Art Bible enemy notch/chevron cue). **Ally and neutral:** plain ends | **80 × 8 px** track, then a 1 px `line.outline` separator, then a **2 px `team.self` off-white frame**, then the outer 1 px `line.outline`. Footprint 86 × 14 px plus the outer line. The separator keeps the off-white frame from merging with the off-white fill | 8 / 14 |
-| Gap | | | 2 |
-| Energy | **80 × 4 px**, 4 segments with 2 px gaps, directly below the HP bar | 80 × 4 px, aligned to the HP track | 4 |
-| Gap | | | 2 |
-| Cast or channel | 80 × 4 px, visible only while casting (§4.5) | 80 × 4 px | 4 |
-| **Total** | **50 px** | **56 px** | |
+- **Changed from the earlier spec on purpose:** HP and energy numbers are shown (energy only), the stack is wider, self is teal instead of an off-white frame, and there is no name row yet.
 
 **Rules:**
 - **Anchoring:**
@@ -885,8 +882,8 @@ While the local player is dead (`UI.State.Dead` → `UI.State.Spectating`):
 
 ### 4.18 Cursor
 
-- **Implementation:** a software cursor: Project Settings → User Interface → Software Cursors, mapping `Default` → `WBP_Cursor`.
-- **Default look:** a 24 px crosshair-arrow in `text.primary` with a 1 px `line.outline` outline.
+- **Implementation [TASTE #13]:** a **hardware cursor** (no input lag): `DefaultEngine.ini` → `UserInterfaceSettings.HardwareCursors`, mapping `Crosshairs` (the game's `DefaultMouseCursor`) → `Content/Slate/Cursors/Reticle` (`Reticle.png` 48 px, `@1.5x` 72 px, `@2x` 96 px, hotspot in the centre). `Content/Slate` is staged in packaged builds (`DefaultGame.ini`).
+- **Default look [TASTE #13]:** the user's **Glowing Orange Compass Reticle** (`Docs/Design/UI/Glowing Orange Compass Reticle-1.png`): glowing ring in four arcs, four dark-rimmed spikes, a gold diamond in the centre; background keyed out. Chosen over the Ember Crosshair because the ring is a bigger silhouette, which was the complaint (the old cursor was easy to lose).
 - **Settings:** colour (any relation-safe colour), size 100–200%, high-visibility outline (2 px).
 - **Cursor cooldown ring** (optional, off by default): a 2 px ring with a 28 px radius around the cursor, showing the last-pressed ability's cooldown. It drains clockwise, like the slot sweep. Battlerite players asked for this because the bar was hard to read in peripheral vision.
 

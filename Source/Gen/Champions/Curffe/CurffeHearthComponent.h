@@ -158,6 +158,30 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Converge", meta = (Units = "s"))
 	float ConvergeBlendTime = 0.1f;
 
+	/** Au repos, les 5 flammes forment un arc derrière le dos (d'une épaule à l'autre par-dessus la tête) : rayon de l'arc. */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Arc", meta = (Units = "cm"))
+	float ArcRadius = 48.f;
+
+	/** Ouverture de l'arc, de la première à la dernière flamme. */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Arc", meta = (Units = "deg"))
+	float ArcSpread = 150.f;
+
+	/** Hauteur du centre de l'arc au-dessus du centre du composant. */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Arc", meta = (Units = "cm"))
+	float ArcHeight = 20.f;
+
+	/** Recul du centre de l'arc derrière le dos. */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Arc", meta = (Units = "cm"))
+	float ArcBack = 25.f;
+
+	/** Inclinaison du plan de l'arc vers l'arrière (0 = vertical). */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Arc", meta = (Units = "deg"))
+	float ArcTilt = 30.f;
+
+	/** Vitesse à laquelle l'arc suit l'orientation du personnage (sans elle, il claque à chaque visée). */
+	UPROPERTY(EditDefaultsOnly, Category = "Hearth|Arc")
+	float ArcFacingInterpSpeed = 12.f;
+
 private:
 	struct FFlight
 	{
@@ -228,6 +252,8 @@ private:
 
 	float OrbitAngle = 0.f;
 	float CurrentOrbitRadius = 0.f;
+	/** Orientation lissée de l'arc (lacet du personnage suivi à ArcFacingInterpSpeed). */
+	float ArcYaw = 0.f;
 	float LitFlameScale = 0.f;
 	bool bConverging = false;
 	int32 VisibleFlames = 0;

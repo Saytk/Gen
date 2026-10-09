@@ -6,8 +6,11 @@
 #include "GenHUD.generated.h"
 
 class AGenCharacterBase;
+class UFont;
 class UGenDevPanel;
 class UGenPrimaryGameLayout;
+class UMaterialParameterCollection;
+class UTexture2D;
 
 /**
  * HUD du joueur local :
@@ -41,6 +44,19 @@ protected:
 	void DrawLocalCastBar(const AGenCharacterBase* LocalCharacter, float Bottom);
 	void DrawBar(float X, float Y, float Width, float Height, float Percent, const FLinearColor& FillColor);
 
+	/** Pile au-dessus d'un personnage (concept example_hpbar_concept_v0, UI_Guidelines §4.4) : vie en rectangles, énergie
+	 * en tronçons avec « 85/100 », barre de cast à seuils, logo et nombre de la ressource à droite. Scale = échelle d'UI. */
+	void DrawNameplate(const AGenCharacterBase* Character, const FLinearColor& HealthColor, float CentreX, float Bottom, float Scale);
+	/** Vie : rectangles de HealthPerSegment PV, biseau clair en haut. */
+	void DrawHealthSegments(float X, float Y, float Width, float Height, float Health, float MaxHealth, const FLinearColor& Color, float Scale);
+	/** Énergie : bouts en chevron, un trait tous les EnergyPerChunk, valeur au centre. */
+	void DrawEnergyBar(float X, float Y, float Width, float Height, float Energy, float MaxEnergy, float Scale);
+	void DrawTriangle(const FLinearColor& Color, const FVector2D& A, const FVector2D& B, const FVector2D& C);
+	/** Texte centré sur (X, Y), police FNT_Barlow, contour sombre. */
+	void DrawNameplateText(const FString& Text, float X, float Y, int32 Size, FName Typeface, const FLinearColor& Color, bool bCentreX);
+	/** Couleur d'équipe de MPC_TeamColours (même source que les télégraphes), ou Fallback. */
+	FLinearColor GetTeamColour(FName Parameter, const FLinearColor& Fallback);
+
 	/** Haut de la barre de sorts UMG, en pixels Canvas (le panneau prototype se dessine au-dessus). */
 	float GetAbilityBarTop() const;
 
@@ -54,8 +70,43 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	float OverheadOffsetZ = 130.f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "HUD")
-	FVector2D OverheadBarSize = FVector2D(90.f, 9.f);
+	/** Pile au-dessus des personnages, en pixels à 1080p (multipliés par l'échelle d'UI). */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	float NameplateWidth = 128.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	float NameplateHealthHeight = 14.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	float NameplateEnergyHeight = 11.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	float NameplateCastHeight = 7.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	float NameplateRowGap = 3.f;
+
+	/** Un rectangle de la barre de vie = ce nombre de PV (200 PV = 5 rectangles). */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate", meta = (ClampMin = "1"))
+	float HealthPerSegment = 40.f;
+
+	/** Un tronçon de la barre d'énergie = ce nombre d'énergie. */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate", meta = (ClampMin = "1"))
+	float EnergyPerChunk = 25.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	float NameplateResourceIconSize = 26.f;
+
+	/** Logo de la ressource du champion (flammes de Curffe), à droite de la vie. */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	TSoftObjectPtr<UTexture2D> ResourceIcon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/Gen/UI/Textures/Icons/T_UI_Resource_Flame.T_UI_Resource_Flame")));
+
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	TSoftObjectPtr<UFont> NameplateFont = TSoftObjectPtr<UFont>(FSoftObjectPath(TEXT("/Game/Gen/UI/Fonts/FNT_Barlow.FNT_Barlow")));
+
+	/** Couleurs allié / ennemi des barres : celles des télégraphes (une seule source). */
+	UPROPERTY(EditDefaultsOnly, Category = "HUD|Nameplate")
+	TSoftObjectPtr<UMaterialParameterCollection> TeamColours = TSoftObjectPtr<UMaterialParameterCollection>(FSoftObjectPath(TEXT("/Game/Gen/Rendering/MPC_TeamColours.MPC_TeamColours")));
 
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	FLinearColor SelfColor = FLinearColor(0.25f, 0.9f, 0.3f);

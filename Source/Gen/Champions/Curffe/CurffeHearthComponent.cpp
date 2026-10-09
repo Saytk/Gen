@@ -74,6 +74,7 @@ void UCurffeHearthComponent::BeginPlay()
 	AblazeTag = CurffeGameplayTags::State_Ablaze;
 	LivingFlameTag = CurffeGameplayTags::State_LivingFlame;
 	CurrentOrbitRadius = OrbitRadius;
+	ArcYaw = GetOwner() ? GetOwner()->GetActorRotation().Yaw : 0.f;
 
 	if (AGenCharacterBase* Character = Cast<AGenCharacterBase>(GetOwner()))
 	{
@@ -99,6 +100,8 @@ void UCurffeHearthComponent::BeginPlay()
 	Flames->SetUsingAbsoluteRotation(true);
 	Flames->SetUsingAbsoluteScale(true);
 	Flames->SetupAttachment(this);
+	// Transformées de l'image précédente par instance (vitesses correctes pour TSR, voir TickComponent)
+	Flames->SetHasPerInstancePrevTransforms(true);
 	Flames->RegisterComponent();
 	Flames->SetNumCustomDataFloats(CustomDataCount);
 
@@ -282,7 +285,28 @@ bool UCurffeHearthComponent::IsUnlimited() const
 FVector UCurffeHearthComponent::GetFlameSocketLocation(int32 Socket) const
 {
 	const float Angle = FMath::DegreesToRadians(OrbitAngle + 360.f * Socket / SocketCount);
-	return GetComponentLocation() + FVector(FMath::Cos(Angle) * CurrentOrbitRadius, FMath::Sin(Angle) * CurrentOrbitRadius, OrbitHeight);
+	const FVector Orbit = GetComponentLocation() + FVector(FMath::Cos(Angle) * CurrentOrbitRadius, FMath::Sin(Angle) * CurrentOrbitRadius, OrbitHeight);
+
+	// Au repos, les flammes forment un arc derrière le dos (avis utilisateur du 2026-10-09), de l'épaule gauche à l'épaule
+	// droite en passant au-dessus de la tête, dans un plan incliné vers l'arrière. Living Flame et l'incantation de
+	// Combustion gardent l'orbite qui se resserre : on passe de l'arc à l'orbite à mesure que le rayon se resserre
+	const float ConvergeSpan = OrbitRadius - BuildUpRadius;
+	const float OrbitAlpha = ConvergeSpan > 0.f ? FMath::Clamp((OrbitRadius - CurrentOrbitRadius) / ConvergeSpan, 0.f, 1.f) : 0.f;
+	const AActor* Owner = GetOwner();
+	if (OrbitAlpha >= 1.f || !Owner)
+	{
+		return Orbit;
+	}
+	const FRotator Facing(0.f, ArcYaw, 0.f);
+	const FVector Forward = Facing.Vector();
+	const FVector Right = FRotationMatrix(Facing).GetUnitAxis(EAxis::Y);
+	const float Theta = FMath::DegreesToRadians(SocketCount > 1 ? FMath::Lerp(-ArcSpread * 0.5f, ArcSpread * 0.5f, static_cast<float>(Socket) / (SocketCount - 1)) : 0.f);
+	const float Tilt = FMath::DegreesToRadians(ArcTilt);
+	const float Lateral = FMath::Sin(Theta) * ArcRadius;
+	const float Vertical = FMath::Cos(Theta) * ArcRadius;
+	const FVector Arc = GetComponentLocation() + FVector::UpVector * (ArcHeight + Vertical * FMath::Cos(Tilt))
+		- Forward * (ArcBack + Vertical * FMath::Sin(Tilt)) + Right * Lateral;
+	return FMath::Lerp(Arc, Orbit, FMath::SmoothStep(0.f, 1.f, OrbitAlpha));
 }
 
 FVector UCurffeHearthComponent::GetSpellLocation(FName SpellSocket) const
@@ -453,6 +477,7 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	CurrentOrbitRadius = BlendSpeed > 0.f ? FMath::FInterpConstantTo(CurrentOrbitRadius, TargetRadius, DeltaTime, BlendSpeed) : TargetRadius;
 	const float SpeedScale = bLivingFlameForm ? ConvergeOrbitSpeedScale : (bBuildUp ? BuildUpOrbitSpeedScale : (bAblaze ? AblazeOrbitSpeedScale : 1.f));
 	OrbitAngle = FMath::Fmod(OrbitAngle + OrbitSpeedDegrees * SpeedScale * DeltaTime, 360.f);
+	ArcYaw = FMath::RInterpTo(FRotator(0.f, ArcYaw, 0.f), FRotator(0.f, Character->GetActorRotation().Yaw, 0.f), DeltaTime, ArcFacingInterpSpeed).Yaw;
 
 	// Cartes (face à +X) tournées vers la caméra locale, haut vers +Z (pas de billboard par WPO) ; sphères du repli : sans importance
 	const bool bFallback = UsesFallback();
@@ -530,7 +555,20 @@ void UCurffeHearthComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 
+	// Transformées de l'image précédente = celles qu'on remplace : les flammes écrivent leur vrai mouvement dans le buffer de
+	// vitesse. Sans elles, TSR et le flou de mouvement les traitent comme fixes dans le monde alors qu'elles suivent la
+	// caméra, et les étirent en traînées. Une flamme qui apparaît (échelle nulle avant) part de sa position actuelle
+	TArray<FTransform> Current(Transforms);
+	TArray<FTransform> Previous;
+	Previous.SetNum(InstanceCount);
+	for (int32 Instance = 0; Instance < InstanceCount; ++Instance)
+	{
+		FTransform Last;
+		const bool bHadTransform = Flames->GetInstanceTransform(Instance, Last, /*bWorldSpace*/ true);
+		Previous[Instance] = bHadTransform && !Last.GetScale3D().IsNearlyZero() ? Last : Current[Instance];
+	}
+
 	// Une mise à jour groupée par image. Revue V6-V8, I-4 : sans MarkRenderStateDirty (qui recrée le proxy à chaque image) :
 	// transformées et données par instance passent par le chemin delta des instances (MarkRenderInstancesDirty)
-	Flames->BatchUpdateInstancesTransforms(0, Transforms, /*bWorldSpace*/ true, /*bMarkRenderStateDirty*/ false, /*bTeleport*/ true);
+	Flames->BatchUpdateInstancesTransforms(0, Current, Previous, /*bWorldSpace*/ true, /*bMarkRenderStateDirty*/ false, /*bTeleport*/ true);
 }

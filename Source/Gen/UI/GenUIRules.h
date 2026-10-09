@@ -33,6 +33,17 @@ namespace GenUITokens
 
 	/** accent.brass (§2.2) : seul accent de marque sur fond sombre (focus, sélection, liens des menus et infobulles). */
 	inline const TCHAR* const AccentBrassHex = TEXT("#D6A47C");
+
+	/** Fire body (§2.6, = Art Bible §4.3) : teinte réservée au feu ; cases de ressource des flammes au-dessus des personnages. */
+	inline const TCHAR* const FireBodyHex = TEXT("#F5B82E");
+
+	/** Vie de soi au-dessus du personnage [TASTE #13] : sarcelle du concept example_hpbar_concept_v0 (alliés bleus, ennemis rouges). */
+	inline const TCHAR* const SelfHealthHex = TEXT("#2FAE8C");
+
+	/** Barre de cast d'un sort nourri [TASTE #13] : couleur du tronçon avant le 1er seuil, puis après le 1er, puis au-delà. */
+	inline const TCHAR* const CastTierLowHex = TEXT("#5CC46A");
+	inline const TCHAR* const CastTierMidHex = TEXT("#F2C94C");
+	inline const TCHAR* const CastTierHighHex = TEXT("#E5484D");
 }
 
 /** Règles pures de l'interface, testées hors monde. */
