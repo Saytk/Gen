@@ -311,10 +311,11 @@ public:
 	/**
 	 * Plan Visuals V4 : fenêtre minutée affichée comme une canalisation (la barre se vide de droite à gauche, UI §4.5),
 	 * vue par tous : fenêtre de contre, forme de Living Flame. Serveur et client propriétaire, comme StartCast, mais
-	 * sans effet d'incantation ni visée imposée (SetFaceAim). Arrêtée par StopCast(Ability).
+	 * sans effet d'incantation. bFaceAim : le personnage reste face à la visée pendant la fenêtre (posture de contre) ;
+	 * sinon il suit son déplacement (forme de Living Flame). Arrêtée par StopCast(Ability), qui rend l'orientation au déplacement.
 	 * À appeler depuis OnCastLaunched : UGenGA_Cast a déjà retiré la barre de l'incantation (EndCastPresentation).
 	 */
-	void StartChannel(UClass* Ability, float Duration);
+	void StartChannel(UClass* Ability, float Duration, bool bFaceAim = false);
 
 	/**
 	 * Part écoulée de l'incantation ou de la canalisation en cours, 0..1 (0 sans incantation), en temps serveur.

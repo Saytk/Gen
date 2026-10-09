@@ -6,6 +6,7 @@
 #include "AbilitySystem/Abilities/GenGameplayAbility.h"
 #include "AbilitySystem/GenCastBarRules.h"
 #include "Character/GenTrainingDummy.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Tests/GenTestWorld.h"
 
 using GenTestWorld::FScopedTestWorld;
@@ -169,6 +170,16 @@ bool FGenCastInfoChannelTest::RunTest(const FString& Parameters)
 	// Une incantation normale suivante n'hérite pas du drapeau
 	Caster->StartCast(Window, 0.5f);
 	TestFalse(TEXT("StartCast : pas une canalisation"), Caster->GetCastInfo().bChannel);
+
+	// Orientation (bug du 2026-10-09 : pendant la fenêtre du contre, ZQSD retournait le personnage vers son déplacement).
+	// Par défaut une canalisation suit le déplacement (Living Flame) ; une posture (contre) reste face à la visée
+	const UCharacterMovementComponent* Movement = Caster->GetCharacterMovement();
+	Caster->StartChannel(Window, 1.2f);
+	TestTrue(TEXT("canalisation : face au déplacement"), Movement->bOrientRotationToMovement && !Movement->bUseControllerDesiredRotation);
+	Caster->StartChannel(Window, 1.2f, /*bFaceAim*/ true);
+	TestTrue(TEXT("posture : face à la visée"), !Movement->bOrientRotationToMovement && Movement->bUseControllerDesiredRotation);
+	Caster->StopCast(Window);
+	TestTrue(TEXT("fin de posture : de nouveau face au déplacement"), Movement->bOrientRotationToMovement && !Movement->bUseControllerDesiredRotation);
 	return true;
 }
 

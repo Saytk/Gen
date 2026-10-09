@@ -120,11 +120,11 @@ void AGenCharacterBase::MarkFeedEnded(UClass* Ability, int32 FedCount, bool bFin
 	CastInfo.FedCount = bFinal ? Count : FMath::Max(CastInfo.FedCount, Count);
 }
 
-void AGenCharacterBase::StartChannel(UClass* Ability, float Duration)
+void AGenCharacterBase::StartChannel(UClass* Ability, float Duration, bool bFaceAim)
 {
-	// Comme StartCast, sans effet : la fenêtre ne fige pas l'orientation du personnage. Remis à faux même si
-	// l'appelant n'a pas retiré l'incantation avant (revue V2-V4, M9)
-	SetFaceAim(false);
+	// Comme StartCast, sans effet. Orientation toujours fixée ici, même si l'appelant n'a pas retiré l'incantation avant
+	// (revue V2-V4, M9) : face au déplacement par défaut, face à la visée pour une posture (contre, bug du 2026-10-09)
+	SetFaceAim(bFaceAim);
 	CastInfo = FGenCastInfo();
 	CastInfo.Ability = Ability;
 	CastInfo.Duration = Duration;
