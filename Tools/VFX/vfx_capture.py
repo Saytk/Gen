@@ -63,6 +63,33 @@ def swap_fx(actor_path, system_path, component="ProjectileFX"):
     del a, fx
 
 
+def shoot(class_path, system_path, name, frames=4, interval=0.08, first_delay=0.3, side_offset=450.0, height=90.0,
+          scale=2.0, actor_scale=1.0):
+    """Tire un projectile en travers de l'écran avec un autre système Niagara, puis lance la capture."""
+    res = spawn_across_view(class_path, side_offset=side_offset, height=height)
+    if not res.get("success"):
+        return res
+    if actor_scale != 1.0:
+        a = unreal.find_object(None, res["actor_path"])
+        a.set_actor_scale3d(unreal.Vector(actor_scale, actor_scale, actor_scale))
+        del a
+    if system_path:
+        swap_fx(res["actor_path"], system_path)
+    return start(name, frames=frames, interval=interval, first_delay=first_delay, scale=scale)
+
+
+def burst_row(items, depth_offset=250.0, height=60.0):
+    """Fait jouer des systèmes (impacts) côte à côte devant le joueur : items = [(chemin, décalage écran, échelle), ...]."""
+    w = _world()
+    loc, right, up = view_basis()
+    loc.z = height
+    for path, off, s in items:
+        unreal.NiagaraFunctionLibrary.spawn_system_at_location(
+            w, unreal.load_asset(path), loc + right * off + up * depth_offset, unreal.Rotator(0, 0, 0),
+            unreal.Vector(s, s, s), True, True, unreal.NCPoolMethod.NONE, True)
+    del w
+
+
 def start(name, frames=12, interval=0.1, slomo=0.1, first_delay=0.0, scale=1.0):
     """Lance la capture : `frames` images toutes les `interval` secondes de temps de jeu.
     `scale` > 1 rend les captures en plus haute résolution que le viewport (détail pour recadrer)."""
