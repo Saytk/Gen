@@ -28,7 +28,7 @@
 using namespace GenNetTest;
 
 /**
- * Gen.Net.FlamePillar / Gen.Net.Backfire / Gen.Net.MeteorLeap : sorts de Curffe du plan 2 (Tasks 6 à 8), joués par
+ * Gen.Net.FlamePillar / Gen.Net.Backfire / Gen.Net.FlameDash : sorts de Curffe du plan 2 (Tasks 6 à 8), joués par
  * le client 0 à travers le vrai chemin LocalPredicted, avec les classes C++ de test (GenNetCurffeTestAbilities.h :
  * mêmes classes génériques que les futurs assets, valeurs de la spec). Sol de test posé dans chaque monde.
  * Les tags de Gen (non exportés) sont demandés par leur nom.
@@ -385,49 +385,37 @@ NETWORK_TEST_CLASS(Backfire, "Gen.Net")
 // =====================================================================================================================
 
 /**
- * Gen.Net.MeteorLeap (Task 8, Review Focus #4) : bond nourrissable du client 0 vers (500, 0), l'ennemi (client 1) à
- * 1 m du point d'atterrissage. Anneau de test : boules nées au point d'atterrissage, assez grosses pour toutes chevaucher
- * l'ennemi. Attendu :
- * - 3 flammes : 3 boules d'une même salve, l'ennemi ne prend que la zone d'atterrissage + UNE boule (5 + 8) ; l'ennemi
- *   reçoit le point d'atterrissage (cercle, amorces de l'anneau) pendant le vol, effacé à l'atterrissage ;
- * - étourdi en plein vol : le vol continue, la zone et l'anneau partent, le sort se termine normalement ;
- * - étourdi pendant le décollage : sort annulé, ni recharge, ni flamme dépensée, ni bond.
+ * Gen.Net.FlameDash (Curffe.md « Space: Flame Dash ») : ruée en zigzag nourrissable du client 0, visée (500, 0) depuis
+ * (0, 0). Attendu :
+ * - 0 flamme : une ruée de 3 m selon la visée ; serveur et client propriétaire arrivent au même point ;
+ * - 3 flammes : 4 segments (3 m, puis 2.5 m à gauche, à droite, à gauche) ; verrou de lancement pendant la ruée ;
+ * - un mur sur le premier segment arrête la ruée devant lui, les segments suivants sont abandonnés ;
+ * - étourdi en pleine ruée : la ruée continue et se termine normalement ;
+ * - étourdi pendant le décollage : sort annulé, ni recharge, ni flamme dépensée, ni ruée.
+ * Le mur est posé dans chaque monde (serveur et clients) : le client prédit sa ruée contre la même géométrie.
  */
-NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
+NETWORK_TEST_CLASS(FlameDash, "Gen.Net")
 {
 	FPIENetworkComponent<FBasePIENetworkComponentState> Network{ TestRunner, TestCommandBuilder, bInitializing };
 
-	TWeakObjectPtr<UWorld> ServerWorld;
-	FDelegateHandle SpawnHandle;
 	TWeakObjectPtr<AGenPlayerCharacter> ServerCaster;
 	TWeakObjectPtr<AGenPlayerCharacter> ServerEnemy;
-	TArray<TWeakObjectPtr<AGenNetTestRingProjectile>> RingProjectiles;
-	/** Lacet et position de chaque boule de l'anneau à son apparition (ordre d'apparition). */
-	TArray<float> RingYaws;
-	TArray<FVector> RingOrigins;
-	TWeakObjectPtr<AActor> ServerWall;
-	TSet<const FGenProjectileSalvo*> RingSalvos;
-	int32 AreaCount = 0;
-	int32 CasterPlayerId = INDEX_NONE;
-	FGenLeapTarget ObservedTarget;
-	bool bObservedDuringFlight = false;
-	float FlamesAtRing = -1.f;
+	TArray<TWeakObjectPtr<AActor>> Walls;
 	float MaxFlames = 0.f;
-	float EnemyHealthBefore = 0.f;
 	float ClientMark = 0.f;
 	float ServerMark = 0.f;
+	/** Départ de la ruée relevé juste avant l'appui (serveur, client 0). */
+	FVector ServerStart = FVector::ZeroVector;
+	FVector ClientStart = FVector::ZeroVector;
+	/** Verrou de lancement vu pendant la ruée (serveur, client 0). */
+	bool bServerLockedWhileDashing = false;
+	bool bClientLockedWhileDashing = false;
 
-	/** Signaux d'impact du bond joués, par monde (revue Plan 2 Tasks 7-8, M-4). */
-	TMap<TWeakObjectPtr<UWorld>, int32> ImpactCues;
-	/** Chez le propriétaire, son bond était encore actif quand le signal a joué (donc à SON atterrissage). */
-	bool bOwnerCueDuringOwnLeap = false;
-	FDelegateHandle CueHandle;
+	/** Écart toléré entre l'arrivée et le point calculé (cm) : corrections du mouvement, image de fin de segment. */
+	static constexpr float EndTolerance = 40.f;
 
-	static constexpr float LandingDamage = 5.f;
-	static constexpr float RingDamage = 8.f;
-
-	static FGameplayTag LeapInputTag() { return Tag(TEXT("InputTag.Ability.3")); }
-	static FGameplayTag LeapCooldownTag() { return Tag(TEXT("Cooldown.Ability.FlameLeap")); }
+	static FGameplayTag DashInputTag() { return Tag(TEXT("InputTag.Ability.3")); }
+	static FGameplayTag DashCooldownTag() { return Tag(TEXT("Cooldown.Ability.FlameLeap")); }
 
 	BEFORE_EACH()
 	{
@@ -435,9 +423,9 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 
 		// Touche et recharge du sort de test (tags demandés ici, pas pendant le chargement du module). La touche est lue
 		// sur le CDO au moment d'accorder le sort (GrantAbilities) ; la recharge est reprise par l'instance à l'activation.
-		GetMutableDefault<UGenNetTestGA_MeteorLeap>()->InputTag = LeapInputTag();
-		UGenNetTestGA_MeteorLeap::TestCooldownTags = FGameplayTagContainer(LeapCooldownTag());
-		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
+		GetMutableDefault<UGenNetTestGA_MeteorLeap>()->InputTag = DashInputTag();
+		UGenNetTestGA_MeteorLeap::TestCooldownTags = FGameplayTagContainer(DashCooldownTag());
+		UGenNetTestGA_MeteorLeap::TestSegmentDuration = 0.12f;
 
 		FNetworkComponentBuilder<FBasePIENetworkComponentState>()
 			.WithClients(2)
@@ -448,23 +436,47 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 
 	AFTER_EACH()
 	{
-		if (ServerWorld.IsValid() && SpawnHandle.IsValid())
+		UGenNetTestGA_MeteorLeap::TestSegmentDuration = 0.12f;
+		for (const TWeakObjectPtr<AActor>& Wall : Walls)
 		{
-			ServerWorld->RemoveOnActorSpawnedHandler(SpawnHandle);
+			if (Wall.IsValid())
+			{
+				Wall->Destroy();
+			}
 		}
-		SpawnHandle.Reset();
-		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
-		UGenNetTestGA_MeteorLeap::TestImpactCueTag = FGameplayTag();
-		if (CueHandle.IsValid())
-		{
-			UAbilitySystemGlobals::Get().GetGameplayCueManager()->OnGameplayCueRouted().Remove(CueHandle);
-			CueHandle.Reset();
-		}
+		Walls.Reset();
 	}
 
-	bool HasLanded() const
+	/** Paramètres du zigzag du sort de test (ceux du CDO : mêmes valeurs que l'instance). */
+	static GenDashRules::FZigzagParams GetParams()
 	{
-		return AreaCount > 0 && ServerCaster.IsValid() && !IsAbilityActive(ServerCaster->GetAbilitySystemComponent(), UGenNetTestGA_MeteorLeap::StaticClass());
+		return GetDefault<UGenNetTestGA_MeteorLeap>()->GetZigzagParams();
+	}
+
+	/** Arrivée calculée d'une ruée de Fed flammes depuis Start, visée (500, 0) (sans mur). */
+	static FVector ExpectedEnd(const FVector& Start, int32 Fed)
+	{
+		const float Yaw = (FVector(500.f, 0.f, Start.Z) - Start).GetSafeNormal2D().Rotation().Yaw;
+		return GenDashRules::ComputeZigzag(Start, Yaw, Fed, GetParams()).Last();
+	}
+
+	/** Mur fixe dans World : bloc de 50 cm d'épaisseur, face avant à X = FrontX, 4 m de large, 3 m de haut. */
+	void SpawnWall(UWorld* World, float FrontX)
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AStaticMeshActor* Wall = World->SpawnActor<AStaticMeshActor>(FVector(FrontX + 25.f, 0.f, 150.f), FRotator::ZeroRotator, Params);
+		ASSERT_THAT(IsNotNull(Wall));
+		Wall->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+		Wall->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+		Wall->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+		Wall->SetActorScale3D(FVector(0.5f, 4.f, 3.f));
+		Walls.Add(Wall);
+	}
+
+	bool IsServerDashActive() const
+	{
+		return ServerCaster.IsValid() && IsAbilityActive(ServerCaster->GetAbilitySystemComponent(), UGenNetTestGA_MeteorLeap::StaticClass());
 	}
 
 	void QueueSetup()
@@ -474,44 +486,23 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
 			.ThenServer(TEXT("Serveur : sol de test"), [this](FBasePIENetworkComponentState& Server) { ASSERT_THAT(IsNotNull(SpawnTestFloor(Server.World))); })
 			.UntilClients(TEXT("Clients : sol de test reçu"), [](FBasePIENetworkComponentState& Client) { return HasTestFloor(Client.World); }, DefaultWait())
-			.ThenServer(TEXT("Serveur : sol, bond accordé, joueurs placés"), [this](FBasePIENetworkComponentState& Server)
+			.ThenServer(TEXT("Serveur : ruée accordée, joueurs placés"), [this](FBasePIENetworkComponentState& Server)
 			{
-				ServerWorld = Server.World;
 				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
 				AGenPlayerCharacter* Enemy = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
 				ASSERT_THAT(IsNotNull(Caster));
 				ASSERT_THAT(IsNotNull(Enemy));
 				ServerCaster = Caster;
 				ServerEnemy = Enemy;
-				CasterPlayerId = Caster->GetPlayerState()->GetPlayerId();
 				PlaceOnFloor(Caster, 0.f, 0.f);
-				PlaceOnFloor(Enemy, 500.f, 100.f);
+				PlaceOnFloor(Enemy, -600.f, 600.f); // loin du trajet
 
 				UAbilitySystemComponent* ASC = Caster->GetAbilitySystemComponent();
 				Cast<UGenAbilitySystemComponent>(ASC)->GrantAbilities({ UGenNetTestGA_MeteorLeap::StaticClass() }, nullptr);
 				MaxFlames = GetAttribute(ASC, UGenAttributeSet::GetMaxResourceAttribute());
 				ASSERT_THAT(IsTrue(MaxFlames >= 3.f));
-
-				SpawnHandle = Server.World->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateLambda([this](AActor* Actor)
-				{
-					if (!ServerCaster.IsValid() || Actor->GetInstigator() != ServerCaster.Get())
-					{
-						return;
-					}
-					if (AGenNetTestRingProjectile* Ring = Cast<AGenNetTestRingProjectile>(Actor))
-					{
-						RingProjectiles.Add(Ring);
-						RingYaws.Add(Ring->GetActorRotation().Yaw);
-						RingOrigins.Add(Ring->GetActorLocation());
-						FlamesAtRing = GetAttribute(ServerCaster->GetAbilitySystemComponent(), UGenAttributeSet::GetResourceAttribute());
-					}
-					else if (Cast<AGenGroundArea>(Actor))
-					{
-						++AreaCount;
-					}
-				}));
 			})
-			.UntilClient(TEXT("Client 0 : bond répliqué"), 0, [](FBasePIENetworkComponentState& Client)
+			.UntilClient(TEXT("Client 0 : ruée répliquée"), 0, [](FBasePIENetworkComponentState& Client)
 			{
 				return FindAbilitySpec(GetLocalASC(Client), UGenNetTestGA_MeteorLeap::StaticClass()) != nullptr;
 			}, DefaultWait())
@@ -526,15 +517,18 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 				const ACharacter* Pawn = GetLocalController(Client)->GetPawn<ACharacter>();
 				return Pawn && FVector::Dist2D(Pawn->GetActorLocation(), FVector::ZeroVector) < 20.f && Pawn->GetCharacterMovement()->IsMovingOnGround();
 			}, DefaultWait())
-			.UntilServer(TEXT("Serveur : lanceur et ennemi au sol"), [this](FBasePIENetworkComponentState&)
+			.UntilServer(TEXT("Serveur : lanceur au sol"), [this](FBasePIENetworkComponentState&)
 			{
-				return ServerCaster->GetCharacterMovement()->IsMovingOnGround() && ServerEnemy->GetCharacterMovement()->IsMovingOnGround();
+				return ServerCaster->GetCharacterMovement()->IsMovingOnGround();
 			}, DefaultWait())
-			.ThenServer(TEXT("Serveur : vie de l'ennemi au départ"), [this](FBasePIENetworkComponentState&)
+			.ThenServer(TEXT("Serveur : Foyer plein, départ relevé"), [this](FBasePIENetworkComponentState&)
 			{
-				EnemyHealthBefore = GetAttribute(ServerEnemy->GetAbilitySystemComponent(), UGenAttributeSet::GetHealthAttribute());
-				ASSERT_THAT(IsTrue(EnemyHealthBefore > LandingDamage + 3.f * RingDamage));
 				ASSERT_THAT(IsNear(MaxFlames, GetAttribute(ServerCaster->GetAbilitySystemComponent(), UGenAttributeSet::GetResourceAttribute()), 0.01f, TEXT("Foyer plein au départ")));
+				ServerStart = ServerCaster->GetActorLocation();
+			})
+			.ThenClient(TEXT("Client 0 : départ relevé"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				ClientStart = GetLocalController(Client)->GetPawn()->GetActorLocation();
 			});
 	}
 
@@ -555,197 +549,168 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 	/** Touche tenue HoldSeconds puis relâchée (nourrissage : une flamme toutes les 0.3 s, 3 au plus). */
 	void QueueFeed(float HoldSeconds)
 	{
-		Network.ThenClient(TEXT("Client 0 : appuie sur le bond"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, LeapInputTag(), true); });
+		Network.ThenClient(TEXT("Client 0 : appuie sur la ruée"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, DashInputTag(), true); });
 		QueueClientWait(TEXT("Client 0 : touche tenue"), HoldSeconds);
-		Network.ThenClient(TEXT("Client 0 : relâche"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, LeapInputTag(), false); });
+		Network.ThenClient(TEXT("Client 0 : relâche"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, DashInputTag(), false); });
 	}
 
-	/** Atterrissage : zone et anneau de Fed boules d'une seule salve, l'ennemi touché une fois par l'anneau, recharge, plus de verrou. */
-	void QueueAssertLanding(int32 Fed)
+	/** Fin de la ruée partout : sort terminé, recharge payée, plus de verrou (serveur puis client 0), puis un temps de repos. */
+	void QueueDashEnded()
 	{
 		Network
-			.UntilServer(TEXT("Serveur : atterrissage, zone et anneau"), [this, Fed](FBasePIENetworkComponentState&)
-			{
-				if (!HasLanded() || RingProjectiles.Num() < Fed)
-				{
-					return false;
-				}
-				// Toutes les boules sont encore là (une boule qui explose vit 0.5 s) : on relève leur salve
-				for (const TWeakObjectPtr<AGenNetTestRingProjectile>& Ring : RingProjectiles)
-				{
-					RingSalvos.Add(Ring.IsValid() ? Ring->Salvo.Get() : nullptr);
-				}
-				return true;
-			}, DefaultWait());
-		QueueServerWait(TEXT("Serveur : 0.3 s après l'atterrissage"), 0.3f);
-		Network
-			.ThenServer(TEXT("Serveur : une zone, un anneau d'une salve, l'ennemi touché une fois par l'anneau"), [this, Fed](FBasePIENetworkComponentState&)
+			.UntilServer(TEXT("Serveur : ruée terminée"), [this](FBasePIENetworkComponentState&)
 			{
 				UAbilitySystemComponent* ASC = ServerCaster->GetAbilitySystemComponent();
-				ASSERT_THAT(AreEqual(1, AreaCount, TEXT("Une seule zone d'atterrissage")));
-				ASSERT_THAT(AreEqual(Fed, RingProjectiles.Num(), TEXT("Une boule par flamme nourrie")));
-				ASSERT_THAT(AreEqual(1, RingSalvos.Num(), TEXT("Toutes les boules partagent la même salve")));
-				ASSERT_THAT(IsFalse(RingSalvos.Contains(nullptr), TEXT("Salve renseignée")));
-				ASSERT_THAT(IsNear(EnemyHealthBefore - LandingDamage - RingDamage, GetAttribute(ServerEnemy->GetAbilitySystemComponent(), UGenAttributeSet::GetHealthAttribute()), 0.01f,
-					TEXT("L'ennemi prend la zone d'atterrissage et UNE seule boule de l'anneau")));
-				ASSERT_THAT(IsTrue(FlamesAtRing <= MaxFlames - Fed + 1.f + 0.01f && FlamesAtRing >= MaxFlames - Fed - 0.01f, TEXT("Flammes nourries dépensées au décollage (au plus une regagnée depuis)")));
-				ASSERT_THAT(IsTrue(ASC->HasMatchingGameplayTag(LeapCooldownTag()), TEXT("Recharge payée")));
-				ASSERT_THAT(IsFalse(ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked"))), TEXT("Serveur : plus de verrou de lancement")));
-			})
-			.UntilClient(TEXT("Client 0 : bond terminé, recharge, plus de verrou"), 0, [](FBasePIENetworkComponentState& Client)
+				return !IsServerDashActive() && ASC->HasMatchingGameplayTag(DashCooldownTag());
+			}, DefaultWait())
+			.UntilClient(TEXT("Client 0 : ruée terminée, recharge, plus de verrou"), 0, [](FBasePIENetworkComponentState& Client)
 			{
 				UAbilitySystemComponent* ASC = GetLocalASC(Client);
-				return !IsAbilityActive(ASC, UGenNetTestGA_MeteorLeap::StaticClass()) && ASC->HasMatchingGameplayTag(LeapCooldownTag())
+				return !IsAbilityActive(ASC, UGenNetTestGA_MeteorLeap::StaticClass()) && ASC->HasMatchingGameplayTag(DashCooldownTag())
 					&& !ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked")));
 			}, DefaultWait());
+		// Corrections du mouvement éventuelles : le client se pose sur la position du serveur
+		QueueServerWait(TEXT("Serveur : 0.4 s après la fin"), 0.4f);
+		Network.ThenServer(TEXT("Serveur : plus de verrou de lancement"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsFalse(ServerCaster->GetAbilitySystemComponent()->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked"))), TEXT("Serveur : plus de verrou de lancement")));
+		});
 	}
 
-	/** 3 flammes : triangle de boules d'une seule salve ; l'ennemi qu'elles chevauchent toutes n'est touché qu'une fois. */
-	TEST_METHOD(FedThree_RingHitsEachEnemyOnce)
+	/** Serveur et client 0 arrivés à EndTolerance près du point calculé (arrivée nominale depuis leur départ). */
+	void QueueAssertEnd(int32 Fed)
 	{
+		Network
+			.ThenServer(TEXT("Serveur : arrivée au point calculé"), [this, Fed](FBasePIENetworkComponentState&)
+			{
+				const FVector Expected = ExpectedEnd(ServerStart, Fed);
+				const FVector Actual = ServerCaster->GetActorLocation();
+				TestRunner->AddInfo(FString::Printf(TEXT("Serveur : arrivée %s, attendue %s"), *Actual.ToCompactString(), *Expected.ToCompactString()));
+				ASSERT_THAT(IsNear(0.f, static_cast<float>(FVector::Dist2D(Actual, Expected)), EndTolerance, TEXT("Serveur : arrivée au bout du zigzag")));
+			})
+			.ThenClient(TEXT("Client 0 : arrivée au point calculé"), 0, [this, Fed](FBasePIENetworkComponentState& Client)
+			{
+				const FVector Expected = ExpectedEnd(ClientStart, Fed);
+				const FVector Actual = GetLocalController(Client)->GetPawn()->GetActorLocation();
+				TestRunner->AddInfo(FString::Printf(TEXT("Client 0 : arrivée %s, attendue %s"), *Actual.ToCompactString(), *Expected.ToCompactString()));
+				ASSERT_THAT(IsNear(0.f, static_cast<float>(FVector::Dist2D(Actual, Expected)), EndTolerance, TEXT("Client : arrivée au bout du zigzag (prédite, même trajet)")));
+			});
+	}
+
+	/** 0 flamme : une ruée de 3 m selon la visée, au même point sur le serveur et chez le client. */
+	TEST_METHOD(FedZero_ShortDash)
+	{
+		QueueSetup();
+		QueueFeed(0.05f);
+		QueueDashEnded();
+		QueueAssertEnd(0);
+		Network.ThenServer(TEXT("Serveur : 3 m devant, aucune flamme dépensée"), [this](FBasePIENetworkComponentState&)
+		{
+			ASSERT_THAT(IsNear(300.f, static_cast<float>(FVector::Dist2D(ServerCaster->GetActorLocation(), ServerStart)), EndTolerance, TEXT("Ruée de 3 m")));
+			ASSERT_THAT(IsNear(MaxFlames, GetAttribute(ServerCaster->GetAbilitySystemComponent(), UGenAttributeSet::GetResourceAttribute()), 1.01f, TEXT("Rien de nourri (au plus une flamme regagnée)")));
+		});
+	}
+
+	/** 3 flammes : 4 segments en zigzag, verrou de lancement pendant la ruée, même arrivée sur les deux machines. */
+	TEST_METHOD(FedThree_ZigzagLocksCasting)
+	{
+		// Segments de 0.25 s (1 s de ruée) : le temps de relever le verrou sur les deux machines ; les distances ne changent pas
+		UGenNetTestGA_MeteorLeap::TestSegmentDuration = 0.25f;
 		QueueSetup();
 		QueueFeed(1.1f);
 		Network
-			.UntilClient(TEXT("Client 1 : reçoit le point d'atterrissage du lanceur"), 1, [this](FBasePIENetworkComponentState& Client)
+			// Le client part le premier (prédit), le serveur à la réception de la visée et finit après lui
+			.UntilClient(TEXT("Client 0 : en pleine ruée"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
-				const AGenPlayerState* PS = FindPlayerStateById(Client.World, CasterPlayerId);
-				const AGenCharacterBase* Caster = PS ? PS->GetPawn<AGenCharacterBase>() : nullptr;
-				if (Caster && Caster->GetLeapTarget().IsActive())
+				UAbilitySystemComponent* ASC = GetLocalASC(Client);
+				const UGenGA_Dash* Dash = GetInstance<UGenNetTestGA_MeteorLeap>(ASC);
+				if (Dash && Dash->IsDashing())
 				{
-					ObservedTarget = Caster->GetLeapTarget();
-					bObservedDuringFlight = !HasLanded();
+					bClientLockedWhileDashing = ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked")));
 					return true;
 				}
-				return HasLanded();
+				return false;
 			}, DefaultWait())
-			.ThenClient(TEXT("Client 1 : point d'atterrissage reçu pendant le vol"), 1, [this](FBasePIENetworkComponentState&)
+			.UntilServer(TEXT("Serveur : en pleine ruée"), [this](FBasePIENetworkComponentState&)
 			{
-				ASSERT_THAT(IsTrue(bObservedDuringFlight, TEXT("L'ennemi doit recevoir le point d'atterrissage avant l'atterrissage")));
-				ASSERT_THAT(IsTrue(ObservedTarget.Ability == UGenNetTestGA_MeteorLeap::StaticClass()));
-				ASSERT_THAT(IsNear(0.f, static_cast<float>(FVector::Dist2D(ObservedTarget.Location, FVector(500.f, 0.f, 0.f))), 5.f, TEXT("Point visé (500, 0)")));
-				ASSERT_THAT(AreEqual(3, static_cast<int32>(ObservedTarget.Fed), TEXT("3 flammes : 3 amorces d'anneau")));
-				ASSERT_THAT(IsNear(150.f, ObservedTarget.Radius, 0.01f, TEXT("Cercle = rayon de la zone d'atterrissage")));
-				ASSERT_THAT(IsNear(1.f, static_cast<float>(ObservedTarget.Direction.X), 0.05f, TEXT("Direction du bond (+X)")));
+				const UGenGA_Dash* Dash = GetInstance<UGenNetTestGA_MeteorLeap>(ServerCaster->GetAbilitySystemComponent());
+				if (Dash && Dash->IsDashing())
+				{
+					bServerLockedWhileDashing = ServerCaster->GetAbilitySystemComponent()->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked")));
+					return true;
+				}
+				return false;
+			}, DefaultWait())
+			.ThenServer(TEXT("Serveur : verrou de lancement pendant la ruée"), [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsTrue(bServerLockedWhileDashing, TEXT("Serveur : State.CastLocked pendant la ruée")));
+			})
+			.ThenClient(TEXT("Client 0 : verrou de lancement pendant la ruée"), 0, [this](FBasePIENetworkComponentState&)
+			{
+				ASSERT_THAT(IsTrue(bClientLockedWhileDashing, TEXT("Client : State.CastLocked pendant la ruée")));
 			});
-		QueueAssertLanding(3);
-		Network.ThenServer(TEXT("Serveur : triangle régulier, première boule selon la visée"), [this](FBasePIENetworkComponentState&)
+		QueueDashEnded();
+		QueueAssertEnd(3);
+		Network.ThenServer(TEXT("Serveur : 3 flammes dépensées, trajet de 4 segments"), [this](FBasePIENetworkComponentState&)
 		{
-			// Revue Plan 2 Tasks 7-8, M-10 : les boules partent selon GenAreaRules::GetRingDirections(3, direction du bond)
-			ASSERT_THAT(AreEqual(3, RingYaws.Num()));
-			const float Expected[] = { 0.f, 120.f, -120.f };
-			for (int32 Index = 0; Index < 3; ++Index)
-			{
-				ASSERT_THAT(IsNear(0.f, FMath::FindDeltaAngleDegrees(Expected[Index], RingYaws[Index]), 3.f,
-					*FString::Printf(TEXT("Boule %d : lacet %.1f° (attendu %.0f°)"), Index, RingYaws[Index], Expected[Index])));
-			}
+			const float Flames = GetAttribute(ServerCaster->GetAbilitySystemComponent(), UGenAttributeSet::GetResourceAttribute());
+			ASSERT_THAT(IsTrue(Flames <= MaxFlames - 3.f + 1.f + 0.01f && Flames >= MaxFlames - 3.f - 0.01f, TEXT("Flammes nourries dépensées (au plus une regagnée depuis)")));
+			ASSERT_THAT(AreEqual(4, GenDashRules::ComputeZigzag(ServerStart, 0.f, 3, GetParams()).Num(), TEXT("3 flammes : 4 segments")));
 		});
-		Network.UntilClient(TEXT("Client 1 : point d'atterrissage effacé après l'atterrissage"), 1, [this](FBasePIENetworkComponentState& Client)
-		{
-			const AGenPlayerState* PS = FindPlayerStateById(Client.World, CasterPlayerId);
-			const AGenCharacterBase* Caster = PS ? PS->GetPawn<AGenCharacterBase>() : nullptr;
-			return Caster && !Caster->GetLeapTarget().IsActive();
-		}, DefaultWait());
 	}
 
-	/**
-	 * Revue Plan 2 Tasks 7-8, M-4 : le signal d'impact du bond joue chez le propriétaire à SON atterrissage (prédit, son bond
-	 * encore actif), une seule fois (le serveur le diffuse sous sa clé d'activation, que lui seul ignore), et une fois chez
-	 * l'autre client. Rien sur le serveur dédié.
-	 */
-	TEST_METHOD(ImpactCue_PredictedForOwner_OncePerClient)
+	/** Mur à 2 m sur le premier segment (3 flammes nourries) : la ruée s'arrête devant lui, rien au-delà. */
+	TEST_METHOD(WallStopsDash)
 	{
-		UGenNetTestGA_MeteorLeap::TestImpactCueTag = Tag(TEXT("GameplayCue.FlameLeap.Impact"));
-		CueHandle = UAbilitySystemGlobals::Get().GetGameplayCueManager()->OnGameplayCueRouted().AddLambda(
-			[this](AActor* Target, FGameplayTag CueTag, EGameplayCueEvent::Type Event, const FGameplayCueParameters&, EGameplayCueExecutionOptions)
-			{
-				if (!Target || Event != EGameplayCueEvent::Executed || CueTag != UGenNetTestGA_MeteorLeap::TestImpactCueTag)
-				{
-					return;
-				}
-				++ImpactCues.FindOrAdd(Target->GetWorld());
-				const APawn* Pawn = Cast<APawn>(Target);
-				if (Pawn && Pawn->IsLocallyControlled() && !Pawn->HasAuthority())
-				{
-					const IAbilitySystemInterface* Owner = Cast<IAbilitySystemInterface>(Target);
-					bOwnerCueDuringOwnLeap = Owner && IsAbilityActive(Owner->GetAbilitySystemComponent(), UGenNetTestGA_MeteorLeap::StaticClass());
-				}
-			});
 		QueueSetup();
-		QueueFeed(0.45f);
 		Network
-			.UntilServer(TEXT("Serveur : atterri"), [this](FBasePIENetworkComponentState&) { return HasLanded(); }, DefaultWait())
-			.UntilClients(TEXT("Clients : signal d'impact joué"), [this](FBasePIENetworkComponentState& Client) { return ImpactCues.FindRef(Client.World) > 0; }, DefaultWait());
-		QueueServerWait(TEXT("Serveur : 0.5 s pour un éventuel doublon"), 0.5f);
+			.ThenServer(TEXT("Serveur : mur à 2 m devant"), [this](FBasePIENetworkComponentState& Server) { SpawnWall(Server.World, 200.f); })
+			.ThenClients(TEXT("Clients : même mur"), [this](FBasePIENetworkComponentState& Client) { SpawnWall(Client.World, 200.f); });
+		QueueFeed(1.1f);
+		QueueDashEnded();
 		Network
-			.ThenServer(TEXT("Serveur dédié : aucun signal"), [this](FBasePIENetworkComponentState& Server)
+			.ThenServer(TEXT("Serveur : arrêté devant le mur"), [this](FBasePIENetworkComponentState&)
 			{
-				ASSERT_THAT(AreEqual(0, ImpactCues.FindRef(Server.World), TEXT("Signal cosmétique : jamais sur le serveur dédié")));
+				const FVector Actual = ServerCaster->GetActorLocation();
+				TestRunner->AddInfo(FString::Printf(TEXT("Serveur : arrivée %s (face du mur en X = 200)"), *Actual.ToCompactString()));
+				ASSERT_THAT(IsTrue(Actual.X < 200.f - 30.f, TEXT("Jamais à travers ni contre l'intérieur du mur")));
+				ASSERT_THAT(IsTrue(Actual.X > 100.f, TEXT("Le premier segment va jusqu'au mur")));
+				ASSERT_THAT(IsNear(0.f, static_cast<float>(Actual.Y), EndTolerance, TEXT("Segments suivants abandonnés (pas de glissade le long du mur)")));
 			})
-			.ThenClients(TEXT("Clients : un seul signal chacun"), [this](FBasePIENetworkComponentState& Client)
+			.ThenClient(TEXT("Client 0 : arrêté devant le mur"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
-				ASSERT_THAT(AreEqual(1, ImpactCues.FindRef(Client.World), TEXT("Un signal par client, sans doublon")));
-			})
-			.ThenClient(TEXT("Client 0 : signal joué à son propre atterrissage"), 0, [this](FBasePIENetworkComponentState&)
-			{
-				ASSERT_THAT(IsTrue(bOwnerCueDuringOwnLeap, TEXT("Prédit : joué pendant le bond local, pas à la diffusion du serveur")));
+				const FVector Actual = GetLocalController(Client)->GetPawn()->GetActorLocation();
+				TestRunner->AddInfo(FString::Printf(TEXT("Client 0 : arrivée %s"), *Actual.ToCompactString()));
+				ASSERT_THAT(IsTrue(Actual.X < 200.f - 30.f && Actual.X > 100.f, TEXT("Client : arrêté devant le mur")));
+				ASSERT_THAT(IsNear(0.f, static_cast<float>(Actual.Y), EndTolerance));
 			});
 	}
 
-	/** Étourdi en plein vol : ignoré, le vol continue, la zone et l'anneau partent. */
-	TEST_METHOD(StunnedInFlight_LandsAndBursts)
+	/** Étourdi en pleine ruée (segments longs) : ignoré, la ruée continue et se termine normalement. */
+	TEST_METHOD(StunnedMidDash_KeepsDashing)
 	{
+		UGenNetTestGA_MeteorLeap::TestSegmentDuration = 0.4f;
 		QueueSetup();
 		QueueFeed(0.45f);
 		Network
-			.UntilServer(TEXT("Serveur : en vol"), [this](FBasePIENetworkComponentState&)
+			.UntilServer(TEXT("Serveur : en pleine ruée"), [this](FBasePIENetworkComponentState&)
 			{
-				const UGenGA_Leap* Leap = GetInstance<UGenNetTestGA_MeteorLeap>(ServerCaster->GetAbilitySystemComponent());
-				return Leap && Leap->IsAirborne();
+				const UGenGA_Dash* Dash = GetInstance<UGenNetTestGA_MeteorLeap>(ServerCaster->GetAbilitySystemComponent());
+				return Dash && Dash->IsDashing();
 			}, DefaultWait())
-			.ThenServer(TEXT("Serveur : étourdit le lanceur en plein vol"), [this](FBasePIENetworkComponentState&)
+			.ThenServer(TEXT("Serveur : étourdit le lanceur en pleine ruée"), [this](FBasePIENetworkComponentState&)
 			{
 				UGenAbilitySystemComponent* ASC = Cast<UGenAbilitySystemComponent>(ServerCaster->GetAbilitySystemComponent());
-				ASSERT_THAT(IsTrue(ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked"))), TEXT("Verrou de lancement pendant le vol")));
+				ASSERT_THAT(IsTrue(ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked"))), TEXT("Verrou de lancement pendant la ruée")));
 				ASSERT_THAT(IsTrue(ASC->ApplyHardCC(Tag(TEXT("State.Stunned")), 2.f, ServerEnemy.Get()).IsValid()));
-				const UGenGA_Leap* Leap = GetInstance<UGenNetTestGA_MeteorLeap>(ASC);
-				ASSERT_THAT(IsTrue(Leap && Leap->IsActive() && Leap->IsAirborne(), TEXT("L'étourdissement ne coupe pas le vol")));
+				const UGenGA_Dash* Dash = GetInstance<UGenNetTestGA_MeteorLeap>(ASC);
+				ASSERT_THAT(IsTrue(Dash && Dash->IsActive() && Dash->IsDashing(), TEXT("L'étourdissement ne coupe pas la ruée")));
 			});
-		QueueAssertLanding(1);
-	}
-
-	/**
-	 * Règle des murs de l'anneau (revue Plan 2 Tasks 7-8, M-8 et M-10) : boules à 2 m du point d'atterrissage, un mur
-	 * (serveur seulement : l'anneau est du serveur) à ~1 m devant. La boule apparaît contre le mur, pas derrière.
-	 */
-	TEST_METHOD(RingSpawnsAgainstWall)
-	{
-		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 200.f;
-		QueueSetup();
-		Network.ThenServer(TEXT("Serveur : mur devant le point d'atterrissage"), [this](FBasePIENetworkComponentState& Server)
+		QueueDashEnded();
+		Network.ThenServer(TEXT("Serveur : la ruée a parcouru ses deux segments"), [this](FBasePIENetworkComponentState&)
 		{
-			// Bloc de 50 cm d'épaisseur, face avant à X = 605 (atterrissage en X = 500, capsule de 42 cm : jamais touché en vol)
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			AStaticMeshActor* Wall = Server.World->SpawnActor<AStaticMeshActor>(FVector(630.f, 0.f, 150.f), FRotator::ZeroRotator, Params);
-			ASSERT_THAT(IsNotNull(Wall));
-			Wall->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-			Wall->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
-			Wall->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
-			Wall->SetActorScale3D(FVector(0.5f, 4.f, 3.f));
-			ServerWall = Wall;
-		});
-		QueueFeed(0.45f);
-		Network
-			.UntilServer(TEXT("Serveur : atterrissage et anneau"), [this](FBasePIENetworkComponentState&) { return HasLanded() && RingOrigins.Num() > 0; }, DefaultWait())
-			.ThenServer(TEXT("Serveur : la boule apparaît contre le mur"), [this](FBasePIENetworkComponentState&)
-		{
-			ASSERT_THAT(AreEqual(1, RingOrigins.Num()));
-			ASSERT_THAT(IsNear(600.f, static_cast<float>(RingOrigins[0].X), 3.f, TEXT("Contre la face du mur (X = 605, moins 5 cm), pas à 2 m (X = 700)")));
-			ASSERT_THAT(IsNear(0.f, FMath::FindDeltaAngleDegrees(0.f, RingYaws[0]), 3.f, TEXT("Boule selon la visée (+X)")));
-			if (ServerWall.IsValid())
-			{
-				ServerWall->Destroy();
-			}
+			const FVector Expected = ExpectedEnd(ServerStart, 1);
+			ASSERT_THAT(IsNear(0.f, static_cast<float>(FVector::Dist2D(ServerCaster->GetActorLocation(), Expected)), EndTolerance, TEXT("Arrivée au bout des deux segments")));
 		});
 	}
 
@@ -753,37 +718,33 @@ NETWORK_TEST_CLASS(MeteorLeap, "Gen.Net")
 	TEST_METHOD(StunnedDuringTakeOff_NoCost)
 	{
 		QueueSetup();
-		Network.ThenClient(TEXT("Client 0 : appuie sur le bond"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, LeapInputTag(), true); });
+		Network.ThenClient(TEXT("Client 0 : appuie sur la ruée"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, DashInputTag(), true); });
 		QueueClientWait(TEXT("Client 0 : en plein décollage (1 flamme)"), 0.45f);
 		Network
 			.ThenServer(TEXT("Serveur : étourdit le lanceur pendant le décollage"), [this](FBasePIENetworkComponentState&)
 			{
 				UGenAbilitySystemComponent* ASC = Cast<UGenAbilitySystemComponent>(ServerCaster->GetAbilitySystemComponent());
-				const UGenGA_Leap* Leap = GetInstance<UGenNetTestGA_MeteorLeap>(ASC);
-				ASSERT_THAT(IsTrue(Leap && Leap->IsCastPending() && !Leap->IsAirborne(), TEXT("Le serveur doit être en plein décollage")));
+				const UGenGA_Dash* Dash = GetInstance<UGenNetTestGA_MeteorLeap>(ASC);
+				ASSERT_THAT(IsTrue(Dash && Dash->IsCastPending() && !Dash->IsDashing(), TEXT("Le serveur doit être en plein décollage")));
 				ASSERT_THAT(IsTrue(ASC->ApplyHardCC(Tag(TEXT("State.Stunned")), 1.f, ServerEnemy.Get()).IsValid()));
 			})
-			.ThenClient(TEXT("Client 0 : relâche"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, LeapInputTag(), false); })
-			.UntilServer(TEXT("Serveur : bond annulé"), [this](FBasePIENetworkComponentState&)
-			{
-				return !IsAbilityActive(ServerCaster->GetAbilitySystemComponent(), UGenNetTestGA_MeteorLeap::StaticClass());
-			}, DefaultWait());
+			.ThenClient(TEXT("Client 0 : relâche"), 0, [](FBasePIENetworkComponentState& Client) { SendInput(Client, DashInputTag(), false); })
+			.UntilServer(TEXT("Serveur : ruée annulée"), [this](FBasePIENetworkComponentState&) { return !IsServerDashActive(); }, DefaultWait());
 		QueueServerWait(TEXT("Serveur : au-delà de tout départ possible"), 1.5f);
 		Network
-			.ThenServer(TEXT("Serveur : ni bond, ni recharge, ni flamme dépensée"), [this](FBasePIENetworkComponentState&)
+			.ThenServer(TEXT("Serveur : ni ruée, ni recharge, ni flamme dépensée"), [this](FBasePIENetworkComponentState&)
 			{
 				UAbilitySystemComponent* ASC = ServerCaster->GetAbilitySystemComponent();
-				ASSERT_THAT(AreEqual(0, AreaCount, TEXT("Pas de zone d'atterrissage")));
-				ASSERT_THAT(AreEqual(0, RingProjectiles.Num(), TEXT("Pas d'anneau")));
-				ASSERT_THAT(IsFalse(ASC->HasMatchingGameplayTag(LeapCooldownTag()), TEXT("Pas de recharge")));
+				ASSERT_THAT(IsTrue(FVector::Dist2D(ServerCaster->GetActorLocation(), ServerStart) < 30.f, TEXT("Pas de ruée")));
+				ASSERT_THAT(IsFalse(ASC->HasMatchingGameplayTag(DashCooldownTag()), TEXT("Pas de recharge")));
 				ASSERT_THAT(IsNear(MaxFlames, GetAttribute(ASC, UGenAttributeSet::GetResourceAttribute()), 0.01f, TEXT("Aucune flamme dépensée")));
 				ASSERT_THAT(IsFalse(ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked")))));
 				ASSERT_THAT(AreEqual(0, ServerCaster->GetFedResource(), TEXT("Plus aucune flamme en cours de nourrissage")));
 			})
-			.UntilClient(TEXT("Client 0 : bond annulé, rien de payé (prédiction annulée)"), 0, [this](FBasePIENetworkComponentState& Client)
+			.UntilClient(TEXT("Client 0 : ruée annulée, rien de payé (prédiction annulée)"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
 				UAbilitySystemComponent* ASC = GetLocalASC(Client);
-				return !IsAbilityActive(ASC, UGenNetTestGA_MeteorLeap::StaticClass()) && !ASC->HasMatchingGameplayTag(LeapCooldownTag())
+				return !IsAbilityActive(ASC, UGenNetTestGA_MeteorLeap::StaticClass()) && !ASC->HasMatchingGameplayTag(DashCooldownTag())
 					&& !ASC->HasMatchingGameplayTag(Tag(TEXT("State.CastLocked")))
 					&& FMath::IsNearlyEqual(GetAttribute(ASC, UGenAttributeSet::GetResourceAttribute()), MaxFlames, 0.01f);
 			}, DefaultWait());

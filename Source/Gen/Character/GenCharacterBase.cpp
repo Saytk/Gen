@@ -26,6 +26,12 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
+// Règle du 2026-10-09 (utilisateur) : le personnage fait toujours face au curseur, déplacement compris (locomotion en
+// pas chassés). CVar pendant l'itération (Live Coding) ; à promouvoir en UPROPERTY dans le prochain changement de .h.
+static TAutoConsoleVariable<bool> CVarGenAlwaysFaceAim(
+	TEXT("gen.AlwaysFaceAim"), true,
+	TEXT("1 : toujours face à la visée (rotation de contrôle). 0 : face au déplacement hors incantation (ancien comportement)."));
+
 AGenCharacterBase::AGenCharacterBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UGenCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
@@ -264,10 +270,11 @@ uint8 AGenCharacterBase::GetFedCountForCurrentCast() const
 void AGenCharacterBase::SetFaceAim(bool bFaceAim)
 {
 	// Serveur et client propriétaire : le serveur reçoit la visée du client avec ses mouvements
-	// (rotation de contrôle), puis la rotation du personnage est répliquée aux autres
+	// (rotation de contrôle), puis la rotation du personnage est répliquée aux autres. gen.AlwaysFaceAim l'emporte.
+	const bool bFace = bFaceAim || CVarGenAlwaysFaceAim.GetValueOnGameThread();
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	Movement->bOrientRotationToMovement = !bFaceAim;
-	Movement->bUseControllerDesiredRotation = bFaceAim;
+	Movement->bOrientRotationToMovement = !bFace;
+	Movement->bUseControllerDesiredRotation = bFace;
 }
 
 float AGenCharacterBase::GetCastProgress() const

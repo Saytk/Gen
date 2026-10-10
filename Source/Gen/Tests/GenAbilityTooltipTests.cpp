@@ -4,7 +4,7 @@
 
 #include "AbilitySystem/Abilities/GenGA_Counter.h"
 #include "AbilitySystem/Abilities/GenGA_GroundArea.h"
-#include "AbilitySystem/Abilities/GenGA_Leap.h"
+#include "AbilitySystem/Abilities/GenGA_Dash.h"
 #include "AbilitySystem/Abilities/GenGA_Projectile.h"
 #include "AbilitySystem/GenAbilityTooltipData.h"
 #include "Actors/GenProjectile.h"
@@ -156,32 +156,39 @@ bool FGenAbilityTooltipTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// --- Bond (asset GA_FlameLeap, sinon le bond météore natif) : décollage par flamme, anneau ---
+	// --- Ruée de flammes (asset GA_FlameLeap, sinon la classe native) : décollage par flamme, un segment par flamme ---
 	{
-		const UGenGA_Leap* Leap = LoadCurffeAbility<UGenGA_Leap>(TEXT("GA_FlameLeap"));
-		if (!Leap)
+		const UGenGA_Dash* Dash = LoadCurffeAbility<UGenGA_Dash>(TEXT("GA_FlameLeap"));
+		if (!Dash)
 		{
-			Leap = GetDefault<UCurffeGA_MeteorLeap>();
+			Dash = GetDefault<UCurffeGA_MeteorLeap>();
 		}
 		FGenAbilityTooltipData Data;
-		const FString Text = Build(*Leap, Data);
-		AddInfo(FString::Printf(TEXT("%s : %s"), *Leap->GetClass()->GetName(), *Data.GetLinesText().ToString()));
-		const int32 Top = Leap->GetTooltipMaxFeed();
+		const FString Text = Build(*Dash, Data);
+		AddInfo(FString::Printf(TEXT("%s : %s"), *Dash->GetClass()->GetName(), *Data.GetLinesText().ToString()));
+		const GenDashRules::FZigzagParams Params = Dash->GetZigzagParams();
+		const int32 Top = Dash->GetTooltipMaxFeed();
 		if (Top > 0)
 		{
-			TestTrue(TEXT("Bond : décollage au dernier seuil"), Text.Contains(GenAbilityTooltip::Seconds(Leap->GetCastTime() + Top * Leap->GetTooltipFeedInterval()).ToString()));
+			TestTrue(TEXT("Ruée : décollage au dernier seuil"), Text.Contains(GenAbilityTooltip::Seconds(Dash->GetCastTime() + Top * Dash->GetTooltipFeedInterval()).ToString()));
+			TestTrue(TEXT("Ruée : trajet au dernier seuil"), Text.Contains(GenAbilityTooltip::Meters(GenDashRules::GetPathLength(Top, Params)).ToString()));
 		}
-		TestTrue(TEXT("Bond : portée"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Meters(Leap->GetTooltipRange()).ToString()));
-		TestTrue(TEXT("Bond : atterrissage"), Text.Contains(TEXT("Atterrissage")));
-		TestCompact(*this, TEXT("Bond"), Data);
+		TestTrue(TEXT("Ruée : portée = premier segment"), Data.GetStatsText().ToString().Contains(GenAbilityTooltip::Meters(Params.BaseDistance).ToString()));
+		// Lignes générées par le code (la description de l'asset est éditée dans l'éditeur)
+		TestFalse(TEXT("Ruée : plus d'atterrissage"), Data.GetLinesText().ToString().Contains(TEXT("Atterrissage")));
+		TestFalse(TEXT("Ruée : plus d'anneau"), Data.GetLinesText().ToString().Contains(TEXT("anneau")));
+		TestCompact(*this, TEXT("Ruée"), Data);
 		if (Top > 0)
 		{
 			TArray<float> TakeOff;
+			TArray<float> Length;
 			for (int32 Fed = 0; Fed <= Top; ++Fed)
 			{
-				TakeOff.Add(Leap->GetCastTime() + Fed * Leap->GetTooltipFeedInterval());
+				TakeOff.Add(Dash->GetCastTime() + Fed * Dash->GetTooltipFeedInterval());
+				Length.Add(GenDashRules::GetPathLength(Fed, Params));
 			}
-			TestTrue(TEXT("Bond compact : décollage par flamme"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::SecondsSeries(TakeOff).ToString()));
+			TestTrue(TEXT("Ruée compacte : décollage par flamme"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::SecondsSeries(TakeOff).ToString()));
+			TestTrue(TEXT("Ruée compacte : trajet par flamme"), Data.CompactLine.ToString().Contains(GenAbilityTooltip::MetersSeries(Length).ToString()));
 		}
 	}
 

@@ -99,6 +99,7 @@ void UGenGA_Cast::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 	bInterruptWatchStarted = false;
 	bServerShotLocked = false;
 	bReleased = false;
+	ReleaseFed = 0;
 	// Une fin de sort sans ASC (ou un ClearCastLock à la mort) a pu laisser l'instance croire qu'elle tient le verrou
 	bCastLockApplied = false;
 	PendingAimData.Clear();
@@ -1113,6 +1114,7 @@ bool UGenGA_Cast::ReleaseCast(const FGameplayAbilityTargetDataHandle& DataHandle
 		OutRelease.AimDirection = Avatar->GetActorForwardVector().GetSafeNormal2D(UE_SMALL_NUMBER, FVector::ForwardVector);
 	}
 	OutRelease.Fed = Fed;
+	ReleaseFed = Fed;
 	if (AimData)
 	{
 		OutRelease.ClientLeapDistance = AimData->LeapDistance;

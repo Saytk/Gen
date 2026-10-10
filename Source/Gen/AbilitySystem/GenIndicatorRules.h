@@ -35,6 +35,13 @@ struct FGenAimGeometry
 	float StubLength = 0.f;
 	float StubWidth = 0.f;
 
+	/**
+	 * Trajet d'une ruée en zigzag (UGenGA_Dash) : départ puis arrivée de chaque segment, coupé au premier mur. Un segment
+	 * par paire de points consécutifs (moins de 2 points = aucun), dessinés dans les emplacements des amorces.
+	 */
+	TArray<FVector, TInlineAllocator<5>> PathPoints;
+	float PathWidth = 0.f;
+
 	/** Unités nourries prises en compte (affichage et tests PIE). */
 	int32 Fed = 0;
 };

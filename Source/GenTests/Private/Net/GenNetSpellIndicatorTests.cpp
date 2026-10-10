@@ -26,10 +26,10 @@ using namespace GenNetTest;
  * Le même composant est posé sur le pion du client 0 sur les trois machines : seul le client 0 ouvre la visée ;
  * le serveur dédié ne l'ouvre pas et ne fait même pas tourner le composant (celui du personnage, Task V6).
  *
- * Bond météore réel (décision du 2026-10-08) : pendant le décollage, la visée (arc, cercle, amorces) n'existe que chez le
- * lanceur ; pendant le vol, TOUS les clients dessinent le cercle d'atterrissage et une amorce par boule de l'anneau, puis
- * plus rien à l'atterrissage. Matériau de test sur les indicateurs (les MI_Telegraph_* ne sont assignés que dans
- * BP_Champion) : sans matériau, une partie n'est jamais affichée.
+ * Flame Dash réel (Curffe.md « Space: Flame Dash ») : pendant le décollage, le trajet en zigzag (un segment de plus par
+ * seuil) n'existe que chez le lanceur ; au lancer, la visée se ferme et la ruée ne dessine rien (les autres voient la
+ * traînée). Matériau de test sur les indicateurs (les MI_Telegraph_* ne sont assignés que dans BP_Champion) : sans
+ * matériau, une partie n'est jamais affichée.
  */
 NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 {
@@ -47,7 +47,7 @@ NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 		IgnoreUntitledMapNetWarnings(*TestRunner);
 		GetMutableDefault<UGenNetTestGA_MeteorLeap>()->InputTag = LeapInputTag();
 		UGenNetTestGA_MeteorLeap::TestCooldownTags = FGameplayTagContainer();
-		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
+		UGenNetTestGA_MeteorLeap::TestSegmentDuration = 0.12f;
 		FNetworkComponentBuilder<FBasePIENetworkComponentState>()
 			.WithClients(2)
 			.AsDedicatedServer()
@@ -142,14 +142,14 @@ NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 			});
 	}
 
-	TEST_METHOD(MeteorLeap_AimOnOwnerOnly_LandingCircleForEveryone)
+	TEST_METHOD(FlameDash_PathPreviewOnOwnerOnly)
 	{
 		Network
 			.UntilServer(TEXT("Serveur : joueurs prêts"), [](FBasePIENetworkComponentState& Server) { return AreAllServerPlayersReady(Server); }, DefaultWait())
 			.UntilClients(TEXT("Clients : joueurs prêts"), [](FBasePIENetworkComponentState& Client) { return IsPlayerReady(GetLocalController(Client)); }, DefaultWait())
 			.ThenServer(TEXT("Serveur : sol de test"), [this](FBasePIENetworkComponentState& Server) { ASSERT_THAT(IsNotNull(SpawnTestFloor(Server.World))); })
 			.UntilClients(TEXT("Clients : sol de test reçu"), [](FBasePIENetworkComponentState& Client) { return HasTestFloor(Client.World); }, DefaultWait())
-			.ThenServer(TEXT("Serveur : bond accordé, joueurs placés"), [this](FBasePIENetworkComponentState& Server)
+			.ThenServer(TEXT("Serveur : ruée accordée, joueurs placés"), [this](FBasePIENetworkComponentState& Server)
 			{
 				AGenPlayerCharacter* Caster = GetServerController(Server, 0)->GetPawn<AGenPlayerCharacter>();
 				AGenPlayerCharacter* Observer = GetServerController(Server, 1)->GetPawn<AGenPlayerCharacter>();
@@ -160,7 +160,7 @@ NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 				Observer->TeleportTo(FVector(0.f, 600.f, StandingHeight), FRotator::ZeroRotator, false, true);
 				Cast<UGenAbilitySystemComponent>(Caster->GetAbilitySystemComponent())->GrantAbilities({ UGenNetTestGA_MeteorLeap::StaticClass() }, nullptr);
 			})
-			.UntilClient(TEXT("Client 0 : bond répliqué"), 0, [](FBasePIENetworkComponentState& Client)
+			.UntilClient(TEXT("Client 0 : ruée répliquée"), 0, [](FBasePIENetworkComponentState& Client)
 			{
 				const APlayerController* PC = GetLocalController(Client);
 				return FindAbilitySpec(GetASC(PC->GetPlayerState<AGenPlayerState>()), UGenNetTestGA_MeteorLeap::StaticClass()) != nullptr;
@@ -176,7 +176,7 @@ NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 				Indicator->SetAllMaterialsForTests(UMaterial::GetDefaultMaterial(MD_Surface));
 				return true;
 			}, DefaultWait())
-			.ThenClient(TEXT("Client 0 : vise (1500, 0) et appuie sur le bond"), 0, [](FBasePIENetworkComponentState& Client)
+			.ThenClient(TEXT("Client 0 : vise (1500, 0) et appuie sur la ruée"), 0, [](FBasePIENetworkComponentState& Client)
 			{
 				AGenPlayerController* PC = Cast<AGenPlayerController>(GetLocalController(Client));
 				PC->bDebugAimOverride = true;
@@ -185,45 +185,31 @@ NETWORK_TEST_CLASS(SpellIndicator, "Gen.Net")
 			})
 			.ThenClient(TEXT("Client 0 : départ de l'attente"), 0, [this](FBasePIENetworkComponentState& Client) { ClientMark = Client.World->GetTimeSeconds(); })
 			.UntilClient(TEXT("Client 0 : une flamme nourrie (0.45 s)"), 0, [this](FBasePIENetworkComponentState& Client) { return Client.World->GetTimeSeconds() >= ClientMark + 0.45f; }, DefaultWait())
-			.ThenClient(TEXT("Client 0 : sa visée (arc 7 m, cercle 1.5 m borné à la portée, une amorce)"), 0, [this](FBasePIENetworkComponentState& Client)
+			.ThenClient(TEXT("Client 0 : sa visée (trajet en zigzag : 2 segments pour 1 flamme)"), 0, [this](FBasePIENetworkComponentState& Client)
 			{
 				const UGenSpellIndicatorComponent* Indicator = GetCasterIndicator(Client);
 				ASSERT_THAT(IsNotNull(Indicator));
 				ASSERT_THAT(IsTrue(Indicator->IsAiming(), TEXT("Visée ouverte chez le lanceur pendant le nourrissage")));
-				ASSERT_THAT(IsNear(700.f, Indicator->GetShownSize(TEXT("Arc")), 0.01f));
-				ASSERT_THAT(IsNear(150.f, Indicator->GetShownSize(TEXT("Target")), 0.01f));
-				ASSERT_THAT(IsNear(1.f, Indicator->GetShownSize(TEXT("Stubs")), 0.01f, TEXT("Une amorce par flamme nourrie")));
+				ASSERT_THAT(IsNear(2.f, Indicator->GetShownSize(TEXT("Stubs")), 0.01f, TEXT("Un segment de trajet de plus par flamme nourrie")));
+				ASSERT_THAT(IsTrue(Indicator->GetShownSize(TEXT("Target")) < 0.f && Indicator->GetShownSize(TEXT("Arc")) < 0.f, TEXT("Ni cercle d'atterrissage ni arc")));
 			})
+			.UntilClient(TEXT("Client 0 : un segment de plus au seuil suivant (0.75 s, 2 flammes)"), 0, [this](FBasePIENetworkComponentState& Client)
+			{
+				const UGenSpellIndicatorComponent* Indicator = GetCasterIndicator(Client);
+				return Client.World->GetTimeSeconds() >= ClientMark + 0.75f && Indicator && FMath::IsNearlyEqual(Indicator->GetShownSize(TEXT("Stubs")), 3.f, 0.01f);
+			}, DefaultWait())
 			.ThenClient(TEXT("Client 1 : rien de la visée du lanceur"), 1, [this](FBasePIENetworkComponentState& Client)
 			{
 				const UGenSpellIndicatorComponent* Indicator = GetCasterIndicator(Client);
 				ASSERT_THAT(IsNotNull(Indicator));
 				ASSERT_THAT(IsFalse(Indicator->IsAiming()));
-				ASSERT_THAT(IsTrue(Indicator->GetShownSize(TEXT("Arc")) < 0.f && Indicator->GetShownSize(TEXT("Target")) < 0.f, TEXT("La visée ne part jamais chez les autres")));
+				ASSERT_THAT(IsTrue(Indicator->GetShownSize(TEXT("Stubs")) < 0.5f, TEXT("La visée ne part jamais chez les autres")));
 			})
-			.ThenClient(TEXT("Client 0 : relâche (décollage puis vol)"), 0, [](FBasePIENetworkComponentState& Client) { SendLeapInput(Client, false); })
-			.UntilClient(TEXT("Client 1 : voit le cercle d'atterrissage et l'amorce pendant le vol"), 1, [this](FBasePIENetworkComponentState& Client)
+			.ThenClient(TEXT("Client 0 : relâche (décollage puis ruée)"), 0, [](FBasePIENetworkComponentState& Client) { SendLeapInput(Client, false); })
+			.UntilClients(TEXT("Clients : plus rien après le lancer (la visée se ferme, la ruée n'a pas de télégraphe)"), [this](FBasePIENetworkComponentState& Client)
 			{
 				const UGenSpellIndicatorComponent* Indicator = GetCasterIndicator(Client);
-				return Indicator && FMath::IsNearlyEqual(Indicator->GetShownSize(TEXT("Target")), 150.f, 0.01f)
-					&& FMath::IsNearlyEqual(Indicator->GetShownSize(TEXT("Stubs")), 1.f, 0.01f);
-			}, DefaultWait())
-			.ThenClient(TEXT("Client 1 : ni arc ni visée pendant le vol"), 1, [this](FBasePIENetworkComponentState& Client)
-			{
-				const UGenSpellIndicatorComponent* Indicator = GetCasterIndicator(Client);
-				ASSERT_THAT(IsFalse(Indicator->IsAiming()));
-				ASSERT_THAT(IsTrue(Indicator->GetShownSize(TEXT("Arc")) < 0.f, TEXT("L'arc de portée reste privé")));
-			})
-			.UntilClient(TEXT("Client 0 : visée fermée, cercle d'atterrissage du vol"), 0, [this](FBasePIENetworkComponentState& Client)
-			{
-				const UGenSpellIndicatorComponent* Indicator = GetCasterIndicator(Client);
-				return Indicator && !Indicator->IsAiming() && Indicator->GetShownSize(TEXT("Arc")) < 0.f
-					&& FMath::IsNearlyEqual(Indicator->GetShownSize(TEXT("Target")), 150.f, 0.01f);
-			}, DefaultWait())
-			.UntilClients(TEXT("Clients : plus rien après l'atterrissage"), [this](FBasePIENetworkComponentState& Client)
-			{
-				const UGenSpellIndicatorComponent* Indicator = GetCasterIndicator(Client);
-				return Indicator && Indicator->GetShownSize(TEXT("Target")) < 0.f && Indicator->GetShownSize(TEXT("Stubs")) < 0.5f;
+				return Indicator && !Indicator->IsAiming() && Indicator->GetShownSize(TEXT("Stubs")) < 0.5f && Indicator->GetShownSize(TEXT("Target")) < 0.f;
 			}, DefaultWait());
 	}
 };

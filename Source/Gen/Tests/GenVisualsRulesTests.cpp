@@ -224,7 +224,7 @@ bool FGenLeapAimTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("rayon d'atterrissage"), G.TargetRadius, 150.f, 0.01f);
 	TestEqual(TEXT("arc de portée"), G.RangeArcRadius, 700.f, 0.01f);
 	TestEqual(TEXT("3 flammes : 3 amorces"), G.StubDirections.Num(), 3);
-	// Mêmes directions que l'anneau réel (UCurffeGA_MeteorLeap : GetRingDirections(Fed, AimDirection))
+	// Mêmes directions que l'anneau d'un bond (UGenGA_Leap::GetRingProjectileRadius > 0 : GetRingDirections(Fed, AimDirection))
 	const TArray<FVector> Ring = GenAreaRules::GetRingDirections(3, FVector(1.f, 0.f, 0.f));
 	for (int32 Index = 0; Index < 3 && Index < G.StubDirections.Num(); ++Index)
 	{

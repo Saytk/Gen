@@ -52,7 +52,7 @@ NETWORK_TEST_CLASS(PowerVisuals, "Gen.Net")
 		IgnoreUntitledMapNetWarnings(*TestRunner);
 		GetMutableDefault<UGenNetTestGA_MeteorLeap>()->InputTag = LeapInputTag();
 		UGenNetTestGA_MeteorLeap::TestCooldownTags = FGameplayTagContainer();
-		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
+		UGenNetTestGA_MeteorLeap::TestSegmentDuration = 0.12f;
 		FNetworkComponentBuilder<FBasePIENetworkComponentState>()
 			.WithClients(3)
 			.AsDedicatedServer()

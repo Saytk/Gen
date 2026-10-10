@@ -1,47 +1,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "AbilitySystem/Abilities/GenGA_Leap.h"
+#include "AbilitySystem/Abilities/GenGA_Dash.h"
 #include "CurffeGA_MeteorLeap.generated.h"
 
-class AGenProjectile;
-
 /**
- * Bond météore (Espace) de Curffe : chaque flamme nourrie jaillit en boule de feu à l'atterrissage,
- * en anneau régulier autour du point d'impact (au plus MaxFeed boules : 3 flammes = triangle). Une salve : un ennemi
- * n'est touché que par une boule de feu de l'anneau (même bloquée par un contre, la boule le prend). Les boules
- * suivent les règles de la boule de feu (portée, murs, contres).
+ * Flame Dash (Espace) de Curffe : ruée en zigzag nourrissable (Curffe.md, « Space: Flame Dash »). 0 flamme : une ruée
+ * courte de 3 m selon la visée ; chaque flamme nourrie ajoute un segment de 2.5 m, alternativement à gauche puis à
+ * droite (±30°). Aucun dégât, ni anneau ni zone d'atterrissage : pure mobilité. Tout le comportement est celui de
+ * UGenGA_Dash. Nom de classe gardé (ancien Meteor Leap, retiré le 2026-10-09) pour que le Blueprint GA_FlameLeap continue
+ * de fonctionner.
  */
 UCLASS()
-class GEN_API UCurffeGA_MeteorLeap : public UGenGA_Leap
+class GEN_API UCurffeGA_MeteorLeap : public UGenGA_Dash
 {
 	GENERATED_BODY()
-
-public:
-	//~ UGenGameplayAbility (infobulle) : en plus du bond, {RingDamage}
-	virtual void GetTooltipArgs(FFormatNamedArguments& Args) const override;
-	/** Décollage puis anneau de Fed boules de feu (une par flamme). */
-	virtual FText GetFeedTooltipLines(int32 Fed) const override;
-	/** Décollage par flamme, puis l'anneau (« 1 boule par flamme »). */
-	virtual FText GetCompactTooltipLine() const override;
-
-protected:
-	virtual void OnLeapLanded(const FGenCastRelease& Release, const FVector& LandingLocation) override;
-	/** Plan Visuals V6 : rayon de collision de RingProjectileClass (amorces de l'anneau = largeur des boules). */
-	virtual float GetRingProjectileRadius() const override;
-
-	/** Projectile de l'anneau (BP_Projectile_Fireball : portée, vitesse, effets). */
-	UPROPERTY(EditDefaultsOnly, Category = "Meteor Leap")
-	TSubclassOf<AGenProjectile> RingProjectileClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Meteor Leap")
-	float RingDamage = 8.f;
-
-	/** Énergie par boule de l'anneau qui touche (règles de la boule de feu ; pas de flamme : seul le clic gauche en rend). */
-	UPROPERTY(EditDefaultsOnly, Category = "Meteor Leap")
-	float RingEnergyOnHit = 2.f;
-
-	/** Distance du point d'impact où apparaissent les boules. */
-	UPROPERTY(EditDefaultsOnly, Category = "Meteor Leap", meta = (ClampMin = "0.0", Units = "cm"))
-	float RingSpawnOffset = 70.f;
 };

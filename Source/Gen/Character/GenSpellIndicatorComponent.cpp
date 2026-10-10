@@ -194,6 +194,25 @@ void UGenSpellIndicatorComponent::DrawAim(const AGenCharacterBase& Caster)
 		}
 	}
 	ShowTargetAndStubs(G, Z, Self, 1.f);
+
+	// Ruée en zigzag (Flame Dash) : un segment par emplacement d'amorce (le sort n'a pas d'anneau), un de plus par seuil
+	if (G.PathWidth > 0.f && G.StubDirections.Num() == 0)
+	{
+		const int32 SegmentCount = FMath::Min(G.PathPoints.Num() - 1, MaxStubs);
+		for (int32 Index = 0; Index < SegmentCount; ++Index)
+		{
+			const FVector& From = G.PathPoints[Index];
+			const FVector& To = G.PathPoints[Index + 1];
+			const float Length = static_cast<float>(FVector::Dist2D(From, To));
+			if (Length <= 1.f)
+			{
+				continue;
+			}
+			const FVector Dir = (To - From).GetSafeNormal2D();
+			ShowPart(StubSlot(Index), StubMaterial, OnFloor(From + Dir * (Length * 0.5f)), Dir.Rotation().Yaw,
+				Length * 0.5f, G.PathWidth * 0.5f, Self, 1.f, G.PathWidth, false, Length);
+		}
+	}
 }
 
 void UGenSpellIndicatorComponent::ShowTargetAndStubs(const FGenAimGeometry& G, float Z, EGenViewerRelation Relation, float Fill)

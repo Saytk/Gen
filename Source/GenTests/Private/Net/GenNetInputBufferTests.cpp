@@ -49,7 +49,7 @@ NETWORK_TEST_CLASS(InputBuffer, "Gen.Net")
 		// Touche du bond de test (lue sur le CDO à l'octroi), comme Gen.Net.MeteorLeap
 		GetMutableDefault<UGenNetTestGA_MeteorLeap>()->InputTag = Tag(TEXT("InputTag.Ability.3"));
 		UGenNetTestGA_MeteorLeap::TestCooldownTags = FGameplayTagContainer(Tag(TEXT("Cooldown.Ability.FlameLeap")));
-		UGenNetTestGA_MeteorLeap::TestRingSpawnOffset = 0.f;
+		UGenNetTestGA_MeteorLeap::TestSegmentDuration = 0.8f; // ruée longue (un segment) : le tampon des appuis se teste en pleine ruée
 
 		FNetworkComponentBuilder<FBasePIENetworkComponentState>()
 			.WithClients(1)
@@ -142,7 +142,7 @@ NETWORK_TEST_CLASS(InputBuffer, "Gen.Net")
 	/** Tap du clic gauche quand il reste RemainingFlight s de vol prévu, puis attente de l'atterrissage + 0.4 s. */
 	void QueueTapAndLand(float RemainingFlight)
 	{
-		const float LeapDuration = GetDefault<UGenNetTestGA_MeteorLeap>()->GetLeapDuration();
+		const float LeapDuration = UGenNetTestGA_MeteorLeap::GetTestDashDuration(0);
 		Network
 			.UntilClient(TEXT("Client 0 : instant du tap"), 0, [this, LeapDuration, RemainingFlight](FBasePIENetworkComponentState& Client)
 			{

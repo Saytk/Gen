@@ -13,7 +13,7 @@
 
 /**
  * Sorts de Curffe du plan 2 en classes C++ de test (Gen.Net.*, module éditeur GenTests) : mêmes classes génériques
- * que les assets de la Task 10 (GA_Backfire, GA_FlamePillar, GA_FlameLeap), valeurs de la spec, sans asset.
+ * que les assets de la Task 10 (GA_Backfire, GA_FlamePillar, GA_FlameLeap = Flame Dash), valeurs de la spec, sans asset.
  * Tags posés par le test (BEFORE_EACH), jamais pendant le chargement du module : la touche sur le CDO (lue par
  * GrantAbilities), la recharge du bond par TestCooldownTags. Cachés de l'éditeur (HideDropdown).
  */
@@ -60,25 +60,9 @@ public:
 };
 
 /**
- * Projectile d'anneau de test : grosse sphère (1 m) qui ignore le sol et lente, pour que toutes les boules
- * apparues au point d'atterrissage chevauchent la même cible voisine (test de la salve).
+ * Flame Dash de test (Space de Curffe, valeurs de la spec) : 3 m, puis 2.5 m par flamme à ±30°. Nom de classe gardé
+ * (comme UCurffeGA_MeteorLeap) : les autres suites s'en servent comme sort nourrissable qui verrouille les sorts.
  */
-UCLASS(NotBlueprintable, HideDropdown)
-class AGenNetTestRingProjectile : public AGenProjectile
-{
-	GENERATED_BODY()
-
-public:
-	AGenNetTestRingProjectile()
-	{
-		CollisionSphere->InitSphereRadius(100.f);
-		CollisionSphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Ignore);
-		Speed = 300.f;
-		MaxRange = 600.f;
-	}
-};
-
-/** Bond météore de test : vol long (0.8 s) pour étourdir en plein vol, anneau au point d'atterrissage. */
 UCLASS(NotBlueprintable, HideDropdown)
 class UGenNetTestGA_MeteorLeap : public UCurffeGA_MeteorLeap
 {
@@ -88,20 +72,12 @@ public:
 	UGenNetTestGA_MeteorLeap()
 	{
 		bFeedable = true;
-		CastTime = 0.3f;
+		CastTime = 0.1f;
 		bTurnToAim = true;
-		MaxDistance = 700.f;
-		LeapHeight = 200.f;
-		LeapDuration = 0.8f;
-		MaxFlightDuration = 2.f;
-		LandingAreaClass = AGenGroundArea::StaticClass();
-		LandingRadius = 150.f;
-		LandingDamage = 5.f;
-		LandingEnergyOnHit = 2.f;
-		RingProjectileClass = AGenNetTestRingProjectile::StaticClass();
-		RingDamage = 8.f;
-		RingEnergyOnHit = 2.f;
-		RingSpawnOffset = 0.f;
+		BaseDistance = 300.f;
+		SegmentDistance = 250.f;
+		ZigzagAngle = 30.f;
+		SegmentDuration = 0.12f;
 		CooldownDuration = FScalableFloat(10.f);
 	}
 
@@ -111,18 +87,17 @@ public:
 	 */
 	static FGameplayTagContainer TestCooldownTags;
 
-	/** Distance d'apparition des boules de l'anneau, reprise à l'activation (0 par défaut ; test de la règle des murs). */
-	static float TestRingSpawnOffset;
+	/** Durée d'un segment, reprise à l'activation (0.12 s par défaut ; plus long pour agir en pleine ruée). */
+	static float TestSegmentDuration;
 
-	/** Signal d'impact à l'atterrissage, repris à l'activation (aucun par défaut ; revue Plan 2 Tasks 7-8, M-4). */
-	static FGameplayTag TestImpactCueTag;
+	/** Durée de la ruée sans flamme avec TestSegmentDuration (un segment, sans mur). */
+	static float GetTestDashDuration(int32 Fed) { return TestSegmentDuration * (1 + Fed); }
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override
 	{
 		CooldownTags = TestCooldownTags;
-		RingSpawnOffset = TestRingSpawnOffset;
-		ImpactCueTag = TestImpactCueTag;
+		SegmentDuration = TestSegmentDuration;
 		Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	}
 };

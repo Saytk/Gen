@@ -7,6 +7,7 @@
 #include "AbilitySystem/GenCastBarRules.h"
 #include "Character/GenTrainingDummy.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Tests/GenTestWorld.h"
 
 using GenTestWorld::FScopedTestWorld;
@@ -173,13 +174,33 @@ bool FGenCastInfoChannelTest::RunTest(const FString& Parameters)
 
 	// Orientation (bug du 2026-10-09 : pendant la fenêtre du contre, ZQSD retournait le personnage vers son déplacement).
 	// Par défaut une canalisation suit le déplacement (Living Flame) ; une posture (contre) reste face à la visée
+	// Règle du 2026-10-09 (gen.AlwaysFaceAim, actif par défaut) : toujours face à la visée, quoi que demande l'appelant.
 	const UCharacterMovementComponent* Movement = Caster->GetCharacterMovement();
+	IConsoleVariable* AlwaysFaceAim = IConsoleManager::Get().FindConsoleVariable(TEXT("gen.AlwaysFaceAim"));
+	if (!TestNotNull(TEXT("CVar gen.AlwaysFaceAim"), AlwaysFaceAim))
+	{
+		return false;
+	}
+	const bool bWasAlwaysFaceAim = AlwaysFaceAim->GetBool();
+	const auto FacesAim = [Movement]() { return !Movement->bOrientRotationToMovement && Movement->bUseControllerDesiredRotation; };
+	const auto FacesMove = [Movement]() { return Movement->bOrientRotationToMovement && !Movement->bUseControllerDesiredRotation; };
+
+	AlwaysFaceAim->Set(true, ECVF_SetByCode);
 	Caster->StartChannel(Window, 1.2f);
-	TestTrue(TEXT("canalisation : face au déplacement"), Movement->bOrientRotationToMovement && !Movement->bUseControllerDesiredRotation);
-	Caster->StartChannel(Window, 1.2f, /*bFaceAim*/ true);
-	TestTrue(TEXT("posture : face à la visée"), !Movement->bOrientRotationToMovement && Movement->bUseControllerDesiredRotation);
+	TestTrue(TEXT("règle active : canalisation face à la visée"), FacesAim());
 	Caster->StopCast(Window);
-	TestTrue(TEXT("fin de posture : de nouveau face au déplacement"), Movement->bOrientRotationToMovement && !Movement->bUseControllerDesiredRotation);
+	TestTrue(TEXT("règle active : hors incantation face à la visée"), FacesAim());
+
+	// Ancien comportement (règle coupée) : une canalisation suit le déplacement, une posture (contre) reste face à la visée
+	AlwaysFaceAim->Set(false, ECVF_SetByCode);
+	Caster->StartChannel(Window, 1.2f);
+	TestTrue(TEXT("canalisation : face au déplacement"), FacesMove());
+	Caster->StartChannel(Window, 1.2f, /*bFaceAim*/ true);
+	TestTrue(TEXT("posture : face à la visée"), FacesAim());
+	Caster->StopCast(Window);
+	TestTrue(TEXT("fin de posture : de nouveau face au déplacement"), FacesMove());
+
+	AlwaysFaceAim->Set(bWasAlwaysFaceAim, ECVF_SetByCode);
 	return true;
 }
 

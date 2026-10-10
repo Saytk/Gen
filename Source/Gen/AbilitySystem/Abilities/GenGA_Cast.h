@@ -278,6 +278,9 @@ protected:
 	 */
 	virtual float GetCastMontageTargetDuration() const { return 0.f; }
 
+	/** Unités nourries retenues pour ce lancer (FGenCastRelease::Fed), posées avant le geste de lancer ; 0 avant le lancer. */
+	int32 GetReleaseFed() const { return ReleaseFed; }
+
 	/**
 	 * Joue un montage de phase à Rate (répliqué aux autres joueurs par le GAS), avec CastMontageRootMotionScale.
 	 * nullptr si Montage est nul (asset pas encore créé) : l'appelant n'a rien d'autre à faire.
@@ -434,6 +437,8 @@ private:
 
 	int32 FedCount = 0;
 	int32 FedVisualCount = 0;
+	/** GetReleaseFed : unités retenues au lancer (ReleaseCast), remises à 0 à l'activation. */
+	int32 ReleaseFed = 0;
 	/** Unités disponibles à l'appui (crans de la barre) : plafond du nourrissage. */
 	int32 FeedSlotsAtPress = 0;
 	bool bIsFeeding = false;

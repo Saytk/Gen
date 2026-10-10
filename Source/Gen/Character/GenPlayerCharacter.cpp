@@ -37,6 +37,7 @@ void AGenPlayerCharacter::PossessedBy(AController* NewController)
 
 	// Serveur
 	InitAbilitySystemFromPlayerState();
+	SetFaceAim(false); // orientation par défaut : applique gen.AlwaysFaceAim (toujours face au curseur)
 }
 
 void AGenPlayerCharacter::UnPossessed()
@@ -53,6 +54,7 @@ void AGenPlayerCharacter::OnRep_PlayerState()
 
 	// Clients
 	InitAbilitySystemFromPlayerState();
+	SetFaceAim(false); // orientation par défaut : applique gen.AlwaysFaceAim (toujours face au curseur)
 }
 
 void AGenPlayerCharacter::InitAbilitySystemFromPlayerState()
