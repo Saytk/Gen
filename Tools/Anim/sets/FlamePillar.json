@@ -1,0 +1,534 @@
+{
+  "spell": "E Flame Pillar",
+  "brief": "Round 4 (user 2026-10-09: 'the character is doing nonsense'): he stays standing, ONLY the upper body moves, leaning slightly forward while charging; the hands lift the flame up from under him; at the end he takes all that energy and puts it back down.",
+  "window": 0.4,
+  "fps": 30,
+  "size": 320,
+  "max_len": 2.5,
+  "step": 0.12,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current_PhaseE": "/Game/ParagonPhase/Characters/Heroes/Phase/Animations/Ability_E",
+    "1_Aurora_E": "/Game/ParagonAurora/Characters/Heroes/Aurora/Animations/Ability_E",
+    "2_Aurora_E_V2": "/Game/ParagonAurora/Characters/Heroes/Aurora/Animations/Ability_E_V2",
+    "3_Gideon_Burden": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Burden",
+    "4_Countess_E": "/Game/ParagonCountess/Characters/Heroes/Countess/Animations/Ability_E",
+    "5_Countess_Ult": "/Game/ParagonCountess/Characters/Heroes/Countess/Animations/Ability_Ultimate",
+    "6_Dekker_R": "/Game/ParagonDekker/Characters/Heroes/Dekker/Animations/Ability_R_V2",
+    "7_Kallari_Ult": "/Game/ParagonKallari/Characters/Heroes/Kallari/Animations/Ability_Ultimate",
+    "8_Serath_RMB_Rise": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/RMB_Rise",
+    "9_Aurora_E_V2_Retargeted": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+    "10_Countess_E_Retargeted": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Countess_Ability_E"
+  },
+  "pick": "Round 5 (user: 'no Paragon hero has a spell that raises something and puts it down?'). Found by MOTION, not by name: Content/Python/gen_anim_scan.py scanned 364 Paragon spell clips for 'both hands above the head, then a fast drop below the chest' (Saved/AnimScan/raise_slam.json). Picked Serath R_Ability_Intro (standing, both hands overhead, then a forward-bending slam at 13-15 m/s); runner-up Phase Ability_R_Alt (same gesture with a crouch and lunge); rejected Aurora Ability_RMB (backflip), Dekker R_Ability_wBoost (jump). Baked upper-body-only (AS_Serath_R_Ability_Intro_Upper). Feed/charge = the raise f0-6; release = pull-back f7-10 held as tension 0.64 s, slam f10-14 at natural speed landing at ~0.77 s (impact = ImpactDelay 0.8 s after launch), then held low and forward.",
+  "montages": {
+    "AM_FlamePillar_Feed": {
+      "segments": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            0,
+            2
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            2,
+            4
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            4,
+            6
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            6,
+            7
+          ],
+          "duration": 0.6
+        }
+      ],
+      "sections": [
+        [
+          "Feed_1",
+          0.0,
+          "Feed_2"
+        ],
+        [
+          "Feed_2",
+          0.3,
+          "Feed_3"
+        ],
+        [
+          "Feed_3",
+          0.6,
+          "Feed_3_Hold"
+        ],
+        [
+          "Feed_3_Hold",
+          0.9,
+          "Feed_3_Hold"
+        ]
+      ]
+    },
+    "AM_FlamePillar_Charge": [
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+        "f": [
+          0,
+          6
+        ],
+        "rate": 1.0
+      },
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+        "f": [
+          6,
+          7
+        ],
+        "duration": 0.2
+      }
+    ],
+    "AM_FlamePillar_Charge_Fed": [
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+        "f": [
+          6,
+          7
+        ],
+        "duration": 0.4
+      },
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+        "f": [
+          6,
+          7
+        ],
+        "duration": 0.4
+      },
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+        "f": [
+          6,
+          7
+        ],
+        "duration": 0.4
+      }
+    ],
+    "AM_FlamePillar_Cast": {
+      "segments": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            7,
+            10
+          ],
+          "duration": 0.64
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            10,
+            14
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            14,
+            17
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Serath_R_Ability_Intro_Upper",
+          "f": [
+            17,
+            18
+          ],
+          "duration": 0.3
+        }
+      ],
+      "blend_in": 0.08
+    }
+  },
+  "sequences": {
+    "Fed0": [
+      "AM_FlamePillar_Charge",
+      "AM_FlamePillar_Cast"
+    ],
+    "FedAll": [
+      "AM_FlamePillar_Feed",
+      "AM_FlamePillar_Charge_Fed",
+      "AM_FlamePillar_Cast"
+    ]
+  },
+  "previous_pick_phase": {
+    "pick": "Phase Ability_E (round 2, judged in game; the Gideon Cosmic Rift version was rejected as ugly): rise overhead f0-8 (charge + hold), strike down/forward f9-20 (cast).",
+    "montages": {
+      "AM_FlamePillar_Charge": [
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            0,
+            8
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            8,
+            9
+          ],
+          "duration": 0.133
+        }
+      ],
+      "AM_FlamePillar_Charge_Fed": [
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            0,
+            8
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            8,
+            9
+          ],
+          "duration": 0.133
+        },
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            3,
+            8
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            8,
+            9
+          ],
+          "duration": 0.233
+        },
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            5,
+            8
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            8,
+            9
+          ],
+          "duration": 0.3
+        }
+      ],
+      "AM_FlamePillar_Cast": [
+        {
+          "src": "Phase:Ability_E",
+          "f": [
+            9,
+            20
+          ],
+          "rate": 1.0
+        }
+      ]
+    }
+  },
+  "previous_pick_round3": {
+    "pick": "Round 3 (user: 'charged from the bottom, lava floor exploding upward, both hands raising it'). Gather = Aurora Ability_E_V2 f0-6: drop into a deep crouch (pelvis 92 -> 40 cm), both hands near the floor (52-65 cm). Release = Countess Ability_E f9-21: both hands scoop up from below together (to ~140 cm, 18-23 m/s) while he springs out of the crouch (pelvis 66 -> 91). E gets its own feed (AM_FlamePillar_Feed: sinks lower per flame) instead of the RMB chest gather. Rejected: Gideon Burden (levitates), Phase E (starts overhead and strikes down: the opposite), Belica RMB (one-arm overhead), Serath RMB_Rise (hands stay at chest height). Release revised after the in-game check: Countess's scoop only reached chest height and read as standing up; release = Phase Ability_E f15->f9 played in REVERSE (baked clip AS_Phase_Ability_E_Reversed, gen_anim_montage.bake_reversed; reversed f20-26) (its downward strike reversed: both hands shoot up from 88 to 197 cm, slowing at the top like a throw) + 0.2 s held overhead.",
+    "montages": {
+      "AM_FlamePillar_Feed": {
+        "segments": [
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+            "f": [
+              0,
+              2
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+            "f": [
+              2,
+              4
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+            "f": [
+              4,
+              6
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+            "f": [
+              6,
+              7
+            ],
+            "duration": 0.6
+          }
+        ],
+        "sections": [
+          [
+            "Feed_1",
+            0.0,
+            "Feed_2"
+          ],
+          [
+            "Feed_2",
+            0.3,
+            "Feed_3"
+          ],
+          [
+            "Feed_3",
+            0.6,
+            "Feed_3_Hold"
+          ],
+          [
+            "Feed_3_Hold",
+            0.9,
+            "Feed_3_Hold"
+          ]
+        ]
+      },
+      "AM_FlamePillar_Charge": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+          "f": [
+            0,
+            6
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+          "f": [
+            6,
+            7
+          ],
+          "duration": 0.2
+        }
+      ],
+      "AM_FlamePillar_Charge_Fed": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+          "f": [
+            5,
+            7
+          ],
+          "duration": 0.4
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+          "f": [
+            5,
+            7
+          ],
+          "duration": 0.4
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_E_V2",
+          "f": [
+            5,
+            7
+          ],
+          "duration": 0.4
+        }
+      ],
+      "AM_FlamePillar_Cast": {
+        "segments": [
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_Ability_E_Reversed",
+            "f": [
+              20,
+              26
+            ],
+            "rate": 1.0
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_Ability_E_Reversed",
+            "f": [
+              26,
+              27
+            ],
+            "duration": 0.2
+          }
+        ],
+        "blend_in": 0.12
+      }
+    }
+  },
+  "previous_pick_round4": {
+    "pick": "Round 4: Phase Ability_E baked upper-body-only (gen_anim_montage.bake_upper_body: pelvis + legs from the GASP idle, spine_01 +12 deg yaw = forward lean). Lift = the clip reversed (AS_Phase_Ability_E_Lift_Upper f20-26: hands 90 -> 182 cm), split over the feed; release = the clip forward (AS_Phase_Ability_E_Down_Upper f9-20: hands overhead -> down, 'putting the energy back down'). Rejected round 3 (Aurora crouch + reversed lift): full-body crouch read as nonsense. Round 4b (user: 'missing the part where he puts his hand down toward the spell, controlling the explosion'): the down clip is baked with a shoulder ramp (upperarm yaw 75 deg, f12-18, bake_upper_body ramps) so both hands end extended forward and down toward the target (~45 cm ahead, 115 cm high), held 0.4 s. Round 4c (user: 'missing the violent hand-down synced with the explosion'): release holds the charged overhead pose 0.667 s, then slams down (down clip f9-15 at 1.5x, 0.133 s) landing at 0.8 s = GA ImpactDelay (impact 0.8 s after launch, not fed-dependent), settles toward the target, holds 0.3 s.",
+    "montages": {
+      "AM_FlamePillar_Feed": {
+        "segments": [
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+            "f": [
+              20,
+              22
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+            "f": [
+              22,
+              24
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+            "f": [
+              24,
+              26
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+            "f": [
+              26,
+              27
+            ],
+            "duration": 0.6
+          }
+        ],
+        "sections": [
+          [
+            "Feed_1",
+            0.0,
+            "Feed_2"
+          ],
+          [
+            "Feed_2",
+            0.3,
+            "Feed_3"
+          ],
+          [
+            "Feed_3",
+            0.6,
+            "Feed_3_Hold"
+          ],
+          [
+            "Feed_3_Hold",
+            0.9,
+            "Feed_3_Hold"
+          ]
+        ]
+      },
+      "AM_FlamePillar_Charge": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+          "f": [
+            20,
+            26
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+          "f": [
+            26,
+            27
+          ],
+          "duration": 0.2
+        }
+      ],
+      "AM_FlamePillar_Charge_Fed": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+          "f": [
+            25,
+            27
+          ],
+          "duration": 0.4
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+          "f": [
+            25,
+            27
+          ],
+          "duration": 0.4
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+          "f": [
+            25,
+            27
+          ],
+          "duration": 0.4
+        }
+      ],
+      "AM_FlamePillar_Cast": {
+        "segments": [
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Lift_Upper",
+            "f": [
+              26,
+              27
+            ],
+            "duration": 0.667
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Down_Upper",
+            "f": [
+              9,
+              15
+            ],
+            "rate": 1.5
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Down_Upper",
+            "f": [
+              15,
+              20
+            ],
+            "rate": 1.0
+          },
+          {
+            "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Phase_Ability_E_Down_Upper",
+            "f": [
+              20,
+              21
+            ],
+            "duration": 0.3
+          }
+        ],
+        "blend_in": 0.08
+      }
+    }
+  }
+}

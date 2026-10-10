@@ -35,7 +35,17 @@
     `register_slate_post_tick_callback` drives movement reliably.
   - For motion-sensitive captures use the console `shot` (viewport frame, TSR history kept), not `HighResShot`.
 
-## Animation work (resume here)
+## Animation casting, done 2026-10-09 (read this first)
+
+- Spell animations re-cast from the Paragon bank, process agreed with the user: brief per spell → candidates side by side
+  → pick → fine-tune. Decisions, reasons and exact values: `Animation-Casting.md` (this folder). Tools and workflow:
+  `.claude/skills/anim-casting/SKILL.md` (`Tools/Anim/anim_casting.py`, set files in `Tools/Anim/sets/`).
+- New: Fireball (Gideon A), Great Fireball (Gideon RMB, mirrored), Flame Pillar (Gideon Cosmic Rift), Meteor Leap
+  (Serath), Living Flame burst (Gideon CosmicRift). Kept: Backfire, Combustion, Living Flame ignite/form (authored clips
+  read better from the top).
+- Next: locomotion (GASP), then the leads at the end of `Animation-Casting.md`.
+
+## Animation work (previous plan, superseded by the casting above)
 
 **Goal:** AAA animations for Curffe from Paragon (Gideon, Serath), retargeted onto the UE5 mannequin.
 

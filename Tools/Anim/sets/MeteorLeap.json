@@ -1,0 +1,115 @@
+{
+  "spell": "Space Flame Dash (zigzag)",
+  "brief": "Instant flame dash; each fed flame adds a zigzag segment ahead. Feed = coiled crouch (loading), take-off 0.1 s anticipation, dash burst over (1 + flames) x 0.12 s. Full body, root motion x0 (the ability moves the capsule).",
+  "window": 0.45,
+  "fps": 30,
+  "size": 320,
+  "max_len": 2.5,
+  "step": 0.15,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current_Takeoff": "/Game/Characters/Mannequins/Anims/Unarmed/Jump/MM_Jump",
+    "0_Current_Air": "/Game/Characters/Mannequins/Anims/Unarmed/Jump/MM_WallJump",
+    "0_Current_Land": "/Game/Characters/Mannequins/Anims/Unarmed/Jump/MM_Land",
+    "1_Serath_Jump_Start": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Jump_Start",
+    "2_Serath_Jump_Apex": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Jump_Apex",
+    "3_Serath_Jump_Land": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Jump_Land",
+    "4_Serath_RMB_Rise": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/RMB_Rise",
+    "5_Serath_RMB_Dive": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/RMB_Dive",
+    "6_Serath_RMB_Land": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/RMB_Land",
+    "7_Serath_Q_Intro": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Q_Ability_Intro",
+    "8_Serath_Q_Land": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Q_Ability_Land",
+    "9_Gideon_JumpInPlace_Start": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Jump_In_Place_Start",
+    "10_Gideon_JumpInPlace_Land": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Jump_In_Place_Land"
+  },
+  "pick": "Feed: Serath Q_Ability_Intro crouch (kept). Take-off + dash: Lyra MM_Dash_Forward (mannequin-native), anticipation frames 0-3, burst frames 4-14. The zigzag stays within +-30 deg of the facing, so the forward dash fits every segment.",
+  "montages": {
+    "AM_MeteorLeap_Feed": {
+      "segments": [
+        {
+          "src": "Serath:Q_Ability_Intro",
+          "f": [
+            0,
+            8
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "Serath:Q_Ability_Intro",
+          "f": [
+            8,
+            15
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "Serath:Q_Ability_Intro",
+          "f": [
+            15,
+            21
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "Serath:Q_Ability_Intro",
+          "f": [
+            21,
+            22
+          ],
+          "duration": 0.6
+        }
+      ],
+      "sections": [
+        [
+          "Feed_1",
+          0.0,
+          "Feed_2"
+        ],
+        [
+          "Feed_2",
+          0.3,
+          "Feed_3"
+        ],
+        [
+          "Feed_3",
+          0.6,
+          "Feed_3_Hold"
+        ],
+        [
+          "Feed_3_Hold",
+          0.9,
+          "Feed_3_Hold"
+        ]
+      ]
+    },
+    "AM_MeteorLeap_Takeoff": [
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Lyra/AS_Lyra_MM_Dash_Forward",
+        "f": [
+          0,
+          3
+        ],
+        "duration": 0.1
+      }
+    ],
+    "AM_FlameLeap": [
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Lyra/AS_Lyra_MM_Dash_Forward",
+        "f": [
+          4,
+          14
+        ],
+        "rate": 1.0
+      }
+    ]
+  },
+  "sequences": {
+    "Dash": [
+      "AM_MeteorLeap_Takeoff",
+      "AM_FlameLeap"
+    ]
+  }
+}

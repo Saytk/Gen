@@ -1,0 +1,62 @@
+{
+  "spell": "R Living Flame",
+  "brief": "Dissolving into fire, then bursting outward. Ignite 0.1 s (arms down and back), form 0.5 s (arms half-open, rising heat sway, he can move), burst: arms thrown outward on frames 0-2, 0.3 s follow-through. Ignite/form upper body, burst full body.",
+  "window": 0.1,
+  "fps": 30,
+  "size": 320,
+  "max_len": 2.0,
+  "step": 0.15,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current_Burst": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Gideon_CosmicRift",
+    "1_Belica_R_Start": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_R_Intro_Start",
+    "2_Belica_R": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_R_Ability",
+    "3_Phase_R_Intro": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_R_Ability_Intro",
+    "4_Phase_R_Loop": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_R_Ability_Loop",
+    "5_Iggy_R_Start": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_R_Ability_Start",
+    "6_Dekker_R": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Dekker_R_Ability"
+  },
+  "pick": "Round 2 (judged in game): ignite + form = Lt. Belica R_Ability (arms rise and open wide, chest out); burst = Phase R_Ability_Intro (coiled crouch springing up, arms flung out, full body).",
+  "montages": {
+    "AM_LivingFlame_Ignite": [
+      {
+        "src": "LtBelica:R_Ability",
+        "f": [
+          0,
+          3
+        ],
+        "duration": 0.1
+      }
+    ],
+    "AM_LivingFlame_Form": [
+      {
+        "src": "LtBelica:R_Ability",
+        "f": [
+          3,
+          15
+        ],
+        "duration": 0.5
+      }
+    ],
+    "AM_LivingFlame_Burst": [
+      {
+        "src": "Phase:R_Ability_Intro",
+        "f": [
+          2,
+          11
+        ],
+        "duration": 0.3
+      }
+    ]
+  },
+  "sequences": {
+    "Cast": [
+      "AM_LivingFlame_Ignite",
+      "AM_LivingFlame_Form",
+      "AM_LivingFlame_Burst"
+    ]
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "spell": "F Combustion",
+  "brief": "Ultimate: gather inward (crouched spine, elbows wide, hands cradling a sphere low, 0.5 s), then erupt outward: arms and chest thrown open on frames 0-2, head back, held 0.4 s. The biggest moment in the kit. Full body even while moving (user 2026-10-09: smooth, he glides): the legs hold the pose and he slides with his movement, soft inertial blend in (0.2 s) and out (0.35 s).",
+  "window": 0.5,
+  "fps": 30,
+  "size": 320,
+  "max_len": 2.4,
+  "step": 0.15,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current": "/Game/Gen/Champions/Curffe/Animations/Poses/AS_Curffe_Combustion",
+    "1_Aurora_R_InPlace": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_R_InPlace",
+    "2_Countess_Ult": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Countess_Ability_Ultimate",
+    "3_Kallari_Ult": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Kallari_Ability_Ultimate",
+    "4_Iggy_Ult_Start": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_IggyScorch_Ultimate_Targeting_Start",
+    "5_Iggy_Ult": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_IggyScorch_Ultimate",
+    "6_Iggy_Ult_End": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_IggyScorch_Ultimate_Targeting_End",
+    "7_Dekker_R_V2": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Dekker_Ability_R_V2"
+  },
+  "pick": "Aurora Ability_R_InPlace (her ultimate; round 2, judged in game): gather overhead f0-18 (charge, fitted to 0.5 s), arms flung wide at f20 then slam into a low power stance f30-36 (erupt f19-38).",
+  "montages": {
+    "AM_Combustion_Charge": {
+      "segments": [
+        {
+          "src": "Aurora:Ability_R_InPlace",
+          "f": [
+            0,
+            18
+          ],
+          "duration": 0.5
+        }
+      ],
+      "slot": "DefaultSlot",
+      "blend_in": 0.2
+    },
+    "AM_Combustion_Erupt": {
+      "segments": [
+        {
+          "src": "Aurora:Ability_R_InPlace",
+          "f": [
+            19,
+            38
+          ],
+          "rate": 1.0
+        }
+      ],
+      "slot": "DefaultSlot",
+      "blend_out": 0.35
+    }
+  },
+  "sequences": {
+    "Cast": [
+      "AM_Combustion_Charge",
+      "AM_Combustion_Erupt"
+    ]
+  }
+}

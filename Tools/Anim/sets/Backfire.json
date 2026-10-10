@@ -1,0 +1,43 @@
+{
+  "spell": "Q Backfire",
+  "brief": "Defiant guard, daring them to hit. Snap into a frontal guard in 0.1 s (forearms well in front of the chest, readable from -60 deg), hold 1.2 s with a slow heat sway. Upper body.",
+  "window": 0.1,
+  "fps": 30,
+  "size": 320,
+  "max_len": 1.8,
+  "step": 0.15,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current": "/Game/Gen/Champions/Curffe/Animations/Poses/AS_Curffe_Backfire",
+    "1_Kallari_Block": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Kallari_Ability_Block",
+    "2_Phase_Q": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_Ability_Q",
+    "3_Aurora_Q": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Aurora_Ability_Q",
+    "4_Countess_Q": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Countess_Ability_Q"
+  },
+  "pick": "Kallari Ability_Block (round 2, judged in game): defensive crouch, forearms raised in front, looping. Raise = f0-3, Guard = the loop.",
+  "montages": {
+    "AM_Backfire_Raise": [
+      {
+        "src": "Kallari:Ability_Block",
+        "f": [
+          0,
+          3
+        ],
+        "duration": 0.1
+      }
+    ],
+    "AM_Backfire_Guard": [
+      {
+        "src": "Kallari:Ability_Block",
+        "f": [
+          3,
+          40
+        ],
+        "rate": 1.0
+      }
+    ]
+  }
+}

@@ -1,0 +1,210 @@
+{
+  "spell": "RMB Great Fireball",
+  "brief": "Gather power with both hands at the chest while feeding (stronger per flame), cock the throwing arm back, then a heavy overhead heave forward. Full body when standing.",
+  "window": 0.5,
+  "fps": 30,
+  "size": 320,
+  "max_len": 1.8,
+  "step": 0.12,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current_Gideon_RMB_Cast": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Gideon_RMB_Cast_Mirror",
+    "1_Phase_RMB_Intro": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_RMB_Intro",
+    "2_Phase_RMB_Loop": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_RMB_Loop",
+    "3_Phase_RMB_Throw": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_RMB_Throw",
+    "4_Phase_RMB_Pull": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_RMB_Pull",
+    "5_Belica_Rmb_Start": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_Rmb_Start",
+    "6_Belica_RMB": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_RMB",
+    "7_Dekker_RMB_Start": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Dekker_Ability_RMB_V2_Targeting_Start",
+    "8_Dekker_RMB": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Dekker_Ability_RMB_V2",
+    "9_Iggy_RMB_Start": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_RMB_Ability_Start",
+    "10_Iggy_RMB": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_RMB_Ability",
+    "11_Iggy_RMB_End": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_RMB_Ability_End"
+  },
+  "pick": "Phase RMB chain (round 3, user: Belica didn't fit): feed RMB_Intro (hands gather at the chest) + RMB_Loop hold; charge = RMB_Throw crouched wind-up pose held; cast = RMB_Throw whip (f1-13). Same hero as LMB and E for a consistent style.",
+  "montages": {
+    "AM_Curffe_FeedHand": {
+      "segments": [
+        {
+          "src": "Phase:RMB_Intro",
+          "f": [
+            0,
+            8
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "Phase:RMB_Intro",
+          "f": [
+            8,
+            15
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "Phase:RMB_Intro",
+          "f": [
+            15,
+            22
+          ],
+          "duration": 0.3
+        },
+        {
+          "src": "Phase:RMB_Loop",
+          "f": [
+            0,
+            18
+          ],
+          "duration": 0.6
+        }
+      ],
+      "sections": [
+        [
+          "Feed_1",
+          0.0,
+          "Feed_2"
+        ],
+        [
+          "Feed_2",
+          0.3,
+          "Feed_3"
+        ],
+        [
+          "Feed_3",
+          0.6,
+          "Feed_3_Hold"
+        ],
+        [
+          "Feed_3_Hold",
+          0.9,
+          "Feed_3_Hold"
+        ]
+      ]
+    },
+    "AM_GreatFireball_Charge": [
+      {
+        "src": "Phase:RMB_Throw",
+        "f": [
+          0,
+          1
+        ],
+        "duration": 0.5
+      }
+    ],
+    "AM_GreatFireball_Cast": [
+      {
+        "src": "Phase:RMB_Throw",
+        "f": [
+          1,
+          13
+        ],
+        "rate": 1.0
+      }
+    ]
+  },
+  "sequences": {
+    "Fed3": [
+      "AM_Curffe_FeedHand",
+      "AM_GreatFireball_Charge",
+      "AM_GreatFireball_Cast"
+    ],
+    "Fed0": [
+      "AM_GreatFireball_Charge",
+      "AM_GreatFireball_Cast"
+    ]
+  },
+  "previous_pick_belica": {
+    "pick": "Lt. Belica RMB chain (round 2, judged in game): Rmb_Start (hands gather at the chest) for the feed, RMB wind-up for the charge (natural speed + hold), RMB heave (peak f12) for the cast.",
+    "montages": {
+      "AM_Curffe_FeedHand": {
+        "segments": [
+          {
+            "src": "LtBelica:Rmb_Start",
+            "f": [
+              0,
+              5
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "LtBelica:Rmb_Start",
+            "f": [
+              5,
+              9
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "LtBelica:Rmb_Start",
+            "f": [
+              9,
+              12
+            ],
+            "duration": 0.3
+          },
+          {
+            "src": "LtBelica:Rmb_Start",
+            "f": [
+              12,
+              14
+            ],
+            "duration": 0.6
+          }
+        ],
+        "sections": [
+          [
+            "Feed_1",
+            0.0,
+            "Feed_2"
+          ],
+          [
+            "Feed_2",
+            0.3,
+            "Feed_3"
+          ],
+          [
+            "Feed_3",
+            0.6,
+            "Feed_3_Hold"
+          ],
+          [
+            "Feed_3_Hold",
+            0.9,
+            "Feed_3_Hold"
+          ]
+        ]
+      },
+      "AM_GreatFireball_Charge": [
+        {
+          "src": "LtBelica:RMB",
+          "f": [
+            0,
+            8
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "LtBelica:RMB",
+          "f": [
+            8,
+            10
+          ],
+          "duration": 0.233
+        }
+      ],
+      "AM_GreatFireball_Cast": [
+        {
+          "src": "LtBelica:RMB",
+          "f": [
+            10,
+            22
+          ],
+          "rate": 1.0
+        }
+      ]
+    }
+  }
+}

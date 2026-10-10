@@ -1,0 +1,25 @@
+{
+  "fps": 30,
+  "size": 320,
+  "angles": [
+    "three_quarter"
+  ],
+  "step": 0.15,
+  "spell": "Idle stance",
+  "window": 0.0,
+  "max_len": 4.0,
+  "brief": "Nonchalant fire mage (user 2026-10-09: the hands-up guard read as a fist fighter). Standing: relaxed, casual, confident, arms loose. Moving: GASP natural arm swing, no guard layer.",
+  "clips": {
+    "0_Current_GASP_Idle": "/Game/Gen/Champions/Curffe/Animations/GASP/AS_GASP_M_Neutral_Stand_Idle_Loop",
+    "1_Gideon_Idle_Relaxed": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Idle_Relaxed",
+    "2_Gideon_Idle": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Idle",
+    "3_Phase_Idle": "/Game/ParagonPhase/Characters/Heroes/Phase/Animations/Idle",
+    "4_Countess_Idle_Relaxed": "/Game/ParagonCountess/Characters/Heroes/Countess/Animations/Idle_Relaxed",
+    "5_Belica_Idle_Relaxed": "/Game/ParagonLtBelica/Characters/Heroes/LtBelica/Animations/Idle_Relaxed",
+    "6_Iggy_Idle_Relaxed_B": "/Game/ParagonIggyScorch/Characters/Heroes/IggyScorch/Animations/Idle_Relaxed_B",
+    "7_Dekker_Idle_Relaxed": "/Game/ParagonDekker/Characters/Heroes/Dekker/Animations/Idle_Relaxed",
+    "8_Aurora_Idle": "/Game/ParagonAurora/Characters/Heroes/Aurora/Animations/Idle"
+  },
+  "montages": {},
+  "sequences": {}
+}

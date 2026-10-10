@@ -1,0 +1,25 @@
+{
+  "spell": "Ready stance (upper-body layer over locomotion)",
+  "brief": "Always ready to cast: hands raised in front at chest height, elbows out, palms open, slight forward lean. Layered from the spine up over the run/idle, partial weight so the run still breathes.",
+  "window": 0,
+  "fps": 30,
+  "size": 320,
+  "max_len": 1.2,
+  "step": 0.15,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current_GASP_Idle": "/Game/Gen/Champions/Curffe/Animations/GASP/AS_GASP_M_Neutral_Stand_Idle_Loop",
+    "1_Belica_R_Intro_Loop": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_R_Intro_Loop",
+    "2_Belica_R_Intro_Loop_Moving": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_R_Intro_Loop_Moving",
+    "3_Belica_Rmb_Loop": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_Rmb_Loop",
+    "4_Dekker_R_Targeting_InMotion": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Dekker_Ability_R_V2_Targeting_Loop_InMotion",
+    "5_Dekker_Q_Targeting": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Dekker_Ability_Q_V2_Targeting_Loop",
+    "6_Phase_RMB_Loop": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_RMB_Loop",
+    "7_Phase_R_Alt_Loop": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_Ability_R_Alt_Loop",
+    "8_Fey_RMB_Targeting": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Fey_Ability_RMB_Targeting",
+    "9_Iggy_RMB_Loop": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_RMB_Ability_Loop"
+  }
+}

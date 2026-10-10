@@ -25,6 +25,11 @@ Content/ParagonSerath/
 Content/Paragon*/
 # Assets Paragon locaux (IK rigs, retargeters, clips reciblés non utilisés) : référencent les packs ignorés
 Content/Gen/Champions/Curffe/Animations/Paragon/_Local/
+# Source GASP copiée localement (Tools/Anim/import_gasp.py) : seuls les clips reciblés dans Content/Gen sont versionnés
+Content/Characters/UEFN_Mannequin/
+Content/Characters/Heroes/
+Content/Characters/UE5_Mannequins/
+Content/Misc/SandboxAnimCurveCompressionSettings.uasset
 # Packs tiers d'exploration (animations, VFX) : jamais versionnés en entier. Un élément retenu est copié et
 # adapté dans Content/Gen ; seuls les 4 fichiers MegaMagic déjà suivis restent versionnés.
 Content/FXVarietyPack/

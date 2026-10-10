@@ -1,0 +1,129 @@
+{
+  "spell": "LMB Fireball",
+  "brief": "Nonchalant fire mage (user 2026-10-09: Phase's throw 'deforms' him: ~127 deg torso twist and arms flung wide). Casual one-hand flick, torso nearly still, upper body only, legs stay standing.",
+  "window": 0.35,
+  "fps": 30,
+  "size": 320,
+  "max_len": 1.3,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current_GideonA": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Gideon_Primary_Attack_A_Medium",
+    "1_Phase_A": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_Primary_Attack_A_Medium",
+    "2_Phase_B": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_Primary_Attack_B_Medium",
+    "3_Phase_A_InMotion": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Phase_Primary_Attack_A_InMotion_Medium",
+    "4_Muriel_A_Fast": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Muriel_Primary_Fire_A_Fast_V1",
+    "5_Muriel_B_Fast": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Muriel_Primary_Fire_B_Fast_V1",
+    "6_Belica_Med": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_LtBelica_Primary_Fire_Med",
+    "7_Dekker_Med": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Dekker_Fire_Med",
+    "8_Fey_LMB_A": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Fey_Ability_LMB_A_Medium",
+    "9_Fey_LMB_B": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_Fey_Ability_LMB_B_Medium",
+    "10_Iggy_Med": "/Game/Gen/Champions/Curffe/Animations/Paragon/AS_IggyScorch_Primary_Med_Fire"
+  },
+  "pick": "Round 4 (user: the Muriel flick was 'very stiff'): Gideon Primary_Attack_C_Medium baked upper-body-only with the torso twist damped (spine at 70 %, off arm at 50 %, bake_upper_body mix) and the throwing shoulder ramped forward during the throw (upperarm_r (30,-45,40) f3-6) so the arm sweeps toward the target instead of to the side: AS_Gideon_Primary_Attack_C_Throw_Upper. Charge f0-4 (wind-up) + hold, cast f4-14 (release f4-5). Round 4b (user: 'jittery'): the charge was f0-4 then a hold restarting at f3 (20 cm backward pop) and Gideon's wind-up wobbles (27 cm jump f0-1): now one wind-up segment f0-3 over the charge, bake smoothed f0-5 (3 passes).",
+  "montages": {
+    "AM_Fireball_Charge": [
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Gideon_Primary_Attack_C_Throw_Upper",
+        "f": [
+          0,
+          3
+        ],
+        "duration": 0.367
+      }
+    ],
+    "AM_Fireball_Cast": [
+      {
+        "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Gideon_Primary_Attack_C_Throw_Upper",
+        "f": [
+          3,
+          14
+        ],
+        "rate": 1.0
+      }
+    ]
+  },
+  "sequences": {
+    "Shot": [
+      "AM_Fireball_Charge",
+      "AM_Fireball_Cast"
+    ]
+  },
+  "step": 0.1,
+  "previous_pick_phase": {
+    "pick": "Phase Primary_Attack_A_Medium (round 2, judged in game): right hand cocks back f0-4, snaps out f5-6 (23 m/s), held to f15. Charge = natural-speed wind-up then a hold of the cocked pose (no slow-motion stretch).",
+    "montages": {
+      "AM_Fireball_Charge": [
+        {
+          "src": "Phase:Primary_Attack_A_Medium",
+          "f": [
+            0,
+            4
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "Phase:Primary_Attack_A_Medium",
+          "f": [
+            4,
+            5
+          ],
+          "duration": 0.234
+        }
+      ],
+      "AM_Fireball_Cast": [
+        {
+          "src": "Phase:Primary_Attack_A_Medium",
+          "f": [
+            5,
+            15
+          ],
+          "rate": 1.0
+        }
+      ]
+    }
+  },
+  "previous_pick_muriel_flick": {
+    "pick": "Round 3: Muriel Primary_Fire_A_Fast_V1 baked upper-body-only and REVERSED (its recoil played backwards = a flick): AS_Muriel_Primary_Fire_A_Fast_V1_Flick_Upper. Charge f17-21 (hand eases back to the hip) + hold; cast f21-24 (snaps 51 cm forward in one frame, 15.7 m/s) + hold. Torso twist 48 deg vs Phase 127. Rejected in game: Phase A (arms flung wide), Muriel A/B forward (hand held out pointing), Belica (two-hand gun hold).",
+    "montages": {
+      "AM_Fireball_Charge": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Muriel_Primary_Fire_A_Fast_V1_Flick_Upper",
+          "f": [
+            17,
+            21
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Muriel_Primary_Fire_A_Fast_V1_Flick_Upper",
+          "f": [
+            20,
+            21
+          ],
+          "duration": 0.234
+        }
+      ],
+      "AM_Fireball_Cast": [
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Muriel_Primary_Fire_A_Fast_V1_Flick_Upper",
+          "f": [
+            21,
+            24
+          ],
+          "rate": 1.0
+        },
+        {
+          "src": "/Game/Gen/Champions/Curffe/Animations/Paragon/Upper/AS_Muriel_Primary_Fire_A_Fast_V1_Flick_Upper",
+          "f": [
+            23,
+            24
+          ],
+          "duration": 0.233
+        }
+      ]
+    }
+  }
+}

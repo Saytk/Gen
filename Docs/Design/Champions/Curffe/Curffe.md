@@ -52,19 +52,18 @@ Counter trigger: **P** = projectile (triggers counters), **A** = ground area (do
 - Energy **+6, +2 per flame** on hit.
 - VisualWeight: Skillshot (5) at 0–1 flame, CC/burst (7–8) at 2–3 flames.
 
-### Space: Meteor Leap (feedable)
-- Leap with a visible arc, **7 m**, cooldown **10 s**. Take-off **0.1 s + 0.3 s per fed flame**.
-- **8** damage in a small area on landing (A).
-- **Each fed flame bursts out as a Fireball** (P, 8 damage) in an even ring around the landing point
-  (3 flames = a triangle). Ring Fireballs follow the Fireball rules (range, walls, counters).
-- An enemy can be hit by **one ring projectile at most** (ring geometry). Primary purpose: **escape**
-  (landing away screens off pursuers); engage is the weaker secondary use (≤ 1 projectile per enemy).
-- **A ring Fireball blocked by a counter still counts as that enemy's one** (rule, review of Plan 2 Tasks 3–4):
-  the next ring Fireballs pass through him. One interaction per enemy per ring, so a Backfire on the landing
-  point earns one block (+2 flames), not one per overlapping Fireball, and a window that ends between two
-  ring Fireballs can't turn the block into a hit.
-- Energy **+2** on landing hit.
-- VisualWeight: Skillshot (4–6).
+### Space: Flame Dash (feedable) — replaces Meteor Leap (user decision 2026-10-09)
+- **Zigzag dash on the ground**, cooldown **10 s**. Take-off **0.1 s + 0.3 s per fed flame** (feeding kept).
+- **0 flames: one short instant dash, 3 m** along the aim: the reactive dodge.
+- **Each fed flame adds one more zigzag segment ahead, 2.5 m**, alternating left/right of the aim line (about ±30°):
+  3 flames = 4 segments ≈ 10.5 m of path, the pre-emptive hard disengage paid with the offensive resource.
+- Each segment travels fast (≈ 0.12 s, [GEN]); segments stop at walls; the path is decided at release (aim lock) and is
+  server-authoritative, predicted for the owner (root motion move tasks).
+- **No damage, no Fireball ring, no landing area** (the ring was "a weird interaction"). Pure mobility.
+- Not castable during the dash (State.CastLocked); hard CC interrupts the take-off, not the dash itself.
+- Indicator (caster): the zigzag path preview, one more segment per threshold. Others see the trail.
+- VisualWeight: Skillshot (4) [GEN].
+- *Old Meteor Leap (7 m arc, landing area, ring of Fireballs): retired 2026-10-09.*
 
 ### Q: Backfire (counter)
 - Cast **0.1 s**, window **1.2 s**, cooldown **10 s**. The mage is slowed 50 % during the window.

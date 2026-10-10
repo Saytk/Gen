@@ -57,4 +57,19 @@ def main():
         print(json.dumps(res, indent=1)[:4000])
         sys.exit(1)
 
-main()
+def call(tool, targs, port="8010"):
+    """Appel unique réutilisable depuis un autre script : renvoie le texte du résultat, lève en cas d'erreur."""
+    url = f"http://127.0.0.1:{port}/mcp"
+    _, sid = post(url, {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+        "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "cli", "version": "1"}}})
+    try:
+        post(url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+    except Exception:
+        pass
+    res, _ = post(url, {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": targs}}, sid)
+    if "result" not in res or res["result"].get("isError"):
+        raise RuntimeError(json.dumps(res)[:2000])
+    return "\n".join(c.get("text", "") for c in res["result"].get("content", []))
+
+if __name__ == "__main__":
+    main()

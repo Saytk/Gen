@@ -1,0 +1,26 @@
+{
+  "spell": "Locomotion (idle + strafe jog)",
+  "brief": "Always facing the cursor, so the legs must strafe (fwd/back/left/right) while the chest stays on the aim. Combat-ready: weight forward, hands up and ready to cast, never relaxed. Idle loops cleanly.",
+  "window": 0,
+  "fps": 30,
+  "size": 320,
+  "max_len": 1.6,
+  "step": 0.1,
+  "angles": [
+    "three_quarter",
+    "top"
+  ],
+  "clips": {
+    "0_Current_Idle": "/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle",
+    "1_Gideon_Idle": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Idle",
+    "2_Gideon_Idle_Relaxed": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Idle_Relaxed",
+    "3_Serath_Idle": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Idle",
+    "4_Serath_Idle_Alt": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Idle_Alt",
+    "5_Gideon_Jog_Fwd": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Jog_Fwd",
+    "6_Gideon_Jog_Bwd": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Jog_Bwd",
+    "7_Gideon_Jog_Left": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Jog_Left",
+    "8_Gideon_Jog_Right": "/Game/ParagonGideon/Characters/Heroes/Gideon/Animations/Jog_Right",
+    "9_Serath_Jog_Fwd": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Jog_Fwd",
+    "10_Serath_Jog_Left": "/Game/ParagonSerath/Characters/Heroes/Serath/Animations/Jog_Left"
+  }
+}
